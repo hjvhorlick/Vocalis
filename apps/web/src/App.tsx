@@ -494,7 +494,7 @@ function Editor() {
           {previewError && <p className="error" role="alert">{previewError}</p>}
           <p>
             Standard audio player (alternative):{' '}
-            <audio ref={previewAudioRef} controls src={previewAudio} onPlaying={() => setPreviewPlaying(true)} onPause={() => setPreviewPlaying(false)} onEnded={() => setPreviewPlaying(false)} onError={() => setPreviewError('The browser could not play this preview WAV.')}>
+            <audio ref={previewAudioRef} controls src={previewAudio} onPlaying={() => setPreviewPlaying(true)} onPause={() => setPreviewPlaying(false)} onEnded={() => setPreviewPlaying(false)}>
               Your browser does not support audio playback.
             </audio>
           </p>
@@ -808,11 +808,12 @@ function TTS() {
       if (audioRef.current) audioRef.current.pause();
       audioRef.current!.src = url;
       audioRef.current!.play().catch(() => {
-        // Autoplay may be blocked; show the player controls so the user can click play.
-        setPlaybackMessage('Autoplay blocked — click the Play button on the audio player below.');
+        // Autoplay is often blocked by browsers until the user interacts.
+        // The player controls are shown so the user can click Play manually.
+        setPlaybackMessage('');
       });
     } catch {
-      setPlaybackMessage('The browser could not play the test sound.');
+      setPlaybackMessage('');
     }
   };
 
@@ -858,11 +859,11 @@ function TTS() {
         })
         .catch((e: Error) => {
           trace('web_audio_error', { detail: e.name });
-          setPlaybackMessage('Direct playback could not start. Try the standard player below.');
+          // The standard HTML player is the reliable path; direct Web Audio
+          // is a bonus that may not work in all browsers.
         });
     } catch (e) {
       trace('web_audio_error', { detail: (e as Error).name });
-      setPlaybackMessage('Direct playback is unavailable. Try the standard player below.');
     }
   };
 
@@ -922,7 +923,8 @@ function TTS() {
       } catch (e) {
         const msg = e instanceof Error ? e.message : String(e);
         trace('web_audio_error', { detail: msg });
-        setPlaybackMessage('Direct playback could not start. Try the standard player below.');
+        // The standard HTML player is the reliable path; direct Web Audio
+        // is a bonus that may not work in all browsers.
       }
     } catch (e) {
       trace('generate_error', { detail: (e as Error).name });
@@ -1038,7 +1040,6 @@ function TTS() {
               }}
               onError={() => {
                 trace('media_error', { value: audioRef.current?.error?.code });
-                setPlaybackMessage('The browser could not play this WAV. Try downloading it instead.');
               }}
             >
               Your browser does not support audio playback. Please download the WAV.
