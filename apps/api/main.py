@@ -259,7 +259,8 @@ def get_playback_diagnostics():
 
 class GenerateRequest(BaseModel):
     text: str = Field(min_length=1, max_length=240)
-    profile_id: str = Field(min_length=1, max_length=128)
+    profile_id: Optional[str] = Field(default=None, max_length=128)
+    identity: Optional[VoiceIdentityProfile] = None
     performance: Optional[PerformanceDirection] = None
 
 @app.get("/engine/vocabulary")
@@ -269,10 +270,17 @@ def engine_vocabulary():
 
 @app.post("/engine/generate", response_class=Response)
 def generate_speech(request: GenerateRequest):
-    profile = get_profile(request.profile_id)
-    performance = request.performance or profile.performance_defaults
+    if request.identity is not None:
+        identity = request.identity.model_dump()
+        performance = (request.performance or PerformanceDirection()).model_dump()
+    else:
+        if not request.profile_id:
+            raise HTTPException(status_code=422, detail="Provide a saved profile_id or inline voice identity.")
+        profile = get_profile(request.profile_id)
+        identity = profile.identity.model_dump()
+        performance = (request.performance or profile.performance_defaults).model_dump()
     try:
-        audio = synthesize(request.text, profile.identity.model_dump(), performance.model_dump())
+        audio = synthesize(request.text, identity, performance)
     except UnsupportedText as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     return Response(content=audio, media_type="audio/wav", headers={"Cache-Control": "no-store"})
