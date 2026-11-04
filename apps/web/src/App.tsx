@@ -652,7 +652,6 @@ function TTS() {
   const contextRef = useRef<AudioContext | null>(null);
   const bufferRef = useRef<AudioBuffer | null>(null);
   const sourceRef = useRef<AudioBufferSourceNode | null>(null);
-  const toneRef = useRef<OscillatorNode | null>(null);
   const analyserRef = useRef<AnalyserNode | null>(null);
   const diagnosticSession = useRef(crypto.randomUUID());
 
@@ -709,12 +708,6 @@ function TTS() {
 
   useEffect(() => {
     return () => {
-      if (toneRef.current) {
-        toneRef.current.onended = null;
-        toneRef.current.stop();
-        toneRef.current.disconnect();
-        toneRef.current = null;
-      }
       sourceRef.current?.stop();
       sourceRef.current?.disconnect();
       analyserRef.current?.disconnect();
@@ -781,10 +774,6 @@ function TTS() {
         sourceRef.current = null;
         analyserRef.current = null;
       }
-      if (toneRef.current) {
-        toneRef.current.stop();
-        toneRef.current = null;
-      }
       audioRef.current?.pause();
       setPlaying(false);
       if (id !== sinkId) setMediaReady(!audio);
@@ -794,26 +783,6 @@ function TTS() {
       setOutputNotice((e as Error).message || 'Could not select this output. Use your computer’s sound settings.');
     } finally {
       setOutputBusy(false);
-    }
-  };
-
-  const playTestTone = async () => {
-    setPlaybackMessage('');
-    try {
-      const response = await fetch('/api/engine/beep');
-      if (!response.ok) throw new Error(`Beep failed (${response.status})`);
-      const bytes = await response.arrayBuffer();
-      const blob = new Blob([bytes], { type: 'audio/wav' });
-      const url = URL.createObjectURL(blob);
-      if (audioRef.current) audioRef.current.pause();
-      audioRef.current!.src = url;
-      audioRef.current!.play().catch(() => {
-        // Autoplay is often blocked by browsers until the user interacts.
-        // The player controls are shown so the user can click Play manually.
-        setPlaybackMessage('');
-      });
-    } catch {
-      setPlaybackMessage('');
     }
   };
 
@@ -968,12 +937,6 @@ function TTS() {
           )}
         </div>
         {outputNotice && <p className="muted" role="status">{outputNotice}</p>}
-        <h3>Sound check</h3>
-        <p className="muted">Play a one-second beep to test browser audio. This does not use the speech engine.</p>
-        <button type="button" className="button secondary" onClick={playTestTone}>
-          ▶ Play test beep
-        </button>
-        {playbackMessage && !audio && <p className="error" role="alert">{playbackMessage}</p>}
       </div>
       <form className="panel" onSubmit={generate}>
         <label>
