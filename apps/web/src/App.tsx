@@ -808,18 +808,19 @@ function TTS() {
     }
   };
 
-  const playTestTone = () => {
+  const playTestTone = async () => {
     setPlaybackMessage('');
     try {
-      const { ctx } = unlockAudio();
+      const { ctx, resumed } = unlockAudio();
+      await resumed;
       if (ctx.state !== 'running') throw new Error('Audio output is not running');
       const osc = ctx.createOscillator();
       const gain = ctx.createGain();
       osc.type = 'sine';
       osc.frequency.setValueAtTime(440, ctx.currentTime);
       gain.gain.setValueAtTime(0, ctx.currentTime);
-      gain.gain.linearRampToValueAtTime(0.25, ctx.currentTime + 0.05);
-      gain.gain.linearRampToValueAtTime(0, ctx.currentTime + 1.0);
+      gain.gain.linearRampToValueAtTime(0.4, ctx.currentTime + 0.05);
+      gain.gain.linearRampToValueAtTime(0, ctx.currentTime + 1.2);
       osc.connect(gain);
       gain.connect(ctx.destination);
       const analyser = ctx.createAnalyser();
@@ -827,7 +828,7 @@ function TTS() {
       analyser.connect(ctx.destination);
       toneRef.current = osc;
       osc.start();
-      osc.stop(ctx.currentTime + 1.05);
+      osc.stop(ctx.currentTime + 1.25);
       osc.onended = () => {
         toneRef.current = null;
         analyser.disconnect();
