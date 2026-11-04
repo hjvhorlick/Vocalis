@@ -1,0 +1,25 @@
+{
+  "_comment": "Frozen baseline voices. Do not edit without re-running the bake-off.",
+  "updated": "2026-11-04",
+  "protocol": "docs/baseline-voice.md",
+  "script": "docs/reference-script.txt",
+  "voices": {
+    "af": {
+      "status": "provisional",
+      "reference_voice_id": "voice-01",
+      "source": "arena audition render",
+      "usable_in_production": false,
+      "why_not": "audition voice is a reference render, not a licensed engine voice for Vocalis",
+      "production_target": "Azure af-ZA-AdriNeural (F) / af-ZA-WillemNeural (M)",
+      "accepted_by": "product owner",
+      "accepted_on": "2026-11-04",
+      "render": "audio/baseline-af-reference.mp3"
+    },
+    "en": {
+      "status": "blocked",
+      "reason": "audition provider has no en-ZA accent; South African English cannot be evaluated through it",
+      "production_target": "Azure en-ZA-LeahNeural",
+      "needs": "Azure Speech key, or an alternative en-ZA capable engine"
+    }
+  }
+}

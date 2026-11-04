@@ -1,0 +1,54 @@
+REFERENCE SCRIPT — Vocalis baseline voice
+Every candidate renders these lines, unmodified. Comparison is only valid
+if the text is identical across candidates.
+
+Run date: ____        Engine tested: ____
+```
+
+ENGLISH (en-ZA)
+
+E1  The office opens at eight and closes at half past four, Monday to Friday.
+
+E2  The tariff is R1 250,00 a month, an increase of 8,5%.
+
+E3  Applications close on 4 November 2026 at 14:30.
+
+E4  Residents in Gauteng, Soweto and e-toll users in Nkosi township were notified.
+
+E5  The SAA and the NPO said VAT would not change.
+
+E6  If the payment clears before the end of the month, which is when most
+    people in Benoni get paid, will the service stay connected?
+
+
+AFRIKAANS (af-ZA)
+
+A1  Die kantoor open om agt en sluit om halfvyf, Maandag tot Vrydag.
+
+A2  Die tarief is R1 250,00 per maand, 'n styging van 8,5%.
+
+A3  Aansoeke sluit op 4 November 2026 om 14:30.
+
+A4  Inwoners van Gauteng, Soweto en e-tol gebruikers in Nkosi is ingelig.
+
+A5  Die SAE en die NPO het gesê BTW bly dieselfde.
+
+A6  As die betaling voor die einde van die maand deurgaan, wanneer die meeste
+    mense in Benoni betaal word, sal die diens aanbly?
+```
+
+
+WHY THESE LINES
+
+E1/A1  Plain prose. Baseline naturalness, nothing to hide behind.
+E2/A2  Currency grouping (R1 250,00) and a decimal comma. Engines either
+       say "one thousand two hundred and fifty rand" or read it as a list.
+E3/A3  Date + time. Common failure: "four November" vs "the fourth of".
+E4/A4  South African proper nouns, including a hyphenated one (e-toll/e-tol).
+E5/A5  Acronyms. SAA and NPO are spoken as words or spelled out; VAT/BTW
+       differs between the two languages. Wrong choice is instantly jarring.
+E6/A6  Long subordinate clause ending in a question. This is the line that
+       separates a real engine from a flat one: prosody, not phonemes.
+
+Scoring (1-5 each, blind, before revealing which candidate is which):
+  naturalness / intelligibility / accent fit / prosody / fatigue
