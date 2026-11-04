@@ -6,6 +6,10 @@ from typing import Literal
 from typing import List, Optional
 import sqlite3
 import os
+import io
+import wave
+import math
+import struct
 from pathlib import Path
 import json
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "engine"))
@@ -284,6 +288,27 @@ def generate_speech(request: GenerateRequest):
     except UnsupportedText as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     return Response(content=audio, media_type="audio/wav", headers={"Cache-Control": "no-store"})
+
+
+@app.post("/engine/beep", response_class=Response)
+def engine_beep():
+    """Return a short 440 Hz test-tone WAV played back through the HTML audio element."""
+    sample_rate = 16000
+    duration = 1.0
+    freq = 440.0
+    n_frames = int(sample_rate * duration)
+    pcm = b"".join(
+        struct.pack("<h", int(0.45 * 32767 * math.sin(2 * math.pi * freq * i / sample_rate)))
+        for i in range(n_frames)
+    )
+    buf = io.BytesIO()
+    with wave.open(buf, "wb") as wav:
+        wav.setnchannels(1)
+        wav.setsampwidth(2)
+        wav.setframerate(sample_rate)
+        wav.writeframes(pcm)
+    return Response(content=buf.getvalue(), media_type="audio/wav", headers={"Cache-Control": "no-store"})
+
 
 if __name__ == "__main__":
     import uvicorn

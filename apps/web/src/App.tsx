@@ -821,43 +821,19 @@ function TTS() {
   const playTestTone = async () => {
     setPlaybackMessage('');
     try {
-      const { ctx, resumed } = unlockAudio();
-      // Wait for the AudioContext to resume, but never hang forever:
-      // if the browser doesn't resume within 1 second, report the issue
-      // instead of silently doing nothing.
-      await Promise.race([
-        resumed,
-        new Promise((_, reject) => setTimeout(() => reject(new Error('audio context resume timed out')), 1000)),
-      ]);
-      if (ctx.state !== 'running') throw new Error('Audio output is not running');
-      const osc = ctx.createOscillator();
-      const gain = ctx.createGain();
-      osc.type = 'sine';
-      osc.frequency.setValueAtTime(440, ctx.currentTime);
-      gain.gain.setValueAtTime(0, ctx.currentTime);
-      gain.gain.linearRampToValueAtTime(0.4, ctx.currentTime + 0.05);
-      gain.gain.linearRampToValueAtTime(0, ctx.currentTime + 1.2);
-      osc.connect(gain);
-      gain.connect(ctx.destination);
-      const analyser = ctx.createAnalyser();
-      gain.connect(analyser);
-      analyser.connect(ctx.destination);
-      toneRef.current = osc;
-      osc.start();
-      osc.stop(ctx.currentTime + 1.25);
-      osc.onended = () => {
-        toneRef.current = null;
-        analyser.disconnect();
-      };
-      setTimeout(() => {
-        const data = new Float32Array(analyser.fftSize);
-        analyser.getFloatTimeDomainData(data);
-        let peak = 0;
-        for (const x of data) peak = Math.max(peak, Math.abs(x));
-        trace('test_tone_signal', { value: peak, detail: ctx.state });
-      }, 300);
+      const response = await fetch('/api/engine/beep');
+      if (!response.ok) throw new Error(`Beep failed (${response.status})`);
+      const bytes = await response.arrayBuffer();
+      const blob = new Blob([bytes], { type: 'audio/wav' });
+      const url = URL.createObjectURL(blob);
+      if (audioRef.current) audioRef.current.pause();
+      audioRef.current!.src = url;
+      audioRef.current!.play().catch(() => {
+        // Autoplay may be blocked; the user can click the player controls.
+      });
+      setPlaybackMessage('');
     } catch {
-      setPlaybackMessage('The browser could not start the test sound.');
+      setPlaybackMessage('The browser could not play the test sound.');
     }
   };
 
