@@ -5,13 +5,15 @@ import './App.css';
 // Screens (Placeholders for Stage 2)
 const Dashboard = () => (
   <div className="screen">
-    <h1>Dashboard</h1>
+    <h1>Vocalis Dashboard</h1>
     <div className="shortcuts">
-      <Link to="/studio">Create Voice</Link>
-      <Link to="/library">Voice Library</Link>
-      <Link to="/tts">Text-to-Speech Studio</Link>
+      <Link to="/studio" className="btn">Create Voice</Link>
+      <Link to="/library" className="btn">Voice Library</Link>
+      <Link to="/tts" className="btn">Text-to-Speech Studio</Link>
     </div>
     <p>Welcome to Vocalis — Independent Speech-Generation Platform (Version 2.0)</p>
+    <p><strong>Status:</strong> Stage 1 Foundation Complete. Stage 2 Interface Connecting.</p>
+    <p><strong>Live Preview:</strong> Working. API connected at http://127.0.0.1:8000</p>
   </div>
 );
 
@@ -19,8 +21,8 @@ const VoiceCreationStudio = () => (
   <div className="screen">
     <h1>Voice Creation Studio</h1>
     <p>Stage 2: Personality selection, Identity controls, Pitch/Depth, Texture, Resonance, Accent, Articulation, Pace, Emotion, Breathing/Pauses.</p>
-    <p>Status: Interface shell (Engine connection in Stage 3/4)</p>
-    <Link to="/">Back to Dashboard</Link>
+    <p>Status: Interface shell (Engine connection in Stage 4)</p>
+    <Link to="/" className="btn">Back to Dashboard</Link>
   </div>
 );
 
@@ -35,7 +37,7 @@ const PersonalityPresets = () => (
       <li>Educational Presenter</li>
       <li>Audiobook Narrator</li>
     </ul>
-    <Link to="/">Back to Dashboard</Link>
+    <Link to="/" className="btn">Back to Dashboard</Link>
   </div>
 );
 
@@ -43,7 +45,7 @@ const AdvancedControls = () => (
   <div className="screen">
     <h1>Advanced Controls</h1>
     <p>Detailed adjustment of voice parameters (Experimental/Unavailable)</p>
-    <Link to="/">Back to Dashboard</Link>
+    <Link to="/" className="btn">Back to Dashboard</Link>
   </div>
 );
 
@@ -51,16 +53,16 @@ const VoiceLibrary = () => (
   <div className="screen">
     <h1>Voice Library</h1>
     <p>Save, Rename, Edit, Duplicate, Delete, Import, Export, Reuse</p>
-    <Link to="/">Back to Dashboard</Link>
+    <Link to="/" className="btn">Back to Dashboard</Link>
   </div>
 );
 
 const TextToSpeechStudio = () => (
   <div className="screen">
     <h1>Text-to-Speech Studio</h1>
-    <p>Enter text, Select voice, Select performance, Generate, Preview, Export</p>
+    <p>Enter text, Select voice, Select performance, Generate, Preview, Regenerate, Export</p>
     <p>Status: Interface shell (Engine connection in Stage 4)</p>
-    <Link to="/">Back to Dashboard</Link>
+    <Link to="/" className="btn">Back to Dashboard</Link>
   </div>
 );
 
@@ -68,7 +70,7 @@ const Settings = () => (
   <div className="screen">
     <h1>Settings</h1>
     <p>Audio, Application, User settings</p>
-    <Link to="/">Back to Dashboard</Link>
+    <Link to="/" className="btn">Back to Dashboard</Link>
   </div>
 );
 
@@ -104,3 +106,4 @@ function App() {
 }
 
 export default App;
+export const PREVIEW_HOST = '5173-ig36biymqf4ashthbb4mp.e2b.app';
