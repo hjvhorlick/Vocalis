@@ -199,6 +199,19 @@ def synthesize(text: str, identity: dict, performance: dict) -> bytes:
             else:
                 start = end = (500, 1500, 2500)
         else: start = end = (500, 1500, 2500)
+        # Anticipatory coarticulation: the vocal tract starts moving toward the
+        # next phoneme before the current one ends, so sounds flow into each
+        # other instead of jumping discretely (the robotic/hollow quality).
+        next_start = (500, 1500, 2500)
+        if index + 1 < len(segments):
+            nxt = segments[index + 1].phone
+            if nxt in VOWELS: next_start = VOWELS[nxt][:3]
+            elif nxt in DIPHTHONGS: next_start = VOWELS[DIPHTHONGS[nxt][0]][:3]
+            elif nxt in SONORANTS: next_start = SONORANTS[nxt]
+        coart = 0.4
+        target_end = tuple(end[j] * (1 - coart) + next_start[j] * coart for j in range(3))
+        # Running formant values slew smoothly toward the coarticulated target.
+        f_state = [float(start[j]) for j in range(3)]
         # Coefficients are updated at a modest control rate rather than per sample.
         segment_samples = []
         coeff = []
@@ -209,10 +222,8 @@ def synthesize(text: str, identity: dict, performance: dict) -> bytes:
             if i % 80 == 0:
                 coeff = []
                 for j in range(3):
-                    freq = (start[j] * (1-t) + end[j] * t) * scale
-                    # Moderately wider resonator bandwidth = less ringing,
-                    # less hollow tin, while keeping enough high-frequency
-                    # energy for clarity.
+                    f_state[j] += (target_end[j] - f_state[j]) * 0.14
+                    freq = f_state[j] * scale
                     radius = math.exp(-math.pi * (120 + j * 70) / SAMPLE_RATE)
                     angle = 2*math.pi*freq/SAMPLE_RATE
                     coeff.append((2*radius*math.cos(angle), radius*radius,
@@ -225,10 +236,16 @@ def synthesize(text: str, identity: dict, performance: dict) -> bytes:
                 contour = 1.0 - 0.04 * (progress ** 1.5)
             f0_cur = f0 * contour
             phase = (phase + f0_cur / SAMPLE_RATE) % 1.0
-            # Glottal opening followed by a fast closure: not a sine-wave beep.
-            pulse = math.sin(math.pi * phase / .58) ** 2 if phase < .58 else 0.0
-            glottal = (pulse - prev_glottal) * 4
-            prev_glottal = pulse
+            # LF-style glottal source: smooth opening, fast closed-phase closure.
+            # The sharp closure impulse excites the tract like a real glottis.
+            oq = 0.68
+            if phase < oq:
+                x = phase / oq
+                flow = math.sin(math.pi * x / 2) ** 2
+            else:
+                flow = 0.0
+            glottal = (flow - prev_glottal) * 4.5
+            prev_glottal = flow
             noise = rng.uniform(-1, 1)
             high_noise = noise - .8 * prev_noise
             prev_noise = noise
