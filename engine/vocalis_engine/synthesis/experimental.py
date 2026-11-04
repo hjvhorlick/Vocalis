@@ -146,7 +146,7 @@ def synthesize(text: str, identity: dict, performance: dict) -> bytes:
     """
     speed = performance.get('speaking_pace', {}).get('speed', 1.0)
     segments = plan(text, speed)
-    f0 = identity.get('pitch', {}).get('centre', 160.0)
+    f0 = identity.get('pitch', {}).get('centre', 115.0)
     depth = identity.get('depth', {}).get('resonance_contribution', .5)
     brightness = identity.get('resonance', {}).get('brightness', .5)
     breathiness = identity.get('breathiness', {}).get('intensity', .2)
@@ -156,6 +156,14 @@ def synthesize(text: str, identity: dict, performance: dict) -> bytes:
     sharpness = .6 + .9 * precision  # 0.6 (relaxed) -> 1.5 (precise)
     energy = performance.get('energy', .5)
     loudness = performance.get('loudness', .5)
+    # Word-level stress: content words get a small pitch/energy lift so the
+    # voice is not a flat monotone (the main cause of the mechanical sound).
+    words = text.lower().split()
+    stressed = set()
+    for idx, w in enumerate(words):
+        w = w.strip(".,!?;:\"'()[]{}")
+        if w and w not in ('the','a','an','and','of','to','in','is','it','you','i','that','was','for','on','with','as','at','by','from','or','are','be','have','has','had','do','does','did','will','would','could','should','may','might','must','shall','can'):
+            stressed.add(idx)
     # Frequencies and amplitude are deliberately bounded even for direct callers.
     f0 = max(80, min(800, float(f0)))
     scale = 1.1 - .2 * max(0, min(1, float(depth)))
@@ -172,6 +180,20 @@ def synthesize(text: str, identity: dict, performance: dict) -> bytes:
     carry = []
     cursor = 0
     jitter = 1.0
+    # Map each segment to a word index so stressed words get pitch/loudness lift.
+    # word_counter increments once per word (first phone after a pause/start).
+    seg_word_idx = []
+    word_counter = 0
+    prev_was_pause = True
+    for segment in segments:
+        if segment.phone == 'PAUSE':
+            seg_word_idx.append(None)
+            prev_was_pause = True
+        else:
+            if prev_was_pause:
+                word_counter += 1
+            seg_word_idx.append(word_counter)
+            prev_was_pause = False
     for index, segment in enumerate(segments):
         phone = segment.phone
         count = max(1, round(segment.duration * SAMPLE_RATE))
@@ -222,19 +244,22 @@ def synthesize(text: str, identity: dict, performance: dict) -> bytes:
             if i % 80 == 0:
                 coeff = []
                 for j in range(3):
-                    f_state[j] += (target_end[j] - f_state[j]) * 0.14
+                    f_state[j] += (target_end[j] - f_state[j]) * 0.28
                     freq = f_state[j] * scale
                     radius = math.exp(-math.pi * (120 + j * 70) / SAMPLE_RATE)
                     angle = 2*math.pi*freq/SAMPLE_RATE
                     coeff.append((2*radius*math.cos(angle), radius*radius,
                                   (1-radius) * 2 * math.sin(angle)))
-            # Keep pitch steady (no vibrato/jitter wobble); only the phrase
-            # contour moves slightly.
+            # Keep pitch steady; only the phrase contour moves slightly.
+            # Stressed words get a small pitch lift so the voice is not a flat
+            # monotone (the main cause of the mechanical sound).
+            word_idx = seg_word_idx[index]
+            stress_lift = 1.08 if (word_idx is not None and word_idx in stressed) else 1.0
             if is_question:
                 contour = 1.0 + 0.05 * progress
             else:
                 contour = 1.0 - 0.04 * (progress ** 1.5)
-            f0_cur = f0 * contour
+            f0_cur = f0 * contour * stress_lift
             phase = (phase + f0_cur / SAMPLE_RATE) % 1.0
             # LF-style glottal source: smooth opening, fast closed-phase closure.
             # The sharp closure impulse excites the tract like a real glottis.
@@ -289,15 +314,13 @@ def synthesize(text: str, identity: dict, performance: dict) -> bytes:
         else:
             carry = []
         cursor += count
-        # Keep brief consonant bursts from determining the loudness of the
-        # entire phrase; a soft limiter prevents boosted transients clipping.
-        rms = math.sqrt(sum(x*x for x in segment_samples) / len(segment_samples))
-        if rms > 1e-12:
-            gain = min(1000.0, .3 / rms)
-            level = .55 if phone == 'HH' else 1.0
-            samples.extend(level * math.tanh(x * gain) for x in segment_samples)
-        else:
-            samples.extend(segment_samples)
+        # Preserve natural loudness differences between stressed/unstressed
+        # syllables and vowels/consonants — this contrast is what makes
+        # speech intelligible. Only reduce HH level slightly; don't force
+        # every segment to the same RMS (that flattens the voice into a
+        # mechanical monotone). A soft limiter at the end prevents clipping.
+        level = .55 if phone == 'HH' else 1.0
+        samples.extend(level * x for x in segment_samples)
     peak = max((abs(x) for x in samples), default=1.0) or 1.0
     # Louder default level so the voice is clearly audible; loudness/energy
     # still modulate within a loud range.
