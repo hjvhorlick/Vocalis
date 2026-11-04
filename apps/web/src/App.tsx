@@ -631,7 +631,6 @@ function Presets() {
   );
 }
 type SinkAudioContext = AudioContext & { setSinkId?: (deviceId: string) => Promise<void> };
-type SinkMediaElement = HTMLAudioElement & { setSinkId?: (deviceId: string) => Promise<void> };
 type OutputDevices = MediaDevices & { selectAudioOutput?: () => Promise<MediaDeviceInfo> };
 function TTS() {
   const [profiles, setProfiles] = useState<Profile[]>([]);
@@ -648,7 +647,6 @@ function TTS() {
   const [outputBusy, setOutputBusy] = useState(false);
   const [outputNotice, setOutputNotice] = useState('');
   const [mediaReady, setMediaReady] = useState(true);
-  const mediaRequest = useRef(0);
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const resultRef = useRef<HTMLDivElement>(null);
   const contextRef = useRef<AudioContext | null>(null);
@@ -698,35 +696,16 @@ function TTS() {
     return () => URL.revokeObjectURL(audio);
   }, [audio]);
 
+  // The standard HTML player uses the computer's default output unless the
+  // user explicitly chooses another device via the output selector above.
+  // We do not call setSinkId automatically on load — that can fail silently
+  // and block playback entirely. mediaReady is enabled once a WAV is ready.
   useEffect(() => {
-    if (!audio || !audioRef.current) return;
-    const player = audioRef.current as SinkMediaElement;
-    if (!player.setSinkId) {
-      if (sinkId)
-        Promise.resolve().then(() => {
-          setMediaReady(false);
-          setOutputNotice('The standard player cannot select a device in this browser. Direct playback still uses your selected device.');
-        });
-      else Promise.resolve().then(() => setMediaReady(true));
-      return;
-    }
-    const requestRef = mediaRequest;
-    const version = ++requestRef.current;
-    void player
-      .setSinkId(sinkId)
-      .then(() => {
-        if (requestRef.current === version) setMediaReady(true);
-      })
-      .catch(() => {
-        if (requestRef.current === version) {
-          setMediaReady(false);
-          setOutputNotice('The standard player could not use that output. Direct playback still uses your selected device.');
-        }
-      });
-    return () => {
-      requestRef.current++;
-    };
-  }, [audio, sinkId]);
+    if (!audio) return;
+    setMediaReady(true);
+    resultRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    return () => URL.revokeObjectURL(audio);
+  }, [audio]);
 
   useEffect(() => {
     return () => {
@@ -829,9 +808,9 @@ function TTS() {
       if (audioRef.current) audioRef.current.pause();
       audioRef.current!.src = url;
       audioRef.current!.play().catch(() => {
-        // Autoplay may be blocked; the user can click the player controls.
+        // Autoplay may be blocked; show the player controls so the user can click play.
+        setPlaybackMessage('Autoplay blocked — click the Play button on the audio player below.');
       });
-      setPlaybackMessage('');
     } catch {
       setPlaybackMessage('The browser could not play the test sound.');
     }
