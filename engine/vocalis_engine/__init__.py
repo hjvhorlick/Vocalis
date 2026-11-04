@@ -23,8 +23,8 @@ def get_engine_status() -> dict:
     """
     return {
         "version": __version__,
-        "status": "foundation_established",
-        "stage": 1,
+        "status": "experimental_limited_synthesis",
+        "stage": 4,
         "modules": [
             "text", "phonetics", "prosody", "identity", 
             "articulation", "acoustics", "synthesis", "refinement", "audio"
@@ -36,7 +36,7 @@ def get_engine_status() -> dict:
             "unlicensed_model_free": True,
             "copied_code_free": True
         },
-        "note": "Full implementation begins in Stage 2-10. Interface contracts defined in ENGINE_SPECIFICATION.md."
+        "note": "A limited-vocabulary experimental formant synthesizer is available; naturalness and intelligibility are not established."
     }
 
 # Voice DNA Interface (Directive Part D & L)
@@ -55,27 +55,20 @@ class VocalisEngine:
         self.status = get_engine_status()
     
     def process_request(self, text: str, voice_dna: VoiceDNA, pronunciation_config: dict = None):
-        """
-        Input: Text, Voice DNA, Pronunciation configuration
-        Output: Generated audio (WAV), Duration, Sample rate, Metadata, Errors
-        Status: Stage 1 Foundation (Interface shell)
-        """
-        return {
-            "status": "experimental",
-            "message": "Independent engine interface established. Full acoustic generation in Stage 4.",
-            "input_text": text,
-            "voice_dna": {
-                "profile_id": voice_dna.profile_id,
-                "identity_keys": list(voice_dna.identity_profile.keys()),
-                "performance_keys": list(voice_dna.performance_direction.keys())
-            },
-            "pronunciation_config": pronunciation_config,
-            "audio_output": None,
-            "duration_ms": 0,
-            "sample_rate": 0,
-            "metadata": {},
-            "errors": ["Full speech generation not yet implemented (Stage 1 Foundation)"]
-        }
+        """Generate a limited-vocabulary experimental WAV; no general TTS yet."""
+        from .synthesis.experimental import SAMPLE_RATE, UnsupportedText, synthesize
+        import io
+        import wave
+        if pronunciation_config:
+            return {"status": "error", "audio_output": None, "errors": ["Custom pronunciation is not supported yet."]}
+        try:
+            audio = synthesize(text, voice_dna.identity_profile, voice_dna.performance_direction)
+        except UnsupportedText as exc:
+            return {"status": "error", "audio_output": None, "errors": [str(exc)]}
+        with wave.open(io.BytesIO(audio), 'rb') as wav:
+            duration_ms = round(wav.getnframes() * 1000 / SAMPLE_RATE)
+        return {"status": "experimental", "audio_output": audio, "duration_ms": duration_ms,
+                "sample_rate": SAMPLE_RATE, "metadata": {"format": "wav", "channels": 1}, "errors": []}
 
 # Module Imports (Placeholders for Stage 2-10)
 # from .text import normaliser

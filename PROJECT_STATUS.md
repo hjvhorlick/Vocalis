@@ -1,74 +1,10 @@
-# PROJECT STATUS — VOCALIS
-## Version 2.0
-**Last Updated:** 2026-11-04
+# VOCALIS project status
 
-### Current Stage
-**Stage 1: Build the real project foundation** (COMPLETED)
+Updated 2026-11-04. Earlier claims that stages 2–10 were completed were incorrect.
 
-### Implementation Status
+- **Stage 1:** foundation in place.
+- **Stages 2–3:** partial interface and Voice DNA; profiles persist, can be edited/imported/exported, and a subset of settings is validated. Full controls, pronunciation editing and schema migrations remain.
+- **Stages 4–7:** an early independent formant experiment generates WAVs using a small hand-written English lexicon and approximate rules for other words, plus basic numbers and punctuation. Short sentences are accepted, but pronunciations and intelligibility are not established; output is robotic. The user has heard the voice and reported that “world” was nearly right but “hello” was unclear. Most other engine modules remain shells.
+- **Stages 8–10:** not implemented. No trained models, production-quality voices, or quality benchmarks.
 
-#### Completed
-- [x] Inspect repository and environment (Python 3.11.2, Node 22.22.3, npm 10.9.8)
-- [x] Establish project structure (apps, engine, research, models, tests, docs, scripts)
-- [x] Create project documentation (14 files: PROJECT_MASTER, PROJECT_STATUS, ARCHITECTURE, ENGINE_SPECIFICATION, VOICE_DNA_SPECIFICATION, DEVELOPMENT_ROADMAP, TECHNICAL_DECISIONS, RESEARCH_REGISTER, ACOUSTIC_EXPERIMENTS, DATASETS_AND_RIGHTS, MODEL_REGISTER, DEPENDENCIES_AND_LICENCES, TEST_RESULTS, NEXT_STEPS)
-- [x] Create first web application foundation (React/TypeScript/Vite - Dashboard, Studio, Presets, Advanced, Library, TTS, Settings)
-- [x] Implement Voice DNA schema (Identity Profile, Performance Direction, Presets)
-- [x] Establish speech-engine interface (Independent Python package, contracts)
-- [x] Begin acoustic laboratory prototype (Foundation shells for Experiments 1-8)
-- [x] Run tests (Unit tests passed)
-
-#### Partial
-- [ ] Frontend screens (Functional navigation, mock data)
-- [ ] Backend API (FastAPI, SQLite profile management, Engine interface shell)
-- [ ] Engine package initialization (Independent implementation)
-- [ ] Test framework (Unit tests for foundation)
-
-#### Experimental
-- [ ] Acoustic laboratory (Stage 4 - will begin in next session)
-- [ ] Phonetics and articulation mapping (Stage 5 - will begin in next session)
-
-#### Unimplemented
-- [ ] Full speech generation (Independent implementation - Stage 4+)
-- [ ] Voice DNA persistence (SQLite - Stage 3)
-- [ ] Learning system (Duration/Prosody/Articulation predictors - Stage 8)
-- [ ] Long-form speech handling (Stage 11)
-- [ ] API integration (Stage 36)
-
-### Features Completed
-- Repository structure established
-- Documentation framework created (14 files)
-- Frontend foundation (React/TypeScript/Vite) with screens and navigation
-- Backend foundation (Python/FastAPI/SQLite) with profile management and engine interface shell
-- Engine package initialization (Independent Python package, module shells)
-- Test framework (Unit tests for foundation passed)
-- Live Preview: Frontend (Port 5173), Backend API (Port 8000)
-
-### Tests Run
-- Environment verification (Python, Node, npm) - PASSED
-- Directory creation verification - PASSED
-- Unit tests for foundation (4 tests) - PASSED
-- Frontend initialization - PASSED (Live Preview active)
-- Backend initialization - PASSED (Live Preview active)
-
-### Results
-- Project foundation established in `/home/user/Vocalis`
-- Branch: `arena/5f698619-vocalis` (Commit: 10fa58f)
-- Structure compliant with Directive Part K (26)
-- Documentation compliant with Directive Part T (52)
-- Independence compliant with Directive Part B (3)
-- Stage 1 Deliverable: Real, runnable Vocalis project foundation
-
-### Known Problems
-- FFmpeg not found in PATH (will need installation for Stage 4 acoustic experiments)
-- Frontend preview host rejection warning (config updated, server running)
-- No existing code to build upon (starting from scratch - COMPLETED)
-
-### Remaining Tasks (Stage 2 - Build the interface)
-1. Connect frontend screens to real profile data (SQLite)
-2. Implement functional navigation and profile-management features
-3. Label speech preview as unavailable/experimental (Engine connection in Stage 4)
-4. Stage 3: Build Voice DNA (Schema validation, saving/loading/exporting)
-5. Stage 4: Build the acoustic laboratory (Experiment 1: Basic excitation)
-
-### Exact Next Task
-**Begin Stage 2: Build the interface by connecting the frontend screens to the backend API and implementing functional profile management (Stage 3). Then proceed to Stage 4: Build the acoustic laboratory (Experiment 1: Basic excitation).**
+The studio can play experimental audio and attempt headset selection where browser permissions and APIs allow it; otherwise it uses the computer's default output. See NEXT_STEPS.md.

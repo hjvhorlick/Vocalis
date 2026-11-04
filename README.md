@@ -79,3 +79,11 @@ vocalis/
 - Ten development stages (Foundation -> Quality/Production)
 
 **Start inspecting the project and implementing Stage 1 now. Do not stop at planning.**
+
+### Current verified functionality
+The application can create, edit, duplicate, delete, export and import voice profiles in SQLite. A experimental formant synthesizer with short-sentence support and audio preview are now available; speech quality and intelligibility are not established. Earlier claims of completion of later stages were incorrect; see PROJECT_STATUS.md.
+
+To run locally, create a Python virtual environment and install `fastapi`, `uvicorn`, and `pydantic` (version 2), then run `uvicorn main:app --host 0.0.0.0 --port 8000` from `apps/api`. Run `npm install` and `npm run dev -- --host 0.0.0.0` from `apps/web`. The web development server proxies `/api` to the backend. Run tests from the repository root with `PYTHONPATH=engine python -m unittest discover -s tests/unit -v` using the backend environment.
+
+### Experimental speech synthesis
+The Text to speech screen now generates and plays a mono WAV using the independent, hand-built formant prototype. Save a profile first, then try `Hello world.` The studio lists its small hand-authored lexicon; other English words use approximate spelling rules and may be mispronounced. Basic punctuation and whole numbers up to 9999 are supported. This is a limited experiment, not general text-to-speech; output is expected to sound robotic and intelligibility has not yet been established. Pitch, depth, resonance brightness, breathiness, pace, energy and loudness affect generation; other profile controls are not yet connected.

@@ -116,3 +116,8 @@ Versioned JSON format with validation, ranges, defaults, migration rules. Portab
 - Pace speed: 0.5x - 2.0x
 - Energy/Loudness: 0.0 - 1.0
 - Profile version: Incremental migration support
+
+### Implemented profile subset (2026-11-04)
+API profile version 1 currently validates pitch centre (80–800 Hz), pitch fine adjustment (−1–1), depth/resonance contribution, resonance brightness, texture intensity, articulation precision and breathiness intensity (all 0–1). Performance defaults include speaking pace (0.5–2), a defined emotion list, energy, loudness, expressiveness and dramatic intensity (0–1), and pitch-range adjustment (−1–1). Omitted fields receive defaults. Six presets provide editable starting parameter values; they are not trained voices and their sonic effects are not yet known. Identity and performance defaults are stored separately.
+
+Legacy version 1 profiles with the earlier `level` fields can still be read: those fields are retained but are not converted to physical parameters; newly introduced numerical parameters receive defaults. No automatic conversion is claimed. Unsupported profile versions are rejected. Complete validation for other legacy fields, migrations beyond version 1, pronunciation and real engine interpretation remain future work.
