@@ -299,7 +299,9 @@ def synthesize(text: str, identity: dict, performance: dict) -> bytes:
         else:
             samples.extend(segment_samples)
     peak = max((abs(x) for x in samples), default=1.0) or 1.0
-    volume = min(.85, max(.05, .25 + .35*float(loudness) + .15*float(energy)))
+    # Louder default level so the voice is clearly audible; loudness/energy
+    # still modulate within a loud range.
+    volume = min(.92, max(.25, .55 + .30*float(loudness) + .10*float(energy)))
     pcm = b''.join(struct.pack('<h', max(-32767, min(32767, round(x / peak * volume * 32767)))) for x in samples)
     output = io.BytesIO()
     with wave.open(output, 'wb') as wav:
