@@ -162,12 +162,20 @@ def synthesize(text: str, identity: dict, performance: dict) -> bytes:
     prev_noise = 0.0
     prev_glottal = 0.0
     prev_filtered = 0.0
+    total_samples = sum(max(1, round(s.duration * SAMPLE_RATE)) for s in segments)
+    is_question = text.strip().endswith('?')
+    crossfade_len = max(1, round(SAMPLE_RATE * 0.008))
+    carry = []
+    cursor = 0
+    jitter = 1.0
     for index, segment in enumerate(segments):
         phone = segment.phone
         count = max(1, round(segment.duration * SAMPLE_RATE))
         if phone == 'PAUSE':
             samples.extend([0.0] * count)
+            cursor += count
             states = [[0.0, 0.0] for _ in range(3)]
+            carry = []
             prev_glottal = 0.0
             prev_filtered = 0.0
             continue
@@ -192,6 +200,8 @@ def synthesize(text: str, identity: dict, performance: dict) -> bytes:
         coeff = []
         for i in range(count):
             t = i / count
+            pos = cursor + i
+            progress = pos / max(1, total_samples)
             if i % 80 == 0:
                 coeff = []
                 for j in range(3):
@@ -202,7 +212,15 @@ def synthesize(text: str, identity: dict, performance: dict) -> bytes:
                     angle = 2*math.pi*freq/SAMPLE_RATE
                     coeff.append((2*radius*math.cos(angle), radius*radius,
                                   (1-radius) * 2 * math.sin(angle)))
-            phase = (phase + f0 / SAMPLE_RATE) % 1.0
+            if i % 80 == 0:
+                jitter = 1.0 + rng.uniform(-0.01, 0.01)
+            if is_question:
+                contour = 1.0 + 0.07 * progress
+            else:
+                contour = 1.0 - 0.05 * (progress ** 1.5)
+            vib = 1.0 + 0.005 * math.sin(2 * math.pi * 5.5 * pos / SAMPLE_RATE)
+            f0_cur = f0 * contour * vib * jitter
+            phase = (phase + f0_cur / SAMPLE_RATE) % 1.0
             # Glottal opening followed by a fast closure: not a sine-wave beep.
             pulse = math.sin(math.pi * phase / .58) ** 2 if phase < .58 else 0.0
             glottal = (pulse - prev_glottal) * 4
@@ -233,7 +251,16 @@ def synthesize(text: str, identity: dict, performance: dict) -> bytes:
             # than leaving the signal dominated by low-frequency energy.
             radiated = filtered - 0.85 * prev_filtered
             prev_filtered = filtered
-            segment_samples.append(radiated * attack * release)
+            raw = radiated * attack * release
+            if carry and i < crossfade_len:
+                a = i / crossfade_len
+                raw = carry[i] * (1 - a) + raw * a
+            segment_samples.append(raw)
+        if segment_samples:
+            carry = segment_samples[-crossfade_len:]
+        else:
+            carry = []
+        cursor += count
         # Keep brief consonant bursts from determining the loudness of the
         # entire phrase; a soft limiter prevents boosted transients clipping.
         rms = math.sqrt(sum(x*x for x in segment_samples) / len(segment_samples))
