@@ -947,6 +947,9 @@ function TTS() {
       const bytes = await response.arrayBuffer();
       trace('response', { value: bytes.byteLength });
       setAudio(URL.createObjectURL(new Blob([bytes], { type: 'audio/wav' })));
+      // Always enable the standard HTML player as a reliable fallback,
+      // independent of whether Web Audio direct playback works.
+      setMediaReady(true);
       try {
         const decoder = output?.ctx ?? new OfflineAudioContext(1, 1, 16000);
         const decoded = await decoder.decodeAudioData(bytes.slice(0));
