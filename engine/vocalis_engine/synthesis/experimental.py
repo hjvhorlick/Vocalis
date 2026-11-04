@@ -146,7 +146,7 @@ def synthesize(text: str, identity: dict, performance: dict) -> bytes:
     """
     speed = performance.get('speaking_pace', {}).get('speed', 1.0)
     segments = plan(text, speed)
-    f0 = identity.get('pitch', {}).get('centre', 115.0)
+    f0 = identity.get('pitch', {}).get('centre', 100.0)
     depth = identity.get('depth', {}).get('resonance_contribution', .5)
     brightness = identity.get('resonance', {}).get('brightness', .5)
     breathiness = identity.get('breathiness', {}).get('intensity', .2)
@@ -181,7 +181,7 @@ def synthesize(text: str, identity: dict, performance: dict) -> bytes:
     cursor = 0
     jitter = 1.0
     # Map each segment to a word index so stressed words get pitch/loudness lift.
-    # word_counter increments once per word (first phone after a pause/start).
+    # word_counter is 0-based like the stressed set built from the word list.
     seg_word_idx = []
     word_counter = 0
     prev_was_pause = True
@@ -191,8 +191,10 @@ def synthesize(text: str, identity: dict, performance: dict) -> bytes:
             prev_was_pause = True
         else:
             if prev_was_pause:
+                seg_word_idx.append(word_counter)
                 word_counter += 1
-            seg_word_idx.append(word_counter)
+            else:
+                seg_word_idx.append(word_counter - 1)
             prev_was_pause = False
     for index, segment in enumerate(segments):
         phone = segment.phone
@@ -324,7 +326,7 @@ def synthesize(text: str, identity: dict, performance: dict) -> bytes:
     peak = max((abs(x) for x in samples), default=1.0) or 1.0
     # Louder default level so the voice is clearly audible; loudness/energy
     # still modulate within a loud range.
-    volume = min(.95, max(.40, .70 + .22*float(loudness) + .08*float(energy)))
+    volume = min(.98, max(.50, .80 + .15*float(loudness) + .05*float(energy)))
     pcm = b''.join(struct.pack('<h', max(-32767, min(32767, round(x / peak * volume * 32767)))) for x in samples)
     output = io.BytesIO()
     with wave.open(output, 'wb') as wav:
