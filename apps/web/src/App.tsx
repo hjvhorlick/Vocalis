@@ -744,7 +744,17 @@ function TTS() {
   }, []);
 
   const unlockAudio = () => {
-    const ctx = contextRef.current || new AudioContext();
+    let ctx = contextRef.current;
+    // Reuse a running context. If suspended, try to resume it (caller waits
+    // with a timeout so we never hang forever). If closed or unusable,
+    // create a fresh AudioContext.
+    if (ctx && ctx.state === 'running') {
+      return { ctx, resumed: Promise.resolve() };
+    }
+    if (ctx && ctx.state !== 'closed') {
+      return { ctx, resumed: ctx.resume() };
+    }
+    ctx = new AudioContext();
     contextRef.current = ctx;
     return { ctx, resumed: ctx.state === 'running' ? Promise.resolve() : ctx.resume() };
   };
@@ -812,7 +822,13 @@ function TTS() {
     setPlaybackMessage('');
     try {
       const { ctx, resumed } = unlockAudio();
-      await resumed;
+      // Wait for the AudioContext to resume, but never hang forever:
+      // if the browser doesn't resume within 1 second, report the issue
+      // instead of silently doing nothing.
+      await Promise.race([
+        resumed,
+        new Promise((_, reject) => setTimeout(() => reject(new Error('audio context resume timed out')), 1000)),
+      ]);
       if (ctx.state !== 'running') throw new Error('Audio output is not running');
       const osc = ctx.createOscillator();
       const gain = ctx.createGain();
