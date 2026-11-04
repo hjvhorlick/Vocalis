@@ -150,6 +150,10 @@ def synthesize(text: str, identity: dict, performance: dict) -> bytes:
     depth = identity.get('depth', {}).get('resonance_contribution', .5)
     brightness = identity.get('resonance', {}).get('brightness', .5)
     breathiness = identity.get('breathiness', {}).get('intensity', .2)
+    # Articulation precision (0-1): higher = sharper, clearer consonants and
+    # segment boundaries; lower = softer, more relaxed transitions.
+    precision = identity.get('articulation', {}).get('precision', .5)
+    sharpness = .6 + .9 * precision  # 0.6 (relaxed) -> 1.5 (precise)
     energy = performance.get('energy', .5)
     loudness = performance.get('loudness', .5)
     # Frequencies and amplitude are deliberately bounded even for direct callers.
@@ -237,16 +241,21 @@ def synthesize(text: str, identity: dict, performance: dict) -> bytes:
                 source = high_noise * (.32 if phone in {'F','V','TH','DH'} else .48)
                 if phone in VOICED_NOISE: source += glottal * .38
             else:
-                source = glottal + noise * (.04 + .14 * breathiness)
+                # Less breath noise on voiced sounds = less fuzzy voice.
+                source = glottal + noise * (.015 + .09 * breathiness)
             filtered = 0.0
             for j, (c1,c2,gain) in enumerate(coeff):
                 y = gain * source + c1 * states[j][0] - c2 * states[j][1]
                 states[j][1], states[j][0] = states[j][0], y
                 filtered += y * (1.0, .55 + .25*brightness, .22 + .2*brightness)[j]
-            # Frication needs broadband energy beyond the resonators.
-            if phone in FRICATIVES and phone != 'HH': filtered += high_noise * .14
-            attack = min(1.0, i / max(1, SAMPLE_RATE * .012))
-            release = min(1.0, (count-i-1) / max(1, SAMPLE_RATE * .018))
+            # Frication: crisp, defined noise rather than diffuse hiss.
+            if phone in FRICATIVES and phone != 'HH': filtered += high_noise * (.10 if sharpness > 1 else .14)
+            # Articulation precision controls how sharp segment boundaries are:
+            # higher precision = faster attack/release, crisper consonants.
+            attack_rate = .012 * (2.0 - sharpness)
+            release_rate = .018 * (2.0 - sharpness)
+            attack = min(1.0, i / max(1, SAMPLE_RATE * attack_rate))
+            release = min(1.0, (count-i-1) / max(1, SAMPLE_RATE * release_rate))
             # Approximate lip radiation with a gentle differentiator, rather
             # than leaving the signal dominated by low-frequency energy.
             radiated = filtered - 0.85 * prev_filtered
