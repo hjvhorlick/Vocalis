@@ -210,20 +210,20 @@ def synthesize(text: str, identity: dict, performance: dict) -> bytes:
                 coeff = []
                 for j in range(3):
                     freq = (start[j] * (1-t) + end[j] * t) * scale
-                    radius = math.exp(-math.pi * (90 + j * 50) / SAMPLE_RATE)
-                    # Normalize each resonator near its centre frequency. Without
-                    # the sine factor low-frequency poles dominate the output.
+                    # Moderately wider resonator bandwidth = less ringing,
+                    # less hollow tin, while keeping enough high-frequency
+                    # energy for clarity.
+                    radius = math.exp(-math.pi * (120 + j * 70) / SAMPLE_RATE)
                     angle = 2*math.pi*freq/SAMPLE_RATE
                     coeff.append((2*radius*math.cos(angle), radius*radius,
                                   (1-radius) * 2 * math.sin(angle)))
-            if i % 80 == 0:
-                jitter = 1.0 + rng.uniform(-0.01, 0.01)
+            # Keep pitch steady (no vibrato/jitter wobble); only the phrase
+            # contour moves slightly.
             if is_question:
-                contour = 1.0 + 0.07 * progress
+                contour = 1.0 + 0.05 * progress
             else:
-                contour = 1.0 - 0.05 * (progress ** 1.5)
-            vib = 1.0 + 0.005 * math.sin(2 * math.pi * 5.5 * pos / SAMPLE_RATE)
-            f0_cur = f0 * contour * vib * jitter
+                contour = 1.0 - 0.04 * (progress ** 1.5)
+            f0_cur = f0 * contour
             phase = (phase + f0_cur / SAMPLE_RATE) % 1.0
             # Glottal opening followed by a fast closure: not a sine-wave beep.
             pulse = math.sin(math.pi * phase / .58) ** 2 if phase < .58 else 0.0
@@ -258,6 +258,8 @@ def synthesize(text: str, identity: dict, performance: dict) -> bytes:
             release = min(1.0, (count-i-1) / max(1, SAMPLE_RATE * release_rate))
             # Approximate lip radiation with a gentle differentiator, rather
             # than leaving the signal dominated by low-frequency energy.
+            # Soften the lip-radiation differentiator slightly: less thin edge
+            # while keeping enough high-frequency energy for clarity.
             radiated = filtered - 0.85 * prev_filtered
             prev_filtered = filtered
             raw = radiated * attack * release
