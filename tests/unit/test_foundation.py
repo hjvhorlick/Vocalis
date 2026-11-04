@@ -19,8 +19,8 @@ class TestVocalisFoundation(unittest.TestCase):
         """Test Stage 1 Foundation status"""
         status = get_engine_status()
         self.assertEqual(status["version"], "2.0.0")
-        self.assertEqual(status["stage"], 4)
-        self.assertEqual(status["status"], "experimental_limited_synthesis")
+        self.assertEqual(status["stage"], 10)
+        self.assertEqual(status["status"], "implemented")
         self.assertTrue(status["independence_compliance"]["piper_free"])
 
     def test_voice_dna_structure(self):
