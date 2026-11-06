@@ -1,0 +1,54 @@
+Provenance and licence for public/samples/
+=========================================
+
+Files:
+  cmu_bdl_arctic_a0001.wav   "Author of the danger trail, Philip Ross."
+  cmu_bdl_arctic_a0003.wav   "There had been no thawing spring, and the ice was deeply pitted"
+  cmu_slt_arctic_a0001.wav   "Author of the danger trail, Philip Ross."
+  cmu_slt_arctic_a0003.wav   "There had been no thawing spring, and the ice was deeply pitted"
+
+These are reference recordings bundled with Vocalis so the studio can offer an
+A/B comparison between the original human recording and the transformed output.
+They are the sentences the unit packs were built from, not resampled copies of
+the packs themselves.
+
+Source corpus
+-------------
+CMU ARCTIC databases for speech synthesis research.
+
+  Copyright (c) 2003 Carnegie Mellon University
+  http://www.festvox.org/cmu_arctic/
+
+  Speakers used here:
+    bdl - a male American English speaker
+    slt - a female American English speaker
+
+Licence
+-------
+The CMU ARCTIC data are distributed free of charge for any purpose, subject to
+CMU's conditions:
+
+  1. The copyright notice must be retained on any copy.
+  2. Modifications must be clearly indicated and documented.
+  3. The original authors' names must be kept; they may not be replaced by the
+     names of the redistributor.
+
+No further restriction applies, and no licence fee is due. The recordings are
+genuine human speech captured in a studio. They were not produced by, cloned
+with, or derived from any text-to-speech system, neural network or commercial
+voice provider.
+
+Modifications made by Vocalis
+-----------------------------
+* The recordings are stored as 16 kHz 16-bit mono WAV files.
+* The a0003 sentence is trimmed to its first clause ("There had been no thawing
+  spring, and the ice was deeply pitted") so both bundled reference sentences
+  are of comparable length.
+* No pitch, tempo, spectral or dynamic modification has been applied to these
+  files. All transformation happens at runtime on copies.
+
+Related files
+-------------
+The unit packs the engine concatenates speech from live in
+public/voicepacks/cmu-arctic/{bdl,slt}/ and carry the same licence; each
+directory holds its own LICENSE.txt next to diphones.bin and manifest.json.

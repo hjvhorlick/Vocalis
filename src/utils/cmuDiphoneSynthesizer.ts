@@ -23,8 +23,8 @@
  *
  * When a diphone is missing — the packs cover 79.5 % of the pairs a passage
  * needs — the transition is assembled from two half units of the SAME speaker:
- * the second half of `a` taken from any `a|x` unit, and the first half of `b`
- * from any `y|b` unit. `x` and `y` are chosen for how naturally they follow or
+ * the second half of `a` cut out of any `a|x` unit, and the first half of `b`
+ * out of any `y|b` unit. `x` and `y` are chosen for how naturally they follow or
  * precede, by phone class and by how close the unit's own length is to the
  * corpus mean, so the borrowed audio is a transition that could really have
  * occurred. Only when no half unit exists does the caller's mathematical

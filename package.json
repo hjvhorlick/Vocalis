@@ -6,6 +6,8 @@
   "scripts": {
     "dev": "tsx server.ts",
     "build": "tsc && vite build",
+    "test:engine": "tsx tests/textAnalysis.test.ts",
+    "test:render": "tsx --max-old-space-size=3072 tests/renderSpeech.test.ts",
     "start": "node server.ts",
     "preview": "vite preview --host 0.0.0.0 --port 3000",
     "lint": "tsc --noEmit",
