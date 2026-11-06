@@ -131,7 +131,13 @@ const CONSONANTS = new Set([
  * five zero". Hyphens do the opposite — they separate, so "blue-green" is looked
  * up as two words that the dictionary actually knows.
  */
-export function tokenize(text: string): Token[] {
+export function tokenize(input: string): Token[] {
+  // A typographic minus sign (U+2212) in front of a number says exactly what a
+  // hyphen-minus says, so both read "negative seventy". En and em dashes are
+  // deliberately left alone: they are clause boundaries, not signs. The
+  // replacement is character for character, so every offset still points at the
+  // caller's own string.
+  const text = input.replace(/[\u2212\uFF0D]/g, '-');
   const tokens: Token[] = [];
   let index = 0;
   while (index < text.length) {
@@ -168,6 +174,15 @@ export function tokenize(text: string): Token[] {
         else if ((c === ',' || c === '.' || c === ':' || c === '/') && /[0-9]/.test(next)) stop += 1;
         else break;
       }
+      // An ordinal suffix belongs to its number, so "3rd" arrives as one token
+      // and can be spoken as "third" instead of "three" plus a stray "rd". The
+      // suffix must not be the start of a longer word ("3 street" is not one).
+      const suffix = text.slice(stop, stop + 2).toLowerCase();
+      const ordinalSuffix =
+        /[0-9]/.test(text[stop - 1] ?? '') &&
+        (suffix === 'st' || suffix === 'nd' || suffix === 'rd' || suffix === 'th') &&
+        !/[A-Za-z]/.test(text[stop + 2] ?? '');
+      if (ordinalSuffix) stop += 2;
       // A token must always consume something, or the scan stalls here forever.
       if (stop === index) stop = index + 1;
       tokens.push({ text: text.slice(index, stop), charIndex: index, charLength: stop - index, kind: 'number' });
@@ -232,6 +247,33 @@ function splitWords(words: string[]): string[] {
 }
 
 /**
+ * The ordinal form of each cardinal word a number can end with.
+ *
+ * Only the last word changes: "twenty-one" becomes "twenty-first" and "one
+ * hundred" becomes "one hundredth", which is how ordinals are read aloud.
+ */
+const ORDINALS: Record<string, string> = {
+  zero: 'zeroth', one: 'first', two: 'second', three: 'third', four: 'fourth',
+  five: 'fifth', six: 'sixth', seven: 'seventh', eight: 'eighth', nine: 'ninth',
+  ten: 'tenth', eleven: 'eleventh', twelve: 'twelfth', thirteen: 'thirteenth',
+  fourteen: 'fourteenth', fifteen: 'fifteenth', sixteen: 'sixteenth',
+  seventeen: 'seventeenth', eighteen: 'eighteenth', nineteen: 'nineteenth',
+  twenty: 'twentieth', thirty: 'thirtieth', forty: 'fortieth', fifty: 'fiftieth',
+  sixty: 'sixtieth', seventy: 'seventieth', eighty: 'eightieth', ninety: 'ninetieth',
+  hundred: 'hundredth', thousand: 'thousandth', million: 'millionth',
+  billion: 'billionth', trillion: 'trillionth',
+};
+
+/** Speak an ordinal: 3rd is "third", 21st is "twenty-first", 100th is "one hundredth". */
+export function ordinalToWords(input: string | number): string[] {
+  const words = numberToWords(input);
+  if (!words.length) return [];
+  const last = words[words.length - 1];
+  words[words.length - 1] = ORDINALS[last] ?? `${last}th`;
+  return words;
+}
+
+/**
  * Speak an integer the way a person reads it.
  *
  * Grouped by thousands, with "and" before the trailing tens, so 1250 is "one
@@ -285,6 +327,7 @@ const ABBREVIATIONS: Record<string, string> = {
   // Letter names spelled as words the dictionary actually contains, so "6:30
   // a.m." is spoken "six thirty ay em" without a guessed pronunciation.
   am: 'ay em', pm: 'pee em', ad: 'ay dee', bc: 'bee see',
+  eg: 'for example', ie: 'that is',
   jan: 'january', feb: 'february', mar: 'march', apr: 'april', jun: 'june',
   jul: 'july', aug: 'august', sep: 'september', sept: 'september', oct: 'october',
   nov: 'november', dec: 'december',
@@ -312,7 +355,7 @@ export function isAbbreviation(word: string): boolean {
 /** Letters spoken as letters, for initials and unknown acronyms. */
 export function letterToPhones(letter: string): string[] {
   const map: Record<string, string[]> = {
-    a: ['EY1', 'L'], b: ['B', 'IY1'], c: ['S', 'IY1'], d: ['D', 'IY1'], e: ['IY1'],
+    a: ['EY1'], b: ['B', 'IY1'], c: ['S', 'IY1'], d: ['D', 'IY1'], e: ['IY1'],
     f: ['EH1', 'F'], g: ['JH', 'IY1'], h: ['EY1', 'CH'], i: ['AY1'], j: ['JH', 'EY1'],
     k: ['K', 'EY1'], l: ['EH1', 'L'], m: ['EH1', 'M'], n: ['EH1', 'N'], o: ['OW1'],
     p: ['P', 'IY1'], q: ['K', 'Y', 'UW1'], r: ['AA1', 'R'], s: ['EH1', 'S'],
@@ -363,6 +406,13 @@ export function spokenFormsOf(token: Token): string[] {
   // The sign is spoken by `negative` below, so it must not also be carried into
   // numberToWords, which reads a leading '-' as a sign of its own.
   const cleaned = raw.replace(/[$£€¥%,\s-]/g, '');
+
+  // An ordinal reads as one word: "3rd" is "third", never "three" plus "rd".
+  const ordinal = cleaned.match(/^(\d+)(?:st|nd|rd|th)$/i);
+  if (ordinal) {
+    const spoken = ordinalToWords(ordinal[1]);
+    return negative ? ['negative', ...spoken] : spoken;
+  }
 
   if (cleaned.includes(':')) {
     const [hours, minutes] = cleaned.split(':');
@@ -422,6 +472,9 @@ export function spokenFormsOf(token: Token): string[] {
 // Boundaries
 // ---------------------------------------------------------------------------
 
+/** A run of single letters with dots between them: "J.K", "J.K.", "K". */
+const INITIALS = /^(?:[A-Za-z]\.)*[A-Za-z]$/;
+
 const SENTENCE_END = /[.!?…]/;
 const CLAUSE_END = /[,;:\u2014\u2013]/;
 const QUOTE_CLOSER = /["'”’)\]]/;
@@ -447,7 +500,7 @@ export function trailingBoundary(token: Token, previousWord?: string): BoundaryK
   if (SENTENCE_END.test(text)) {
     if (text === '.' && previousWord) {
       const bare = previousWord.replace(/[.’']/g, '');
-      if (isAbbreviation(bare) || bare.length === 1) return 'clause';
+      if (isAbbreviation(bare) || INITIALS.test(previousWord)) return 'clause';
     }
     return 'sentence';
   }
