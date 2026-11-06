@@ -181,7 +181,7 @@ def synthesize(text: str, identity: dict, performance: dict) -> bytes:
     """
     speed = performance.get('speaking_pace', {}).get('speed', 1.0)
     segments = plan(text, speed)
-    f0 = identity.get('pitch', {}).get('centre', 85.0)
+    f0 = identity.get('pitch', {}).get('centre', 160.0)
     depth = identity.get('depth', {}).get('resonance_contribution', .5)
     brightness = identity.get('resonance', {}).get('brightness', .5)
     breathiness = identity.get('breathiness', {}).get('intensity', .2)
