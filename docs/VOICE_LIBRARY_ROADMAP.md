@@ -8,7 +8,7 @@ Offer a broad set of **descriptive roles**, not celebrity names or implied voice
 
 Any future recorded-speech profile must explicitly identify its licensed corpus/speaker. Persona descriptions must not imply a new recorded voice when the profile only transforms an existing source. Do not claim a regional accent unless supported by validated pronunciation rules or a suitable licensed recording corpus.
 
-The role ideas below are inspired by the persona descriptions in [Scenering's voice preset catalogue](https://github.com/hjvhorlick/Scenering/blob/main/src/data/voice-presets.ts). They are a backlog, not a request to add all of them now.
+The role ideas below are Vocalis's own backlog of descriptive personas, written for this project. They are not a request to add all of them now, and they are not derived from any other project's preset data: per `BASE_VOICE_CONTRACT.md` §3 no external source or data file is copied into this repository, so persona names, descriptions and parameter sets are authored here.
 
 ## Planned persona ideas
 
