@@ -28,17 +28,17 @@ export const DialogueStudio: React.FC<DialogueStudioProps> = ({ models }) => {
     {
       id: '2',
       speakerId: 'B',
-      text: 'Loud and clear, Aria. The vocal pitch and articulation sound completely human now.',
+      text: 'Loud and clear, Aria. The new profile has a different pitch and timbre.'
     },
     {
       id: '3',
       speakerId: 'A',
-      text: 'No more robotic beeps or abstract tones. We are speaking real intelligible words.',
+      text: 'The text is mapped to phonemes, then assembled from recorded CMU speech units.'
     },
     {
       id: '4',
       speakerId: 'B',
-      text: 'Exactly. Every syllable is pronounced with natural inflection and distinct character.',
+      text: 'Exactly. The pronunciation dictionary and local synthesis rules shape each spoken line.'
     },
   ]);
 
@@ -118,7 +118,7 @@ export const DialogueStudio: React.FC<DialogueStudioProps> = ({ models }) => {
             Dual-Voice Dialogue & Screenplay
           </h3>
           <p className="text-xs text-slate-400">
-            Hear two distinct custom voices speak real words in back-and-forth conversation
+            Compare two locally synthesized voice profiles in a back-and-forth conversation
           </p>
         </div>
 
@@ -245,7 +245,7 @@ export const DialogueStudio: React.FC<DialogueStudioProps> = ({ models }) => {
           </button>
 
           <span className="text-xs text-slate-500 font-mono">
-            {lines.length} lines &bull; Speaks real human words
+            {lines.length} lines &bull; local CMU diphone synthesis
           </span>
         </div>
       </div>

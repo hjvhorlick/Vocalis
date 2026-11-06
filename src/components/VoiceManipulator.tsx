@@ -1,10 +1,5 @@
-import React, { useState, useEffect } from 'react';
-import {
-  VoiceModelConfig,
-  getAvailableSystemVoices,
-  speakRealWords,
-  stopSpeaking,
-} from '../utils/naturalVoiceEngine';
+import React, { useState } from 'react';
+import { VoiceModelConfig, speakRealWords, stopSpeaking } from '../utils/naturalVoiceEngine';
 import {
   Sliders,
   Volume2,
@@ -33,21 +28,7 @@ export const VoiceManipulator: React.FC<VoiceManipulatorProps> = ({
 }) => {
   const [isAuditioning, setIsAuditioning] = useState(false);
   const [activeWordChar, setActiveWordChar] = useState<{ start: number; length: number } | null>(null);
-  const [systemVoices, setSystemVoices] = useState<SpeechSynthesisVoice[]>([]);
   const [savedToast, setSavedToast] = useState(false);
-
-  // Load browser voices
-  useEffect(() => {
-    const loadVoices = () => {
-      const v = getAvailableSystemVoices();
-      setSystemVoices(v);
-    };
-
-    loadVoices();
-    if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
-      window.speechSynthesis.onvoiceschanged = loadVoices;
-    }
-  }, []);
 
   const handleAudition = () => {
     if (isAuditioning) {
@@ -216,10 +197,39 @@ export const VoiceManipulator: React.FC<VoiceManipulatorProps> = ({
         </div>
       </div>
 
-      {/* Tone Style & Native Voice Selector */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 pt-1">
-        {/* Tone Styles */}
-        <div className="lg:col-span-7 space-y-2">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        <label className="space-y-1.5 text-[11px] font-semibold uppercase tracking-wider text-slate-400">
+          Recorded base voice / register
+          <select
+            value={voice.gender}
+            onChange={(e) => onUpdateVoice({ ...voice, gender: e.target.value as VoiceModelConfig['gender'] })}
+            className="w-full mt-1 bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-sm normal-case tracking-normal text-slate-200"
+          >
+            <option value="Female">Higher register</option>
+            <option value="Male">Lower register</option>
+            <option value="Neutral">Middle register</option>
+          </select>
+          <span className="block normal-case tracking-normal font-normal text-slate-500">Selects CMU ARCTIC's recorded female or male base voice; pitch and pace then shape the result.</span>
+        </label>
+        <label className="space-y-1.5 text-[11px] font-semibold uppercase tracking-wider text-slate-400">
+          Pronunciation accent
+          <select
+            value={voice.accent}
+            onChange={(e) => onUpdateVoice({ ...voice, accent: e.target.value as VoiceModelConfig['accent'] })}
+            className="w-full mt-1 bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-sm normal-case tracking-normal text-slate-200"
+          >
+            <option value="US">US English</option>
+            <option value="UK">UK English</option>
+            <option value="AU">Australian English</option>
+            <option value="Global">Global (North American base)</option>
+          </select>
+          <span className="block normal-case tracking-normal font-normal text-slate-500">Accent changes are rule-based approximations, not recordings.</span>
+        </label>
+      </div>
+
+      {/* Synthesizer character controls. These alter the locally generated waveform. */}
+      <div className="grid grid-cols-1 gap-5 pt-1">
+        <div className="space-y-2">
           <label className="text-[11px] font-semibold uppercase tracking-wider text-slate-400 block">
             Acoustic Character & Delivery Tone
           </label>
@@ -246,25 +256,6 @@ export const VoiceManipulator: React.FC<VoiceManipulatorProps> = ({
             ))}
           </div>
         </div>
-
-        {/* Native Vocal Engine Mapping */}
-        <div className="lg:col-span-5 space-y-2">
-          <label className="text-[11px] font-semibold uppercase tracking-wider text-slate-400 block">
-            Underlying Device Voice
-          </label>
-          <select
-            value={voice.systemVoiceURI || ''}
-            onChange={(e) => onUpdateVoice({ ...voice, systemVoiceURI: e.target.value })}
-            className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-slate-200 focus:outline-none focus:ring-1 focus:ring-indigo-500"
-          >
-            <option value="">Auto-Pair Authentic {voice.accent} Accent ({voice.gender})</option>
-            {systemVoices.map((v) => (
-              <option key={v.voiceURI} value={v.voiceURI}>
-                {v.name} ({v.lang})
-              </option>
-            ))}
-          </select>
-        </div>
       </div>
 
       {/* Audition Bar for the Manipulated Voice */}
@@ -272,7 +263,7 @@ export const VoiceManipulator: React.FC<VoiceManipulatorProps> = ({
         <div className="w-full sm:flex-1">
           <div className="text-[11px] font-semibold uppercase tracking-wider text-slate-400 mb-1 flex items-center gap-1.5">
             <Volume2 className="w-3.5 h-3.5 text-indigo-400" />
-            <span>Audition Manipulated Voice (Real Spoken Words):</span>
+            <span>Audition Locally Synthesized Voice:</span>
           </div>
           {isAuditioning && activeWordChar ? (
             <p className="text-xs text-slate-200 leading-relaxed font-sans">

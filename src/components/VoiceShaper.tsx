@@ -1,10 +1,5 @@
-import React, { useState, useEffect } from 'react';
-import {
-  VoiceModelConfig,
-  getAvailableSystemVoices,
-  speakRealWords,
-  stopSpeaking,
-} from '../utils/naturalVoiceEngine';
+import React, { useState } from 'react';
+import { VoiceModelConfig, speakRealWords, stopSpeaking } from '../utils/naturalVoiceEngine';
 import {
   Sliders,
   Play,
@@ -35,37 +30,7 @@ export const VoiceShaper: React.FC<VoiceShaperProps> = ({
   const [activeWordRange, setActiveWordRange] = useState<{ start: number; length: number } | null>(
     null
   );
-  const [accentFilter, setAccentFilter] = useState<'all-en' | 'us' | 'gb' | 'au' | 'all'>('all-en');
-  const [allVoices, setAllVoices] = useState<SpeechSynthesisVoice[]>([]);
-  const [systemVoices, setSystemVoices] = useState<SpeechSynthesisVoice[]>([]);
   const [savedToast, setSavedToast] = useState(false);
-
-  // Load browser voices
-  useEffect(() => {
-    const loadVoices = () => {
-      const v = getAvailableSystemVoices();
-      setAllVoices(v);
-    };
-
-    loadVoices();
-    if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
-      window.speechSynthesis.onvoiceschanged = loadVoices;
-    }
-  }, []);
-
-  useEffect(() => {
-    if (accentFilter === 'all') {
-      setSystemVoices(allVoices);
-    } else if (accentFilter === 'us') {
-      setSystemVoices(allVoices.filter((v) => v.lang.toLowerCase().includes('en-us') || v.lang.toLowerCase().includes('en_us')));
-    } else if (accentFilter === 'gb') {
-      setSystemVoices(allVoices.filter((v) => v.lang.toLowerCase().includes('en-gb') || v.lang.toLowerCase().includes('en_gb')));
-    } else if (accentFilter === 'au') {
-      setSystemVoices(allVoices.filter((v) => v.lang.toLowerCase().includes('en-au') || v.lang.toLowerCase().includes('en-nz')));
-    } else {
-      setSystemVoices(allVoices.filter((v) => v.lang.toLowerCase().startsWith('en')));
-    }
-  }, [allVoices, accentFilter]);
 
   const handleAudition = () => {
     if (isSpeaking) {
@@ -108,11 +73,10 @@ export const VoiceShaper: React.FC<VoiceShaperProps> = ({
             Voice Creation & Acoustic Shaper
           </div>
           <h2 className="text-2xl sm:text-3xl font-extrabold text-white tracking-tight">
-            Craft Custom Human Voice Characters
+            Shape Local Synthetic Voice Profiles
           </h2>
           <p className="text-slate-400 text-sm mt-1">
-            Shape vocal pitch, cadence pacing, timbre inflection, and resonant tone. Every setting
-            speaks clear, intelligible human words out loud through your speakers.
+            Shape pitch, pacing, pronunciation, and timbre in a local concatenative synthesizer. Profiles use licensed CMU ARCTIC recordings, not an AI voice model.
           </p>
         </div>
       </div>
@@ -187,56 +151,6 @@ export const VoiceShaper: React.FC<VoiceShaperProps> = ({
                 ))}
               </div>
             </div>
-
-            {/* Base System Voice Selection */}
-            {allVoices.length > 0 && (
-              <div className="space-y-1.5">
-                <div className="flex items-center justify-between">
-                  <label className="text-[11px] font-semibold uppercase tracking-wider text-slate-400 block">
-                    Vocal Base Engine
-                  </label>
-                  <span className="text-[10px] text-slate-500 font-mono">
-                    {systemVoices.length} voices
-                  </span>
-                </div>
-
-                {/* Accent Filters */}
-                <div className="flex flex-wrap gap-1 pb-1">
-                  {[
-                    { id: 'all-en', label: 'All English' },
-                    { id: 'us', label: 'US (North America)' },
-                    { id: 'gb', label: 'UK (British)' },
-                    { id: 'au', label: 'AU / NZ' },
-                    { id: 'all', label: 'All Languages' },
-                  ].map((af) => (
-                    <button
-                      key={af.id}
-                      onClick={() => setAccentFilter(af.id as any)}
-                      className={`text-[10px] px-2 py-0.5 rounded-lg border transition-colors ${
-                        accentFilter === af.id
-                          ? 'bg-indigo-600 text-white border-indigo-500'
-                          : 'bg-slate-950 text-slate-400 border-slate-800 hover:text-slate-200'
-                      }`}
-                    >
-                      {af.label}
-                    </button>
-                  ))}
-                </div>
-
-                <select
-                  value={model.systemVoiceURI || ''}
-                  onChange={(e) => onUpdateModel({ ...model, systemVoiceURI: e.target.value })}
-                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-slate-200"
-                >
-                  <option value="">Auto-Match Natural Voice ({model.gender})</option>
-                  {systemVoices.map((v) => (
-                    <option key={v.voiceURI} value={v.voiceURI}>
-                      {v.name} &bull; {v.lang}
-                    </option>
-                  ))}
-                </select>
-              </div>
-            )}
 
             {/* Tone Style Mode */}
             <div>
@@ -363,7 +277,7 @@ export const VoiceShaper: React.FC<VoiceShaperProps> = ({
             {/* Audition Stage */}
             <div className="pt-4 border-t border-slate-800 space-y-3">
               <label className="text-[11px] font-semibold uppercase tracking-wider text-slate-400 flex items-center justify-between">
-                <span>Audition Sentence (Real Spoken Words)</span>
+                <span>Audition Synthesized Sentence</span>
                 <span className="text-[10px] text-indigo-400 font-normal">
                   Click below to hear actual words spoken aloud
                 </span>
@@ -408,7 +322,7 @@ export const VoiceShaper: React.FC<VoiceShaperProps> = ({
                     </>
                   ) : (
                     <>
-                      <Play className="w-3.5 h-3.5 fill-current" /> Hear Real Spoken Words
+                      <Play className="w-3.5 h-3.5 fill-current" /> Hear Synthesized Voice
                     </>
                   )}
                 </button>
