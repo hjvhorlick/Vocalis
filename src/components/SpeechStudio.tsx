@@ -38,7 +38,7 @@ export const SpeechStudio: React.FC<SpeechStudioProps> = ({
   onSaveTake,
 }) => {
   const [scriptText, setScriptText] = useState<string>(
-    'Welcome to Vocalis Voice Studio. Vocalis builds this speech locally from recorded CMU ARCTIC sound units.'
+    'Welcome to Vocalis Voice Studio. Vocalis generates speech locally with mathematical formant synthesis.'
   );
   const [copied, setCopied] = useState(false);
 
@@ -351,7 +351,7 @@ export const SpeechStudio: React.FC<SpeechStudioProps> = ({
               rows={5}
               value={scriptText}
               onChange={(e) => setScriptText(e.target.value)}
-              placeholder="Enter text to synthesize from CMU ARCTIC speech units..."
+              placeholder="Enter text to synthesize with the selected local voice method..."
               className="w-full bg-slate-950 border border-slate-800 rounded-2xl p-4 text-sm text-slate-100 placeholder-slate-600 focus:outline-none focus:ring-2 focus:ring-indigo-500 font-sans leading-relaxed resize-y"
             />
           )}
@@ -441,7 +441,7 @@ export const SpeechStudio: React.FC<SpeechStudioProps> = ({
           </div>
 
           <span className="text-xs text-slate-500">
-            CMU ARCTIC recordings joined by phoneme · no AI or cloud TTS
+            {activeModel.synthesisMethod === 'cmu-arctic' ? 'Experimental CMU ARCTIC recorded units' : 'Mathematical formant voice'} · no AI or cloud TTS
           </span>
         </div>
       </div>
@@ -455,7 +455,7 @@ export const SpeechStudio: React.FC<SpeechStudioProps> = ({
               <div>
                 <h4 className="font-bold text-white text-sm">Locally Synthesized Speech (WAV)</h4>
                 <span className="text-[10px] text-emerald-400 font-mono">
-                  Recorded diphone unit selection &bull; no AI or cloud TTS
+                  {activeModel.synthesisMethod === 'cmu-arctic' ? 'Experimental recorded units' : 'Mathematical formant synthesis'} &bull; no AI or cloud TTS
                 </span>
               </div>
             </div>

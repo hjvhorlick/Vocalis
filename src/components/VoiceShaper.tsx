@@ -76,7 +76,7 @@ export const VoiceShaper: React.FC<VoiceShaperProps> = ({
             Shape Local Synthetic Voice Profiles
           </h2>
           <p className="text-slate-400 text-sm mt-1">
-            Shape pitch, pacing, pronunciation, and timbre in a local concatenative synthesizer. Profiles use licensed CMU ARCTIC recordings, not an AI voice model.
+            Shape pitch, pacing, pronunciation, and timbre in a local synthesizer. Mathematical formant generation is the default; CMU ARCTIC recordings are available as an experimental alternative. No AI or cloud TTS is used.
           </p>
         </div>
       </div>

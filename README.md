@@ -1,24 +1,23 @@
 # Vocalis
 
-Vocalis is a browser-based, non-neural text-to-speech application. It assembles speech from recorded CMU ARCTIC audio units using classical diphone concatenation. It does not call a browser TTS engine, an AI model, or a cloud speech service.
+Vocalis is a browser-based, non-AI speech synthesizer. Its default voice is generated mathematically from phonemes using harmonic excitation, vocal-formant filters, timing, and prosody. It does not depend on a browser/system TTS engine, cloud service, neural model, or voice-cloning system.
 
-## How synthesis works
+## Complete speech workflow
 
-1. Text is split into words and looked up in the bundled CMU Pronouncing Dictionary (124,076 English entries). Numbers are expanded and unfamiliar words use spelling-to-sound rules; users can save local pronunciation hints for names or exceptions.
-2. The phoneme sequence is matched to compact, time-aligned diphone banks extracted from CMU ARCTIC 0.95 recordings. Vocalis selects and joins the recorded units, crossfades joins, and writes PCM WAV audio locally.
-3. The recorded base is selected by register: BDL is the male US-English recording, and SLT is the female US-English recording. Pitch, rate, volume, and timbre controls modify the assembled audio; styles are signal-processing effects, not separately trained voices.
+1. **Text preparation:** words and numbers are tokenized; numbers are expanded into words, punctuation controls pauses, and ordinary spaces stay closely connected.
+2. **Pronunciation:** Vocalis looks up words in the bundled CMU Pronouncing Dictionary (124,076 entries), preserves vowel stress, and applies local spelling-to-sound rules when a word is not found. Users can store pronunciation hints in browser storage.
+3. **Default mathematical voice:** each phoneme is generated locally from a harmonic source and time-varying formant values. Phoneme durations follow stress and rate; pitch, register, and delivery style shape the signal. Adjacent phones are smoothly joined. No source speech recording is used in this mode.
+4. **Playback and export:** the same synthesis function powers voice auditions, the Speech Studio, dialogue playback, and PCM WAV export. Word highlighting follows synthesized audio timing. No audio is sent to a server.
 
-The two compact unit banks are in `public/voicepacks/cmu-arctic/`. They contain 1,337 BDL and 1,324 SLT diphones at 16 kHz. The source recordings were labeled automatically by the original corpus; unit joins can therefore sound rough, and unsupported diphones use a deterministic formant fallback. UK and Australian choices currently apply pronunciation rules to US-English source material—they are approximations, not recordings of those accents.
+A second method, **CMU ARCTIC recordings (experimental)**, is available from the voice controls for comparison. It joins selected units from CMU ARCTIC 0.95 speaker recordings. Its joins can sound rough; it is not the default or the quality target for the mathematical voice. The unit banks contain 1,337 BDL (male US English) and 1,324 SLT (female US English) diphones at 16 kHz. UK and Australian settings are rule-based approximations, not authentic regional recordings.
 
-The displayed persona names and descriptions (for example, Storyteller or Presenter) are intended-use profiles over these two base speakers, not extra recorded identities. No voice training happens in the app. Custom voice settings and pronunciation hints are stored in the browser.
+## Voice profiles
 
-## Voice library plans
-
-The planned persona and accent catalog is documented separately in [`docs/VOICE_LIBRARY_ROADMAP.md`](docs/VOICE_LIBRARY_ROADMAP.md). Those future personas are specifications only; they are not active voices yet.
+The active profiles are descriptive delivery presets, not separate human recordings or cloned identities. They adjust register, pitch, speed, pronunciation rules, and signal-processing character over the local synthesizer. Only US English male/female characteristics are supported by the optional CMU recordings. Accent and persona labels do not claim new authentic speakers.
 
 ## Attribution and licenses
 
-The source voice recordings and labels come from the CMU ARCTIC corpus, Carnegie Mellon University; corpus authors John Kominek and Alan W. Black; Copyright © 2003. Vocalis has extracted and repackaged selected, time-aligned diphone units; the full CMU notices and disclaimers are included next to each speaker bank and are linked from the app's **Credits & licenses** footer item. The pronunciation dictionary notice is in `public/CMUDICT-LICENSE.txt`.
+The optional recorded-unit method uses CMU ARCTIC material from Carnegie Mellon University; corpus authors John Kominek and Alan W. Black; Copyright © 2003. Vocalis extracted and repackaged selected, time-aligned diphone units. Full CMU notices and disclaimers are retained alongside each speaker bank and linked from the app's **Credits & licenses** item. The pronunciation dictionary notice is in `public/CMUDICT-LICENSE.txt`.
 
 ## Run locally
 

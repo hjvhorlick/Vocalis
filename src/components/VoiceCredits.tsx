@@ -40,10 +40,9 @@ export const VoiceCredits: React.FC = () => {
             <div className="space-y-4 text-sm leading-relaxed text-slate-300">
               <p>
                 <strong className="text-white">CMU ARCTIC 0.95</strong> — Carnegie Mellon University,
-                John Kominek, and Alan W. Black; Copyright © 2003. Vocalis uses labeled recordings from
-                speaker BDL (US English male) and speaker SLT (US English female). The recordings were converted into compact,
-                time-aligned diphone banks for local concatenative synthesis; the source is not a
-                neural voice model.
+                John Kominek, and Alan W. Black; Copyright © 2003. The optional experimental unit-synthesis method uses labeled recordings from
+                speaker BDL (US English male) and speaker SLT (US English female). The recordings were extracted into compact,
+                time-aligned diphone banks for local concatenation; they are not neural-generated. The default mathematical-formant method does not use these recordings.
               </p>
               <p className="text-xs text-slate-400">
                 The CMU license requires its copyright notice, conditions and disclaimer to be retained;

@@ -174,7 +174,7 @@ export async function savePronunciationSpelling(word: string, spelling: string):
     for (const item of expansions) {
       const key = item.toLowerCase().replace(/[’]/g, "'");
       const pronunciation = dictionary.get(key) || DICT_FALLBACK[key]?.split(' ') || fallbackGraphemeToPhones(key);
-      phones.push(...pronunciation.map((phone) => phone.replace(/[012]$/, '')));
+      phones.push(...pronunciation);
     }
   }
   if (!phones.length) throw new Error('The pronunciation hint did not contain any speakable words.');
@@ -192,7 +192,7 @@ async function wordPhones(word: string, dictionary: Map<string, string[]>): Prom
   const custom = customPronunciations.get(normalized);
   if (custom) return [...custom];
   const pronunciation = dictionary.get(normalized) || DICT_FALLBACK[normalized]?.split(' ') || fallbackGraphemeToPhones(normalized);
-  return pronunciation.map((phone) => phone.replace(/[012]$/, ''));
+  return pronunciation;
 }
 
 function applyAccent(phones: string[], accent: VoiceModelConfig['accent']): string[] {
@@ -203,7 +203,10 @@ function applyAccent(phones: string[], accent: VoiceModelConfig['accent']): stri
   // or consonant, but remains when the next word begins with a vowel only in
   // the simple within-word cases handled by the pronunciation stream.
   for (let i = 1; i < result.length; i++) {
-    if (result[i] === 'R' && VOWELS.has(result[i - 1]) && (!result[i + 1] || !VOWELS.has(result[i + 1]))) {
+    const current = result[i].replace(/[012]$/, '');
+    const previous = result[i - 1].replace(/[012]$/, '');
+    const next = result[i + 1]?.replace(/[012]$/, '');
+    if (current === 'R' && VOWELS.has(previous) && (!next || !VOWELS.has(next))) {
       result[i] = '';
     }
   }
@@ -216,9 +219,15 @@ function getWordMatches(text: string): WordMatch[] {
 }
 
 function getPauseAfter(text: string): number {
-  if (/[.!?…]/.test(text)) return 0.24;
-  if (/[,;:]/.test(text)) return 0.12;
-  return 0.045;
+  if (/[.!?…]/.test(text)) return 0.22;
+  if (/[,;:]/.test(text)) return 0.11;
+  // Ordinary spaces connect words; long artificial gaps made the old output choppy.
+  return 0.012;
+}
+
+function splitPhoneStress(phone: string): { phone: string; stress: string } {
+  const match = phone.toUpperCase().match(/^([A-Z]+)([012])?$/);
+  return match ? { phone: match[1], stress: match[2] || '0' } : { phone: phone.toUpperCase(), stress: '0' };
 }
 
 function getFormants(phone: string, progress: number, genderScale: number, accent: VoiceModelConfig['accent']): Formants {
@@ -278,13 +287,16 @@ function buildPhoneSamples(
   for (let i = 0; i < length; i++) {
     const t = i / length;
     const absoluteTime = (absoluteOffset + i) / SAMPLE_RATE;
-    const edge = Math.min(1, t / 0.08, (1 - t) / 0.1);
+    const edge = Math.min(1, (t * seconds) / 0.004, ((1 - t) * seconds) / 0.006);
     const envelope = Math.max(0, edge) * (isVowel ? stressGain : 0.48);
     let sample = 0;
 
     if (isVoiced) {
       const formants = getFormants(phone, t, genderScale, model.accent);
-      const f0 = basePitch * (style === 'robot' ? 1 : 1 + 0.012 * Math.sin(2 * Math.PI * 4.2 * absoluteTime));
+      const stressPitch = stress === '1' ? 1.045 : stress === '2' ? 1.018 : 0.985;
+      const localContour = 1 + 0.025 * Math.sin(Math.PI * t) - 0.045 * t;
+      const phraseContour = 1 + 0.004 * Math.sin(2 * Math.PI * 0.8 * absoluteTime);
+      const f0 = basePitch * stressPitch * localContour * phraseContour;
       const harmonics = Math.min(26, Math.floor((SAMPLE_RATE * 0.48) / f0));
       for (let harmonic = 1; harmonic <= harmonics; harmonic++) {
         const frequency = harmonic * f0;
@@ -322,6 +334,30 @@ function buildPhoneSamples(
     result[i] = sample * envelope;
   }
   return result;
+}
+
+function joinFormantPhones(chunks: Float32Array[]): Float32Array {
+  if (!chunks.length) return new Float32Array(0);
+  const overlap = Math.floor(SAMPLE_RATE * 0.004);
+  const totalLength = chunks.reduce((sum, chunk) => sum + chunk.length, 0) - overlap * Math.max(0, chunks.length - 1);
+  const output = new Float32Array(Math.max(0, totalLength));
+  let cursor = 0;
+  for (const chunk of chunks) {
+    if (cursor === 0) {
+      output.set(chunk);
+      cursor = chunk.length;
+      continue;
+    }
+    const blend = Math.min(overlap, cursor, chunk.length);
+    const start = cursor - blend;
+    for (let i = 0; i < blend; i++) {
+      const phase = (i + 1) / (blend + 1) * Math.PI / 2;
+      output[start + i] = output[start + i] * Math.cos(phase) + chunk[i] * Math.sin(phase);
+    }
+    output.set(chunk.subarray(blend), cursor);
+    cursor += chunk.length - blend;
+  }
+  return output;
 }
 
 function writeWav(samples: Float32Array, volume: number): Blob {
@@ -387,13 +423,28 @@ export async function synthesizeText(text: string, model: VoiceModelConfig): Pro
     for (const spokenWord of spokenWords) {
       phones.push(...applyAccent(await wordPhones(spokenWord, dictionary), model.accent));
     }
-    const fallback = (phone: string, offset: number) => {
-      const normalizedPhone = phone === 'AX' ? 'AH' : phone;
-      return buildPhoneSamples(normalizedPhone, '0', fallbackModel, offset, random);
-    };
-    const rendered = await renderCmuDiphones(phones, model, fallback, sampleCount);
-    samples.push(rendered.samples);
-    sampleCount += rendered.samples.length;
+    let wordSamples: Float32Array;
+    if (model.synthesisMethod === 'cmu-arctic') {
+      const fallback = (phone: string, offset: number) => {
+        const normalizedPhone = phone === 'AX' ? 'AH' : phone;
+        return buildPhoneSamples(normalizedPhone, '0', fallbackModel, offset, random);
+      };
+      const cmuPhones = phones.map((phone) => splitPhoneStress(phone).phone);
+      const rendered = await renderCmuDiphones(cmuPhones, model, fallback, sampleCount);
+      wordSamples = rendered.samples;
+    } else {
+      let phoneOffset = sampleCount;
+      const phoneChunks = phones.map((phone) => {
+        const parsed = splitPhoneStress(phone);
+        const normalizedPhone = parsed.phone === 'AX' ? 'AH' : parsed.phone;
+        const chunk = buildPhoneSamples(normalizedPhone, parsed.stress, model, phoneOffset, random);
+        phoneOffset += chunk.length;
+        return chunk;
+      });
+      wordSamples = joinFormantPhones(phoneChunks);
+    }
+    samples.push(wordSamples);
+    sampleCount += wordSamples.length;
     timing.end = sampleCount / SAMPLE_RATE;
     previousEnd = match.end;
     previousWord = match;
@@ -412,7 +463,7 @@ export async function synthesizeText(text: string, model: VoiceModelConfig): Pro
     offset += part.length;
   }
 
-  const combined = processCmuVoice(raw, model);
+  const combined = model.synthesisMethod === 'cmu-arctic' ? processCmuVoice(raw, model) : raw;
   const timingScale = raw.length ? combined.length / raw.length : 1;
   for (const timing of wordTimings) {
     timing.start *= timingScale;

@@ -8,6 +8,8 @@ export interface VoiceModelConfig {
   description: string;
   gender: 'Female' | 'Male' | 'Neutral';
   baseVoiceId?: 'slt' | 'bdl';
+  /** Mathematical formant synthesis is the default; CMU units remain an experimental alternative. */
+  synthesisMethod?: 'formant' | 'cmu-arctic';
   accent: 'US' | 'UK' | 'AU' | 'Global';
   flag: string;
   pitch: number; // 0.5 to 1.8 (1.0 = normal)
@@ -26,6 +28,7 @@ export const PRESET_VOICE_MODELS: VoiceModelConfig[] = [
     archetype: 'Warm Conversational Narrator',
     description: 'Friendly, relaxed delivery for explainers, documentaries, and engaging stories.',
     gender: 'Female',
+    synthesisMethod: 'formant',
     accent: 'US',
     flag: '🇺🇸',
     pitch: 1.0,
@@ -41,6 +44,7 @@ export const PRESET_VOICE_MODELS: VoiceModelConfig[] = [
     archetype: 'Low, Measured, Authoritative',
     description: 'A deliberate, weighty delivery for trailers, dramatic openings, and motivation.',
     gender: 'Male',
+    synthesisMethod: 'formant',
     accent: 'US',
     flag: '🇺🇸',
     pitch: 0.72,
@@ -56,6 +60,7 @@ export const PRESET_VOICE_MODELS: VoiceModelConfig[] = [
     archetype: 'Clear, Steady, Professional',
     description: 'A composed, informative delivery for documentaries, guides, and educational narration.',
     gender: 'Male',
+    synthesisMethod: 'formant',
     accent: 'UK',
     flag: '🇬🇧',
     pitch: 0.96,
@@ -71,6 +76,7 @@ export const PRESET_VOICE_MODELS: VoiceModelConfig[] = [
     archetype: 'Poised, Expressive, Literary',
     description: 'A polished, expressive delivery for literature, podcasts, and long-form stories.',
     gender: 'Female',
+    synthesisMethod: 'formant',
     accent: 'UK',
     flag: '🇬🇧',
     pitch: 1.06,
@@ -86,6 +92,7 @@ export const PRESET_VOICE_MODELS: VoiceModelConfig[] = [
     archetype: 'Crisp, Charismatic, Friendly',
     description: 'An upbeat, open delivery suited to travel, technology, and casual entertainment.',
     gender: 'Male',
+    synthesisMethod: 'formant',
     accent: 'AU',
     flag: '🇦🇺',
     pitch: 1.04,
@@ -101,6 +108,7 @@ export const PRESET_VOICE_MODELS: VoiceModelConfig[] = [
     archetype: 'Clear, Friendly, Engaging',
     description: 'A bright, approachable delivery for tutorials, reviews, guides, and lifestyle content.',
     gender: 'Female',
+    synthesisMethod: 'formant',
     accent: 'AU',
     flag: '🇦🇺',
     pitch: 1.14,
@@ -116,6 +124,7 @@ export const PRESET_VOICE_MODELS: VoiceModelConfig[] = [
     archetype: 'Punchy, Dynamic, Assertive',
     description: 'A lively, quick-paced delivery for promos, short clips, and high-energy explainers.',
     gender: 'Male',
+    synthesisMethod: 'formant',
     accent: 'US',
     flag: '🇺🇸',
     pitch: 1.1,
@@ -131,6 +140,7 @@ export const PRESET_VOICE_MODELS: VoiceModelConfig[] = [
     archetype: 'Calm, Balanced, Gentle',
     description: 'A gentle, unhurried delivery for relaxation, reflection, and ambient guidance.',
     gender: 'Female',
+    synthesisMethod: 'formant',
     accent: 'US',
     flag: '🇺🇸',
     pitch: 0.92,
@@ -146,6 +156,7 @@ export const PRESET_VOICE_MODELS: VoiceModelConfig[] = [
     archetype: 'Crisp, Vintage, Broadcast',
     description: 'A quick, bright delivery with a narrow-band radio effect for retro announcements.',
     gender: 'Male',
+    synthesisMethod: 'formant',
     accent: 'US',
     flag: '📻',
     pitch: 1.05,
@@ -161,6 +172,7 @@ export const PRESET_VOICE_MODELS: VoiceModelConfig[] = [
     archetype: 'Precise, Calculated, Robotic',
     description: 'A deliberately synthetic, modulated delivery for sci-fi dialogue and announcements.',
     gender: 'Neutral',
+    synthesisMethod: 'formant',
     baseVoiceId: 'bdl',
     accent: 'US',
     flag: '🤖',
@@ -177,6 +189,7 @@ export const PRESET_VOICE_MODELS: VoiceModelConfig[] = [
     archetype: 'Warm, Articulate, Informative',
     description: 'A clear, measured delivery for lectures, demonstrations, and educational explainers.',
     gender: 'Male',
+    synthesisMethod: 'formant',
     accent: 'US',
     flag: '🌐',
     pitch: 0.98,
@@ -192,6 +205,7 @@ export const PRESET_VOICE_MODELS: VoiceModelConfig[] = [
     archetype: 'Bright, Precise, Expressive',
     description: 'A bright, carefully paced delivery for polished studio narration and interviews.',
     gender: 'Female',
+    synthesisMethod: 'formant',
     accent: 'US',
     flag: '✨',
     pitch: 1.12,
@@ -205,7 +219,7 @@ export const PRESET_VOICE_MODELS: VoiceModelConfig[] = [
 
 export function initializeLocalSpeechEngine(model?: VoiceModelConfig): void {
   void preparePronunciationDictionary();
-  if (model) void prepareCmuVoice(model);
+  if (model?.synthesisMethod === 'cmu-arctic') void prepareCmuVoice(model);
 }
 
 export function addLocalPronunciation(word: string, spokenAs: string): Promise<void> {
@@ -246,7 +260,7 @@ function finishPlayback(error?: unknown): void {
 }
 
 /**
- * Speak using locally assembled CMU ARCTIC diphone recordings.
+ * Speak using the selected local mathematical-formant or CMU unit-synthesis method.
  * No browser TTS, remote TTS service, or neural voice model is used.
  */
 export function speakRealWords(text: string, model: VoiceModelConfig, callbacks?: SpeechCallbacks): void {
@@ -306,7 +320,7 @@ export function stopSpeaking(): void {
 export async function generateSpokenAudioWav(
   text: string,
   model: VoiceModelConfig,
-): Promise<{ audioUrl: string; source: 'cmu-arctic-diphone' }> {
+): Promise<{ audioUrl: string; source: 'mathematical-formant' | 'cmu-arctic-diphone' }> {
   const { audioUrl } = await synthesizeText(text, model);
-  return { audioUrl, source: 'cmu-arctic-diphone' };
+  return { audioUrl, source: model.synthesisMethod === 'cmu-arctic' ? 'cmu-arctic-diphone' : 'mathematical-formant' };
 }

@@ -33,7 +33,7 @@ export const DialogueStudio: React.FC<DialogueStudioProps> = ({ models }) => {
     {
       id: '3',
       speakerId: 'A',
-      text: 'The text is mapped to phonemes, then assembled from recorded CMU speech units.'
+      text: 'The text is mapped to phonemes and shaped by a local mathematical voice engine.'
     },
     {
       id: '4',
@@ -245,7 +245,7 @@ export const DialogueStudio: React.FC<DialogueStudioProps> = ({ models }) => {
           </button>
 
           <span className="text-xs text-slate-500 font-mono">
-            {lines.length} lines &bull; local CMU diphone synthesis
+            {lines.length} lines &bull; local, non-AI speech synthesis
           </span>
         </div>
       </div>
