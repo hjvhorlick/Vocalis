@@ -7,9 +7,11 @@ import { VoiceManipulator } from './components/VoiceManipulator';
 import { SpeechStudio } from './components/SpeechStudio';
 import { DialogueStudio } from './components/DialogueStudio';
 import { VoiceLibrary } from './components/VoiceLibrary';
+import { GitHubSyncModal } from './components/GitHubSyncModal';
 
 export function App() {
   const [activeTab, setActiveTab] = useState<'studio' | 'dialogue' | 'library'>('studio');
+  const [isGitHubModalOpen, setIsGitHubModalOpen] = useState(false);
 
   // Load models from localStorage
   const [models, setModels] = useState<VoiceModelConfig[]>(() => {
@@ -152,6 +154,13 @@ export function App() {
         onSelectTab={setActiveTab}
         savedVoicesCount={models.filter((m) => m.isCustom).length}
         onNewVoice={handleNewVoice}
+        onOpenGitHubModal={() => setIsGitHubModalOpen(true)}
+      />
+
+      {/* GitHub Sync & Code Download Modal */}
+      <GitHubSyncModal
+        isOpen={isGitHubModalOpen}
+        onClose={() => setIsGitHubModalOpen(false)}
       />
 
       {/* Main Viewport */}
