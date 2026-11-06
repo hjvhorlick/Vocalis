@@ -69,9 +69,25 @@ rather than repeating them.
 ## 5. Current state
 
 - Preview/dev: `npm install && npm run dev` → Express + Vite on `0.0.0.0:3000`.
-- `npm run lint` type-checks `src` only (`server.ts` is not covered — audit finding C6).
-- Known state of the product, with measurements: `docs/APPLICATION_AUDIT.md`.
+- The recorded-unit engine **is wired in** (audit A1 closed): Speech Studio speaks the text you
+  type, Dialogue Studio renders a conversation as one timeline, and export is byte-identical to
+  preview. The reference-recording audition is a separate, labelled feature.
+- Run the whole gate before committing:
+
+  ```sh
+  npm run lint && npm run test:engine && npm run test:render && npm run verify:base-voice
+  ```
+
+  `npm run lint` type-checks `src` only (`server.ts` is not covered — audit finding C6). Both
+  suites read the real assets in `public/` from disk, so they measure the shipped dictionary and
+  the shipped unit packs. A failing check is a blocker in the same sense as a failing contract
+  check: fix the code or the claim, never delete the check.
+- Verified call graph with line numbers: `docs/PIPELINE_MAP.md`.
+- What was broken, what was built and every measurement: `docs/PHASE2_PIPELINE_CORRECTION.md`.
+- Known state of the product, finding by finding: `docs/APPLICATION_AUDIT.md`.
 - What to build next, and how each idea will be implemented originally:
   `docs/VOICE_IMPROVEMENT_PLAN.md`.
-- The recorded-unit engine is complete but **not yet reachable from the UI** (audit A1). Wiring
-  it in is the first task, and it adds the base voice to the product without changing it.
+- When you change anything that produces audio, print the numbers: duration, silence fraction,
+  pace, peak, exact units, adaptations, stand-ins and coverage. Two defects in this pipeline
+  (unit offsets counted in bytes instead of samples, and pitch silently changing duration) were
+  invisible in the code and obvious in the measurements.

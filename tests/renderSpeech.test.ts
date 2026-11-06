@@ -454,6 +454,8 @@ eq('the long passage split at its sentences', longResult.diagnostics.segments, 2
 console.log(
   `  ${'long passage'.padEnd(38)} ${longMetrics.seconds.toFixed(2)}s  ${longResult.diagnostics.words} words  ` +
     `${longResult.diagnostics.exactUnits}+${longResult.diagnostics.backoffUnits} units  ` +
+    `${(longResult.diagnostics.recordedCoverage * 100).toFixed(1)}% recorded  ` +
+    `${(longMetrics.silenceFraction * 100).toFixed(1)}% silence  ` +
     `${((longResult.diagnostics.words / longMetrics.seconds) * 60).toFixed(1)} wpm  rendered in ${longSeconds} ms`,
 );
 
@@ -553,6 +555,11 @@ check('the formant path is mostly voiced', formantMetrics.loudFraction > 0.05, `
 check('the formant path uses no recorded units', formant.diagnostics.exactUnits === 0);
 eq('the formant path reports zero coverage, honestly', formant.diagnostics.recordedCoverage, 0);
 eq('the formant path still times its words', formant.wordTimings.length, formant.diagnostics.words);
+console.log(
+  `  ${'formant path (experimental)'.padEnd(38)} ${metricsOf(formant).seconds.toFixed(2)}s  ` +
+    `${formant.diagnostics.words} words  peak ${formantMetrics.peak.toFixed(3)}  rms ${formantMetrics.rms.toFixed(3)}  ` +
+    `${(formantMetrics.loudFraction * 100).toFixed(1)}% voiced  ${(formantMetrics.silenceFraction * 100).toFixed(1)}% silent`,
+);
 const formantWav = decodeWav(await formant.wavBlob.arrayBuffer());
 eq('the formant path exports the same length it previewed', formantWav.samples.length, formant.samples.length);
 releaseSynthesis(formant);
@@ -680,6 +687,15 @@ check('a later render is fast once the packs are warm', laterMs < 4000, `${later
 check('the first render (which loads a 5.7 MB pack) is still quick', firstRenderMs < 20000, `${firstRenderMs} ms`);
 const heapMb = process.memoryUsage().heapUsed / (1024 * 1024);
 check('the suite stays inside a modest heap', heapMb < 900, `${heapMb.toFixed(0)} MB`);
+console.log(
+  `  rate 1.4 ${(fast.duration).toFixed(2)}s, rate 0.7 ${(slow.duration).toFixed(2)}s, natural ${warmUp.duration.toFixed(2)}s; ` +
+    `pitch 0.72 ${deep.duration.toFixed(2)}s, pitch 1.4 ${bright.duration.toFixed(2)}s; volume 0.35 peak ${metricsOf(quiet).peak.toFixed(3)}`,
+);
+console.log(
+  `  conversation ${conversation.duration.toFixed(2)}s over ${conversation.lines.length} lines, ` +
+    `turn gap ${DEFAULT_DIALOGUE_TIMING.turnGap}s, same speaker ${DEFAULT_DIALOGUE_TIMING.sameSpeakerGap}s, ` +
+    `trailing ${(gapBeforeLine({ speakerId: 'A', text: 'and then', model: aria }, { speakerId: 'B', text: 'Yes?', model: marcus }, DEFAULT_DIALOGUE_TIMING)).toFixed(2)}s`,
+);
 console.log(`  first render ${firstRenderMs} ms, warm render ${laterMs} ms, heap ${heapMb.toFixed(0)} MB`);
 
 for (const entry of rendered) releaseSynthesis(entry.result);
