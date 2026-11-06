@@ -208,7 +208,7 @@ export const VoiceManipulator: React.FC<VoiceManipulatorProps> = ({
             <option value="formant">Mathematical formant voice (default)</option>
             <option value="cmu-arctic">CMU ARCTIC recordings (experimental)</option>
           </select>
-          <span className="block normal-case tracking-normal font-normal text-slate-500">The default is a synthetic voice built from phonemes, harmonic excitation, and mathematical formant filters—not a human recording or AI model.</span>
+          <span className="block normal-case tracking-normal font-normal text-slate-500">The default is a synthetic voice built from phonemes, shaped glottal pulses, and formant resonators—not a human recording or AI model.</span>
         </label>
         <label className="space-y-1.5 text-[11px] font-semibold uppercase tracking-wider text-slate-400">
           Voice register

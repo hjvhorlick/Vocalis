@@ -9,12 +9,12 @@ const VOWELS = new Set([
 const VOICED_CONSONANTS = new Set(['B', 'D', 'G', 'JH', 'V', 'DH', 'Z', 'ZH', 'M', 'N', 'NG', 'L', 'R', 'W', 'Y']);
 const STOP_CONSONANTS = new Set(['P', 'B', 'T', 'D', 'K', 'G']);
 const FRICATIVES = new Set(['F', 'V', 'TH', 'DH', 'S', 'Z', 'SH', 'ZH', 'HH', 'CH', 'JH']);
-const PLOSIVE_NOISE = new Set(['P', 'B', 'T', 'D', 'K', 'G', 'CH', 'JH']);
 
 type Formants = [number, number, number];
 type Timing = { charIndex: number; charLength: number; start: number; end: number };
 type SynthesisResult = { audioUrl: string; wordTimings: Timing[]; duration: number };
 type WordMatch = { word: string; start: number; end: number };
+type WordProsody = { phrasePosition: number; phraseFinal: boolean; question: boolean };
 
 const VOWEL_FORMANTS: Record<string, { start: Formants; end?: Formants }> = {
   AA: { start: [730, 1090, 2440] },
@@ -218,6 +218,23 @@ function getWordMatches(text: string): WordMatch[] {
   return matches.map((match) => ({ word: match[0], start: match.index ?? 0, end: (match.index ?? 0) + match[0].length }));
 }
 
+function getWordProsody(text: string, matches: WordMatch[], index: number): WordProsody {
+  const hasBoundary = (left: WordMatch, right: WordMatch) => /[.!?…;,]/.test(text.slice(left.end, right.start));
+  let phraseStart = index;
+  let phraseEnd = index;
+  while (phraseStart > 0 && !hasBoundary(matches[phraseStart - 1], matches[phraseStart])) phraseStart--;
+  while (phraseEnd < matches.length - 1 && !hasBoundary(matches[phraseEnd], matches[phraseEnd + 1])) phraseEnd++;
+  const phraseLast = matches[phraseEnd];
+  const nextWord = matches[phraseEnd + 1];
+  const ending = text.slice(phraseLast.end, nextWord?.start ?? text.length);
+  const phraseLength = phraseEnd - phraseStart;
+  return {
+    phrasePosition: phraseLength ? (index - phraseStart) / phraseLength : 1,
+    phraseFinal: index === phraseEnd,
+    question: /\?/.test(ending),
+  };
+}
+
 function getPauseAfter(text: string): number {
   if (/[.!?…]/.test(text)) return 0.22;
   if (/[,;:]/.test(text)) return 0.11;
@@ -247,10 +264,34 @@ function getFormants(phone: string, progress: number, genderScale: number, accen
   return formants.map((value, index) => value * genderScale * accentShift[index]) as Formants;
 }
 
-function phonemeDuration(phone: string, stress: string, rate: number, toneStyle: VoiceModelConfig['toneStyle']): number {
+function coarticulatedFormants(
+  phone: string,
+  progress: number,
+  genderScale: number,
+  accent: VoiceModelConfig['accent'],
+  previousPhone?: string,
+  nextPhone?: string,
+): Formants {
+  const current = getFormants(phone, progress, genderScale, accent);
+  const blend = (from: Formants, to: Formants, amount: number): Formants =>
+    from.map((value, index) => value + (to[index] - value) * amount) as Formants;
+  const smooth = (value: number) => value * value * (3 - 2 * value);
+  if (progress < 0.18 && previousPhone) {
+    const from = getFormants(previousPhone, 1, genderScale, accent);
+    return blend(from, current, smooth(progress / 0.18));
+  }
+  if (progress > 0.82 && nextPhone) {
+    const to = getFormants(nextPhone, 0, genderScale, accent);
+    return blend(current, to, smooth((progress - 0.82) / 0.18));
+  }
+  return current;
+}
+
+function phonemeDuration(phone: string, stress: string, rate: number, toneStyle: VoiceModelConfig['toneStyle'], phraseFinal = false): number {
   const base = VOWELS.has(phone) ? (stress === '1' ? 0.145 : stress === '2' ? 0.12 : 0.092) : STOP_CONSONANTS.has(phone) ? 0.065 : FRICATIVES.has(phone) ? 0.075 : 0.068;
   const styleRate = toneStyle === 'energetic' ? 1.12 : toneStyle === 'deep' ? 0.94 : 1;
-  return base / Math.max(0.55, rate * styleRate);
+  const phraseLengthening = phraseFinal && VOWELS.has(phone) ? 1.18 : 1;
+  return base * phraseLengthening / Math.max(0.55, rate * styleRate);
 }
 
 function makeRandom(seed: number): () => number {
@@ -263,72 +304,130 @@ function makeRandom(seed: number): () => number {
   };
 }
 
+function glottalFlow(phase: number, openQuotient: number, closingFraction: number): number {
+  if (phase >= openQuotient) return 0;
+  const openingEnd = openQuotient * (1 - closingFraction);
+  if (phase < openingEnd) return 0.5 - 0.5 * Math.cos(Math.PI * phase / openingEnd);
+  const closingProgress = (phase - openingEnd) / Math.max(0.001, openQuotient - openingEnd);
+  return 0.5 + 0.5 * Math.cos(Math.PI * closingProgress);
+}
+
+function fricationCenter(phone: string): number {
+  if (phone === 'S' || phone === 'Z') return 5900;
+  if (phone === 'SH' || phone === 'ZH') return 3100;
+  if (phone === 'CH' || phone === 'JH') return 3400;
+  if (phone === 'F' || phone === 'V') return 4300;
+  if (phone === 'TH' || phone === 'DH') return 3900;
+  return 1700;
+}
+
 function buildPhoneSamples(
   phone: string,
   stress: string,
   model: VoiceModelConfig,
   absoluteOffset: number,
   random: () => number,
+  prosody: WordProsody = { phrasePosition: 0, phraseFinal: false, question: false },
+  previousPhone?: string,
+  nextPhone?: string,
 ): Float32Array {
   const style = model.toneStyle;
-  const seconds = phonemeDuration(phone, stress, model.rate, style);
+  const seconds = phonemeDuration(phone, stress, model.rate, style, prosody.phraseFinal);
   const length = Math.max(1, Math.floor(SAMPLE_RATE * seconds));
   const result = new Float32Array(length);
   const isVowel = VOWELS.has(phone);
   const isVoiced = isVowel || VOICED_CONSONANTS.has(phone);
-  const genderScale = model.gender === 'Female' ? 1.12 : model.gender === 'Male' ? 0.91 : 1;
+  const genderScale = model.gender === 'Female' ? 1.08 : model.gender === 'Male' ? 0.94 : 1;
   const stylePitch = style === 'deep' ? 0.93 : style === 'energetic' ? 1.07 : 1;
   const basePitch = (model.gender === 'Male' ? 116 : model.gender === 'Female' ? 196 : 150) * model.pitch * stylePitch;
   const stressGain = stress === '1' ? 1 : stress === '2' ? 0.84 : 0.68;
-  const bandwidth = style === 'radio' ? 92 : 120;
-  const randomStart = random;
+  const openQuotient = style === 'whisper' ? 0.7 : style === 'energetic' ? 0.58 : 0.64;
+  const closingFraction = style === 'whisper' ? 0.42 : style === 'energetic' ? 0.22 : 0.3;
+  const formantBandwidths: Formants = [95, 125, 180];
+  const formantWeights: Formants = [1, 0.72, 0.42];
+  const formantY1: Formants = [0, 0, 0];
+  const formantY2: Formants = [0, 0, 0];
+  let phase = ((basePitch * absoluteOffset) / SAMPLE_RATE) % 1;
   let previousNoise = 0;
+  let noiseY1 = 0;
+  let noiseY2 = 0;
+  let previousFlow = glottalFlow(phase, openQuotient, closingFraction);
 
   for (let i = 0; i < length; i++) {
     const t = i / length;
     const absoluteTime = (absoluteOffset + i) / SAMPLE_RATE;
     const edge = Math.min(1, (t * seconds) / 0.004, ((1 - t) * seconds) / 0.006);
     const envelope = Math.max(0, edge) * (isVowel ? stressGain : 0.48);
-    let sample = 0;
+    let voicing = 0;
+    let frication = 0;
+    let burst = 0;
 
     if (isVoiced) {
-      const formants = getFormants(phone, t, genderScale, model.accent);
       const stressPitch = stress === '1' ? 1.045 : stress === '2' ? 1.018 : 0.985;
-      const localContour = 1 + 0.025 * Math.sin(Math.PI * t) - 0.045 * t;
-      const phraseContour = 1 + 0.004 * Math.sin(2 * Math.PI * 0.8 * absoluteTime);
-      const f0 = basePitch * stressPitch * localContour * phraseContour;
-      const harmonics = Math.min(26, Math.floor((SAMPLE_RATE * 0.48) / f0));
-      for (let harmonic = 1; harmonic <= harmonics; harmonic++) {
-        const frequency = harmonic * f0;
-        const resonance = formants.reduce((sum, center) => {
-          const distance = (frequency - center) / bandwidth;
-          return sum + Math.exp(-0.5 * distance * distance);
-        }, 0);
-        const sourceTilt = 1 / Math.pow(harmonic, style === 'deep' ? 1.35 : 1.18);
-        sample += Math.sin((2 * Math.PI * frequency * absoluteTime)) * resonance * sourceTilt;
+      const localContour = style === 'robot' ? 1 : 1 + 0.035 * Math.sin(Math.PI * t) - 0.05 * t;
+      const phraseDeclination = style === 'robot' ? 1 : 1 - 0.045 * prosody.phrasePosition;
+      const boundaryMovement = prosody.phraseFinal && style !== 'robot' ? (prosody.question ? 0.1 : -0.075) * t : 0;
+      const f0 = basePitch * stressPitch * localContour * phraseDeclination * (1 + boundaryMovement);
+      const phaseStep = f0 / SAMPLE_RATE;
+      const nextPhase = (phase + phaseStep) % 1;
+      const nextFlow = glottalFlow(nextPhase, openQuotient, closingFraction);
+      // The differentiated, asymmetrical glottal-flow pulse has a natural spectral tilt,
+      // unlike a bank of perfectly phase-aligned sine waves.
+      let excitation = (nextFlow - previousFlow) / Math.max(phaseStep, 0.001) * 0.008;
+      phase = nextPhase;
+      previousFlow = nextFlow;
+
+      if (STOP_CONSONANTS.has(phone)) {
+        if (t < 0.68) excitation *= isVowel ? 0.16 : 0.1;
+        else if (t < 0.82) excitation += random() * 0.2 * (1 - (t - 0.68) / 0.14);
       }
-      sample *= isVowel ? 0.23 : 0.105;
-      if (style === 'whisper' && isVowel) sample = sample * 0.32 + randomStart() * 0.07;
+
+      const aspiration = random() * (style === 'whisper' ? 0.12 : isVowel ? 0.012 : 0.035);
+      voicing = (excitation + aspiration) * (isVowel ? 1 : 0.38);
     }
 
     if (FRICATIVES.has(phone) && (!isVoiced || style === 'whisper')) {
-      const noise = randomStart();
-      const high = noise - previousNoise * 0.72;
-      previousNoise = noise;
-      const noiseLevel = phone === 'S' || phone === 'Z' || phone === 'SH' || phone === 'ZH' ? 0.17 : 0.11;
-      sample += high * noiseLevel;
-    } else if (!isVoiced && !STOP_CONSONANTS.has(phone) && phone !== 'HH') {
-      sample += randomStart() * 0.018;
+      const white = random();
+      const highPassed = white - previousNoise * 0.82;
+      previousNoise = white;
+      const center = fricationCenter(phone);
+      const bandwidth = phone === 'S' || phone === 'Z' ? 1500 : 1900;
+      const radius = Math.exp(-Math.PI * bandwidth / SAMPLE_RATE);
+      const angle = 2 * Math.PI * center / SAMPLE_RATE;
+      const inputGain = (1 - radius) * (1 - radius);
+      const filtered = inputGain * highPassed + 2 * radius * Math.cos(angle) * noiseY1 - radius * radius * noiseY2;
+      noiseY2 = noiseY1;
+      noiseY1 = filtered;
+      const level = phone === 'S' || phone === 'Z' || phone === 'SH' || phone === 'ZH' ? 1.2 : 0.76;
+      frication = filtered * level;
     }
 
-    if (phone === 'HH') sample += randomStart() * 0.045;
-
-    if (STOP_CONSONANTS.has(phone) || PLOSIVE_NOISE.has(phone)) {
-      const burstStart = phone === 'CH' || phone === 'JH' ? 0.18 : 0.48;
-      if (t < burstStart) sample *= 0.12;
-      else if (t < burstStart + 0.16) sample += randomStart() * 0.19 * (1 - (t - burstStart) / 0.16);
+    if (STOP_CONSONANTS.has(phone) || phone === 'CH' || phone === 'JH') {
+      const releaseStart = phone === 'CH' || phone === 'JH' ? 0.2 : 0.68;
+      if (t >= releaseStart && t < releaseStart + 0.13) {
+        const releaseEnvelope = 1 - (t - releaseStart) / 0.13;
+        burst = random() * 0.3 * releaseEnvelope;
+      }
+    } else if (!isVoiced && !FRICATIVES.has(phone)) {
+      burst = random() * 0.025;
     }
 
+    const formants = coarticulatedFormants(phone, t, genderScale, model.accent, previousPhone, nextPhone);
+    let tractOutput = 0;
+    for (let formant = 0; formant < 3; formant++) {
+      const radius = Math.exp(-Math.PI * formantBandwidths[formant] / SAMPLE_RATE);
+      const angle = 2 * Math.PI * formants[formant] / SAMPLE_RATE;
+      const inputGain = (1 - radius) * (1 - radius);
+      const filtered = inputGain * voicing
+        + 2 * radius * Math.cos(angle) * formantY1[formant]
+        - radius * radius * formantY2[formant];
+      formantY2[formant] = formantY1[formant];
+      formantY1[formant] = filtered;
+      tractOutput += filtered * formantWeights[formant];
+    }
+
+    let sample = tractOutput + frication + burst;
+    if (style === 'whisper') sample = sample * 0.65 + frication * 0.35;
     if (style === 'robot') sample *= 0.78 + 0.22 * Math.sin(2 * Math.PI * 32 * absoluteTime);
     if (style === 'radio') sample = Math.tanh(sample * 2.3) * 0.72;
     result[i] = sample * envelope;
@@ -412,7 +511,9 @@ export async function synthesizeText(text: string, model: VoiceModelConfig): Pro
     }
   };
 
-  for (const match of matches) {
+  for (let matchIndex = 0; matchIndex < matches.length; matchIndex++) {
+    const match = matches[matchIndex];
+    const prosody = getWordProsody(text, matches, matchIndex);
     if (previousWord) appendSilence(getPauseAfter(text.slice(previousEnd, match.start)));
     const wordStart = sampleCount / SAMPLE_RATE;
     const timing: Timing = { charIndex: match.start, charLength: match.end - match.start, start: wordStart, end: wordStart };
@@ -434,10 +535,12 @@ export async function synthesizeText(text: string, model: VoiceModelConfig): Pro
       wordSamples = rendered.samples;
     } else {
       let phoneOffset = sampleCount;
-      const phoneChunks = phones.map((phone) => {
+      const phoneChunks = phones.map((phone, phoneIndex) => {
         const parsed = splitPhoneStress(phone);
         const normalizedPhone = parsed.phone === 'AX' ? 'AH' : parsed.phone;
-        const chunk = buildPhoneSamples(normalizedPhone, parsed.stress, model, phoneOffset, random);
+        const previousPhone = phoneIndex > 0 ? splitPhoneStress(phones[phoneIndex - 1]).phone : undefined;
+        const nextPhone = phoneIndex + 1 < phones.length ? splitPhoneStress(phones[phoneIndex + 1]).phone : undefined;
+        const chunk = buildPhoneSamples(normalizedPhone, parsed.stress, model, phoneOffset, random, prosody, previousPhone, nextPhone);
         phoneOffset += chunk.length;
         return chunk;
       });
