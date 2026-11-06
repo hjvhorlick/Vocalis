@@ -43,8 +43,8 @@ export const VoiceShaper: React.FC<VoiceShaperProps> = ({
     setIsSpeaking(true);
     speakRealWords(model.samplePhrase, model, {
       onStart: () => setIsSpeaking(true),
-      onWord: (charIndex, charLength) => {
-        setActiveWordRange({ start: charIndex, length: charLength });
+      onWord: (timing) => {
+        setActiveWordRange({ start: timing.charIndex, length: timing.charLength });
       },
       onEnd: () => {
         setIsSpeaking(false);
