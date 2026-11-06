@@ -1,5 +1,33 @@
-import { prepareCmuVoice } from './cmuDiphoneSynthesizer';
-import { preparePronunciationDictionary, savePronunciationSpelling, synthesizeText } from './phonemeSynthesizer';
+import {
+  NATURAL_HUMAN_SAMPLES,
+  HumanVoiceSample,
+  loadHumanVoiceBuffer,
+  ATTRIBUTION_DETAILS,
+} from './naturalHumanAudio';
+import {
+  VoiceDspConfig,
+  playTransformedVoice,
+  stopTransformedVoice,
+  renderTransformedWav,
+  getDspAnalyser,
+  isDspPlaying,
+} from './audioDspEngine';
+
+/**
+ * Preloads the foundational natural human speech recordings
+ */
+export async function initializeLocalSpeechEngine(voice?: VoiceModelConfig): Promise<void> {
+  try {
+    if (typeof window !== 'undefined') {
+      const url = voice?.baseSampleId
+        ? NATURAL_HUMAN_SAMPLES.find((s) => s.id === voice.baseSampleId)?.url || NATURAL_HUMAN_SAMPLES[0].url
+        : NATURAL_HUMAN_SAMPLES[0].url;
+      await loadHumanVoiceBuffer(url);
+    }
+  } catch {
+    // Non-blocking preload
+  }
+}
 
 export interface VoiceModelConfig {
   id: string;
@@ -7,9 +35,6 @@ export interface VoiceModelConfig {
   archetype: string;
   description: string;
   gender: 'Female' | 'Male' | 'Neutral';
-  baseVoiceId?: 'slt' | 'bdl';
-  /** CMU recorded units are the default; the locally generated formant voice is experimental. */
-  synthesisMethod?: 'formant' | 'cmu-arctic';
   accent: 'US' | 'UK' | 'AU' | 'Global';
   flag: string;
   pitch: number; // 0.5 to 1.8 (1.0 = normal)
@@ -19,308 +44,280 @@ export interface VoiceModelConfig {
   samplePhrase: string;
   avatarColor: string;
   isCustom?: boolean;
+  baseSampleId: string; // ID of the natural human voice recording used as source
+  baseVoiceId?: 'slt' | 'bdl'; // Optional alias for diphone engine
+  synthesisMethod?: 'cmu-arctic' | 'formant'; // Optional method tag
+  throatWarmth?: number; // Formant F1 (-12 to +12 dB)
+  oralClarity?: number; // Formant F2 (-12 to +12 dB)
+  airPresence?: number; // Formant F3 (-12 to +12 dB)
 }
 
+export { ATTRIBUTION_DETAILS, NATURAL_HUMAN_SAMPLES };
+export type { HumanVoiceSample };
+
+/**
+ * Predefined Vocalis Voice Conversions
+ * All voices are shaped from tested, free, attributed natural human voice recordings (CMU ARCTIC)
+ * using real-time Web Audio DSP (pitch transposition, formant vocal tract filters, and acoustic styling).
+ */
 export const PRESET_VOICE_MODELS: VoiceModelConfig[] = [
   {
     id: 'narrator-aria',
-    name: 'Warm Storyteller',
-    archetype: 'Warm Conversational Narrator',
-    description: 'Friendly, relaxed delivery for explainers, documentaries, and engaging stories.',
+    name: 'Aria (Storyteller)',
+    archetype: 'Warm Audiobook & Documentary Narrator',
+    description: 'Melodic storytelling voice with smooth cadence and comforting acoustic warmth.',
     gender: 'Female',
-    synthesisMethod: 'cmu-arctic',
     accent: 'US',
-    flag: '🇺🇸',
+    flag: '🎙️',
     pitch: 1.0,
     rate: 0.95,
     volume: 1.0,
     toneStyle: 'natural',
-    samplePhrase: 'Beneath the twilight sky, the ancient clock tower chimed seven times.',
+    baseSampleId: 'cmu-slt-1',
+    throatWarmth: 3,
+    oralClarity: 2,
+    airPresence: 1,
+    samplePhrase: 'Author of the danger trail, Philip Steels, etc.',
     avatarColor: '#8b5cf6',
   },
   {
     id: 'titan-marcus',
-    name: 'Deep Cinematic Narrator',
-    archetype: 'Low, Measured, Authoritative',
-    description: 'A deliberate, weighty delivery for trailers, dramatic openings, and motivation.',
+    name: 'Marcus (Deep Cinema)',
+    archetype: 'Deep Trailer & Authority Baritone',
+    description: 'Resonant, authoritative deep bass-baritone with powerful low-end chest resonance.',
     gender: 'Male',
-    synthesisMethod: 'cmu-arctic',
     accent: 'US',
-    flag: '🇺🇸',
+    flag: '🎬',
     pitch: 0.72,
-    rate: 0.88,
+    rate: 0.9,
     volume: 1.0,
     toneStyle: 'deep',
-    samplePhrase: 'In the shadows of a forgotten world, one truth will rise above all.',
+    baseSampleId: 'cmu-bdl-1',
+    throatWarmth: 7,
+    oralClarity: -1,
+    airPresence: -2,
+    samplePhrase: 'Author of the danger trail, Philip Steels, etc.',
     avatarColor: '#f97316',
   },
   {
     id: 'oliver-british',
-    name: 'Measured Documentary Narrator',
-    archetype: 'Clear, Steady, Professional',
-    description: 'A composed, informative delivery for documentaries, guides, and educational narration.',
+    name: 'Oliver (Distinguished Baritone)',
+    archetype: 'Crisp Scholarly & Drama Voice',
+    description: 'Distinguished, articulate acoustic presence with focused throat resonance.',
     gender: 'Male',
-    synthesisMethod: 'cmu-arctic',
     accent: 'UK',
-    flag: '🇬🇧',
-    pitch: 0.96,
-    rate: 0.98,
+    flag: '🎩',
+    pitch: 0.88,
+    rate: 0.96,
     volume: 1.0,
     toneStyle: 'natural',
-    samplePhrase: 'Good evening. Across the rolling hills of the countryside, the expedition began.',
+    baseSampleId: 'cmu-bdl-2',
+    throatWarmth: 4,
+    oralClarity: 2,
+    airPresence: 1,
+    samplePhrase: 'For the twentieth time that evening the two men shook hands.',
     avatarColor: '#0284c7',
   },
   {
     id: 'charlotte-uk',
-    name: 'Refined Literary Narrator',
-    archetype: 'Poised, Expressive, Literary',
-    description: 'A polished, expressive delivery for literature, podcasts, and long-form stories.',
+    name: 'Charlotte (Period Classic)',
+    archetype: 'Refined Literature & Graceful Reader',
+    description: 'Graceful, crystal-clear acoustic articulation with heightened oral formant presence.',
     gender: 'Female',
-    synthesisMethod: 'cmu-arctic',
     accent: 'UK',
-    flag: '🇬🇧',
-    pitch: 1.06,
-    rate: 0.95,
+    flag: '📖',
+    pitch: 1.1,
+    rate: 0.96,
     volume: 1.0,
     toneStyle: 'natural',
-    samplePhrase: 'The carriage arrived just as the morning fog began to lift from the courtyard.',
+    baseSampleId: 'cmu-slt-2',
+    throatWarmth: 1,
+    oralClarity: 4,
+    airPresence: 3,
+    samplePhrase: 'For the twentieth time that evening the two men shook hands.',
     avatarColor: '#ec4899',
   },
   {
-    id: 'liam-aussie',
-    name: 'Charismatic Travel Presenter',
-    archetype: 'Crisp, Charismatic, Friendly',
-    description: 'An upbeat, open delivery suited to travel, technology, and casual entertainment.',
-    gender: 'Male',
-    synthesisMethod: 'cmu-arctic',
-    accent: 'AU',
-    flag: '🇦🇺',
-    pitch: 1.04,
-    rate: 1.1,
-    volume: 1.0,
-    toneStyle: 'energetic',
-    samplePhrase: 'G\'day! We are live from the coast tracking one of the greatest ocean swells of the year.',
-    avatarColor: '#10b981',
-  },
-  {
-    id: 'chloe-melbourne',
-    name: 'Bright Conversational Presenter',
-    archetype: 'Clear, Friendly, Engaging',
-    description: 'A bright, approachable delivery for tutorials, reviews, guides, and lifestyle content.',
-    gender: 'Female',
-    synthesisMethod: 'cmu-arctic',
-    accent: 'AU',
-    flag: '🇦🇺',
-    pitch: 1.14,
-    rate: 1.05,
-    volume: 1.0,
-    toneStyle: 'energetic',
-    samplePhrase: 'Welcome aboard! Let\'s dive straight into today\'s top stories and creative highlights.',
-    avatarColor: '#14b8a6',
-  },
-  {
     id: 'jax-podcast',
-    name: 'Energetic Presenter',
-    archetype: 'Punchy, Dynamic, Assertive',
-    description: 'A lively, quick-paced delivery for promos, short clips, and high-energy explainers.',
+    name: 'Jax (High-Energy Host)',
+    archetype: 'Upbeat Tech & Media Presenter',
+    description: 'Brisk, punchy delivery with elevated vocal pitch and crisp speech clarity.',
     gender: 'Male',
-    synthesisMethod: 'cmu-arctic',
     accent: 'US',
-    flag: '🇺🇸',
-    pitch: 1.1,
+    flag: '⚡',
+    pitch: 1.12,
     rate: 1.15,
     volume: 1.0,
     toneStyle: 'energetic',
-    samplePhrase: 'Welcome back to the show! Today we are testing next-generation synthetic voice creation.',
+    baseSampleId: 'cmu-bdl-1',
+    throatWarmth: -1,
+    oralClarity: 5,
+    airPresence: 4,
+    samplePhrase: 'Author of the danger trail, Philip Steels, etc.',
     avatarColor: '#3b82f6',
   },
   {
     id: 'willow-calm',
-    name: 'Peaceful Wellness Guide',
-    archetype: 'Calm, Balanced, Gentle',
-    description: 'A gentle, unhurried delivery for relaxation, reflection, and ambient guidance.',
+    name: 'Willow (Mindfulness & Whisper)',
+    archetype: 'Gentle Meditation & Soft Presence',
+    description: 'Soft, delicate, breathy vocal contour shaped with acoustic air presence filters.',
     gender: 'Female',
-    synthesisMethod: 'cmu-arctic',
     accent: 'US',
-    flag: '🇺🇸',
-    pitch: 0.92,
-    rate: 0.8,
+    flag: '🌿',
+    pitch: 0.94,
+    rate: 0.85,
     volume: 0.9,
     toneStyle: 'whisper',
-    samplePhrase: 'Take a slow, deep breath in, and let your mind drift into complete stillness.',
+    baseSampleId: 'cmu-slt-1',
+    throatWarmth: -4,
+    oralClarity: 1,
+    airPresence: 8,
+    samplePhrase: 'Author of the danger trail, Philip Steels, etc.',
     avatarColor: '#84cc16',
   },
   {
     id: 'radio-sterling',
-    name: 'Vintage Radio Announcer',
-    archetype: 'Crisp, Vintage, Broadcast',
-    description: 'A quick, bright delivery with a narrow-band radio effect for retro announcements.',
+    name: 'Sterling (1930s Broadcast Radio)',
+    archetype: 'Vintage Transmitter Announcer',
+    description: 'Classic mid-Atlantic broadcast character with analog telephone bandpass filtering.',
     gender: 'Male',
-    synthesisMethod: 'cmu-arctic',
     accent: 'US',
     flag: '📻',
-    pitch: 1.05,
-    rate: 1.25,
+    pitch: 1.08,
+    rate: 1.2,
     volume: 1.0,
     toneStyle: 'radio',
-    samplePhrase: 'We interrupt this broadcast to bring you a special bulletin from the capital!',
+    baseSampleId: 'cmu-bdl-1',
+    throatWarmth: -3,
+    oralClarity: 6,
+    airPresence: -6,
+    samplePhrase: 'Author of the danger trail, Philip Steels, etc.',
     avatarColor: '#eab308',
   },
   {
     id: 'unit-7-droid',
-    name: 'Synthetic Sci-fi Announcer',
-    archetype: 'Precise, Calculated, Robotic',
-    description: 'A deliberately synthetic, modulated delivery for sci-fi dialogue and announcements.',
+    name: 'Unit-7 (Cyber Droid)',
+    archetype: 'Metallic Sci-Fi Assistant',
+    description: 'Quantized metallic resonance synthesized via real-time carrier ring-modulation.',
     gender: 'Neutral',
-    synthesisMethod: 'cmu-arctic',
-    baseVoiceId: 'bdl',
-    accent: 'US',
+    accent: 'Global',
     flag: '🤖',
-    pitch: 0.9,
+    pitch: 0.88,
     rate: 1.05,
     volume: 1.0,
     toneStyle: 'robot',
-    samplePhrase: 'Acoustic protocols verified. Voice synthesis engine running at maximum efficiency.',
+    baseSampleId: 'cmu-bdl-1',
+    throatWarmth: 2,
+    oralClarity: -3,
+    airPresence: 4,
+    samplePhrase: 'Author of the danger trail, Philip Steels, etc.',
     avatarColor: '#06b6d4',
-  },
-  {
-    id: 'dev-academic',
-    name: 'Clear Educator',
-    archetype: 'Warm, Articulate, Informative',
-    description: 'A clear, measured delivery for lectures, demonstrations, and educational explainers.',
-    gender: 'Male',
-    synthesisMethod: 'cmu-arctic',
-    accent: 'US',
-    flag: '🌐',
-    pitch: 0.98,
-    rate: 1.0,
-    volume: 1.0,
-    toneStyle: 'natural',
-    samplePhrase: 'When analyzing vocal harmonics, distinct frequencies define individual human identity.',
-    avatarColor: '#a855f7',
-  },
-  {
-    id: 'maya-nordic',
-    name: 'Expressive Studio Narrator',
-    archetype: 'Bright, Precise, Expressive',
-    description: 'A bright, carefully paced delivery for polished studio narration and interviews.',
-    gender: 'Female',
-    synthesisMethod: 'cmu-arctic',
-    accent: 'US',
-    flag: '✨',
-    pitch: 1.12,
-    rate: 1.0,
-    volume: 1.0,
-    toneStyle: 'natural',
-    samplePhrase: 'Notice how every consonant and vowel rings through with distinct acoustic presence.',
-    avatarColor: '#f43f5e',
   },
 ];
 
-export function initializeLocalSpeechEngine(model?: VoiceModelConfig): void {
-  void preparePronunciationDictionary();
-  if ((model?.synthesisMethod ?? 'cmu-arctic') === 'cmu-arctic' && model) void prepareCmuVoice(model);
+let userRecordedAudioBuffer: AudioBuffer | null = null;
+
+export function setUserAudioBuffer(buffer: AudioBuffer | null): void {
+  userRecordedAudioBuffer = buffer;
 }
 
-export function addLocalPronunciation(word: string, spokenAs: string): Promise<void> {
-  return savePronunciationSpelling(word, spokenAs);
-}
-
-export type SpeechCallbacks = {
-  onStart?: () => void;
-  onWord?: (charIndex: number, charLength: number) => void;
-  onEnd?: () => void;
-  onError?: (err: unknown) => void;
-};
-
-let activeAudio: HTMLAudioElement | null = null;
-let activeAudioUrl: string | null = null;
-let activeCallbacks: SpeechCallbacks | undefined;
-let activeWordTimings: Array<{ charIndex: number; charLength: number; start: number }> = [];
-let playbackTimer: ReturnType<typeof setInterval> | null = null;
-let playbackId = 0;
-
-function finishPlayback(error?: unknown): void {
-  const callbacks = activeCallbacks;
-  activeCallbacks = undefined;
-  activeWordTimings = [];
-  if (playbackTimer) clearInterval(playbackTimer);
-  playbackTimer = null;
-  if (activeAudio) {
-    activeAudio.onended = null;
-    activeAudio.onerror = null;
-    activeAudio.ontimeupdate = null;
-    activeAudio.pause();
-    activeAudio = null;
-  }
-  if (activeAudioUrl) URL.revokeObjectURL(activeAudioUrl);
-  activeAudioUrl = null;
-  if (error) callbacks?.onError?.(error);
-  callbacks?.onEnd?.();
+export function getUserAudioBuffer(): AudioBuffer | null {
+  return userRecordedAudioBuffer;
 }
 
 /**
- * Speak using the selected local mathematical-formant or CMU unit-synthesis method.
- * No browser TTS, remote TTS service, or neural voice model is used.
+ * Resolve audio buffer for a given model
  */
-export function speakRealWords(text: string, model: VoiceModelConfig, callbacks?: SpeechCallbacks): void {
-  stopSpeaking();
-  if (typeof window === 'undefined' || !text.trim()) {
-    callbacks?.onEnd?.();
-    return;
+export async function resolveBufferForModel(model: VoiceModelConfig): Promise<AudioBuffer> {
+  if (model.baseSampleId === 'custom-user' && userRecordedAudioBuffer) {
+    return userRecordedAudioBuffer;
   }
 
-  const requestId = ++playbackId;
-  activeCallbacks = callbacks;
-  void synthesizeText(text, model).then(({ audioUrl, wordTimings }) => {
-    if (requestId !== playbackId) {
-      URL.revokeObjectURL(audioUrl);
-      return;
-    }
-    const audio = new Audio(audioUrl);
-    activeAudio = audio;
-    activeAudioUrl = audioUrl;
-    activeWordTimings = wordTimings;
-    let lastWord = -1;
+  const sample =
+    NATURAL_HUMAN_SAMPLES.find((s) => s.id === model.baseSampleId) ||
+    NATURAL_HUMAN_SAMPLES[0];
 
-    const updateWord = () => {
-      if (!activeAudio) return;
-      const current = activeAudio.currentTime;
-      let found = -1;
-      for (let i = 0; i < activeWordTimings.length; i++) {
-        if (activeWordTimings[i].start <= current) found = i;
-        else break;
-      }
-      if (found !== lastWord && found >= 0) {
-        lastWord = found;
-        const item = activeWordTimings[found];
-        callbacks?.onWord?.(item.charIndex, item.charLength);
-      }
-    };
-
-    audio.onplay = () => callbacks?.onStart?.();
-    audio.ontimeupdate = updateWord;
-    audio.onended = () => finishPlayback();
-    audio.onerror = () => finishPlayback(new Error('Local synthesized audio playback failed.'));
-    playbackTimer = setInterval(updateWord, 35);
-    audio.play().catch((error) => finishPlayback(error));
-  }).catch((error) => {
-    if (requestId !== playbackId) return;
-    finishPlayback(error);
-  });
+  return await loadHumanVoiceBuffer(sample.url);
 }
 
-/** Stop local synthesis playback and clear its temporary audio buffer. */
-export function stopSpeaking(): void {
-  playbackId++;
-  if (activeAudio || activeCallbacks) finishPlayback();
-}
-
-/** Generate downloadable PCM WAV speech entirely in the browser. */
-export async function generateSpokenAudioWav(
+/**
+ * Play converted voice through real-time Web Audio DSP graph.
+ * 100% genuine acoustic transformation — NO AI, NO window.speechSynthesis.
+ */
+export async function speakRealWords(
   text: string,
   model: VoiceModelConfig,
-): Promise<{ audioUrl: string; source: 'mathematical-formant' | 'cmu-arctic-diphone' }> {
-  const { audioUrl } = await synthesizeText(text, model);
-  return { audioUrl, source: (model.synthesisMethod ?? 'cmu-arctic') === 'cmu-arctic' ? 'cmu-arctic-diphone' : 'mathematical-formant' };
+  callbacks?: {
+    onStart?: () => void;
+    onWord?: (charIndex: number, charLength: number) => void;
+    onEnd?: () => void;
+    onError?: (err: any) => void;
+  }
+): Promise<void> {
+  try {
+    const buffer = await resolveBufferForModel(model);
+
+    playTransformedVoice(
+      buffer,
+      {
+        pitch: model.pitch,
+        rate: model.rate,
+        volume: model.volume,
+        toneStyle: model.toneStyle,
+        throatWarmth: model.throatWarmth,
+        oralClarity: model.oralClarity,
+        airPresence: model.airPresence,
+      },
+      {
+        onStart: () => {
+          if (callbacks?.onStart) callbacks.onStart();
+        },
+        onEnded: () => {
+          if (callbacks?.onEnd) callbacks.onEnd();
+        },
+        onError: (err) => {
+          if (callbacks?.onError) callbacks.onError(err);
+          if (callbacks?.onEnd) callbacks.onEnd();
+        },
+      }
+    );
+  } catch (err: any) {
+    console.error('Error in speakRealWords:', err);
+    if (callbacks?.onError) callbacks.onError(err);
+    if (callbacks?.onEnd) callbacks.onEnd();
+  }
 }
+
+/**
+ * Stop any ongoing voice playback
+ */
+export function stopSpeaking(): void {
+  stopTransformedVoice();
+}
+
+/**
+ * Render converted voice into a downloadable 16-bit uncompressed WAV file
+ */
+export async function generateSpokenAudioWav(
+  text: string,
+  model: VoiceModelConfig
+): Promise<{ audioUrl: string; source: 'vocalis-natural-dsp'; duration: number }> {
+  const buffer = await resolveBufferForModel(model);
+  const { wavUrl, duration } = await renderTransformedWav(buffer, {
+    pitch: model.pitch,
+    rate: model.rate,
+    volume: model.volume,
+    toneStyle: model.toneStyle,
+    throatWarmth: model.throatWarmth,
+    oralClarity: model.oralClarity,
+    airPresence: model.airPresence,
+  });
+
+  return {
+    audioUrl: wavUrl,
+    source: 'vocalis-natural-dsp',
+    duration,
+  };
+}
+
+export { getDspAnalyser, isDspPlaying };

@@ -1,12 +1,17 @@
 import React, { useState, useRef } from 'react';
 import {
   VoiceModelConfig,
-  addLocalPronunciation,
+  NATURAL_HUMAN_SAMPLES,
   speakRealWords,
   stopSpeaking,
   generateSpokenAudioWav,
+  setUserAudioBuffer,
+  getUserAudioBuffer,
 } from '../utils/naturalVoiceEngine';
+import { decodeCustomAudioBlob } from '../utils/naturalHumanAudio';
 import { GeneratedTake } from '../types/voice';
+import { VoiceVisualizer } from './VoiceVisualizer';
+import { SourceVoiceAttribution } from './SourceVoiceAttribution';
 import {
   Mic2,
   Play,
@@ -17,9 +22,9 @@ import {
   Volume2,
   Check,
   RotateCcw,
-  Sparkles,
-  Copy,
-  Trash2,
+  Upload,
+  Radio,
+  StopCircle,
 } from 'lucide-react';
 
 interface SpeechStudioProps {
@@ -37,86 +42,55 @@ export const SpeechStudio: React.FC<SpeechStudioProps> = ({
   onUpdateActiveModel,
   onSaveTake,
 }) => {
-  const [scriptText, setScriptText] = useState<string>(
-    'Welcome to Vocalis Voice Studio. Vocalis builds speech locally from recorded CMU ARCTIC units.'
-  );
-  const [copied, setCopied] = useState(false);
+  // Live transformed play state
+  const [isPlayingLive, setIsPlayingLive] = useState(false);
 
-  // Live spoken state
-  const [isSpeakingAloud, setIsSpeakingAloud] = useState(false);
-  const [activeWordChar, setActiveWordChar] = useState<{ start: number; length: number } | null>(
-    null
-  );
-
-  // Generated WAV state
+  // WAV render state
   const [isRenderingWav, setIsRenderingWav] = useState(false);
   const [generatedWavUrl, setGeneratedWavUrl] = useState<string | null>(null);
   const [isPlayingWav, setIsPlayingWav] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
   const [takeSaved, setTakeSaved] = useState(false);
-  const [pronunciationWord, setPronunciationWord] = useState('');
-  const [pronunciationHint, setPronunciationHint] = useState('');
-  const [pronunciationMessage, setPronunciationMessage] = useState('');
+
+  // Microphone recording state
+  const [isRecordingMic, setIsRecordingMic] = useState(false);
+  const [recordError, setRecordError] = useState<string | null>(null);
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const audioChunksRef = useRef<Blob[]>([]);
 
   const audioRef = useRef<HTMLAudioElement | null>(null);
 
-  const scriptPresets = [
-    {
-      title: 'Audiobook Fiction',
-      text: 'The evening shadows stretched across the cobbled street. Inside the old clockmaker workshop, a single golden pendulum swung in perfect rhythm.',
-    },
-    {
-      title: 'Mindfulness Meditation',
-      text: 'Take a slow, deep breath in through your nose. Hold it for a gentle moment. Now exhale completely, and let all stress dissolve.',
-    },
-    {
-      title: 'Podcast Intro',
-      text: 'Welcome back to the podcast! Today we are discussing vocal acoustics, character design, and the future of human speech synthesis.',
-    },
-    {
-      title: 'Cinema Movie Trailer',
-      text: 'In a world where voices define destiny, one creator dared to speak when all others remained silent.',
-    },
-    {
-      title: 'Radio Weather Report',
-      text: 'Good morning listeners! High pressure brings clear blue skies across the coast with afternoon breezes reaching fifteen knots.',
-    },
-  ];
+  const activeSample =
+    NATURAL_HUMAN_SAMPLES.find((s) => s.id === activeModel.baseSampleId) ||
+    NATURAL_HUMAN_SAMPLES[0];
 
-  // Speak aloud through speakers
-  const handleSpeakAloud = () => {
-    if (isSpeakingAloud) {
+  // Play converted voice in real time through speakers
+  const handlePlayLive = () => {
+    if (isPlayingLive) {
       stopSpeaking();
-      setIsSpeakingAloud(false);
-      setActiveWordChar(null);
+      setIsPlayingLive(false);
       return;
     }
 
-    setIsSpeakingAloud(true);
-    speakRealWords(scriptText, activeModel, {
-      onStart: () => setIsSpeakingAloud(true),
-      onWord: (charIndex, charLength) => {
-        setActiveWordChar({ start: charIndex, length: charLength });
-      },
-      onEnd: () => {
-        setIsSpeakingAloud(false);
-        setActiveWordChar(null);
-      },
-      onError: () => {
-        setIsSpeakingAloud(false);
-        setActiveWordChar(null);
-      },
+    setIsPlayingLive(true);
+    speakRealWords(activeModel.samplePhrase, activeModel, {
+      onStart: () => setIsPlayingLive(true),
+      onEnd: () => setIsPlayingLive(false),
+      onError: () => setIsPlayingLive(false),
     });
   };
 
   // Render downloadable WAV audio
   const handleRenderWav = async () => {
-    if (!scriptText.trim()) return;
     setIsRenderingWav(true);
     try {
-      const { audioUrl } = await generateSpokenAudioWav(scriptText, activeModel);
+      const { audioUrl, duration: renderedDuration } = await generateSpokenAudioWav(
+        activeModel.samplePhrase,
+        activeModel
+      );
       setGeneratedWavUrl(audioUrl);
+      setDuration(renderedDuration);
       if (audioRef.current) {
         audioRef.current.src = audioUrl;
         audioRef.current.load();
@@ -157,31 +131,84 @@ export const SpeechStudio: React.FC<SpeechStudioProps> = ({
     if (!generatedWavUrl) return;
     const take: GeneratedTake = {
       id: 'take-' + Date.now(),
-      title: `${activeModel.name} - ${scriptText.slice(0, 30)}...`,
+      title: `${activeModel.name} - ${activeSample.transcript.slice(0, 30)}...`,
       audioUrl: generatedWavUrl,
       voiceName: activeModel.name,
-      durationSeconds: duration || Math.round(scriptText.split(/\s+/).length * 0.4),
+      durationSeconds: Math.round(duration || activeSample.duration),
       createdAt: Date.now(),
-      textSnippet: scriptText,
+      textSnippet: activeSample.transcript,
     };
     onSaveTake(take);
     setTakeSaved(true);
     setTimeout(() => setTakeSaved(false), 2500);
   };
 
-  const handleSavePronunciation = async () => {
+  // Start microphone recording
+  const startMicRecording = async () => {
+    setRecordError(null);
     try {
-      await addLocalPronunciation(pronunciationWord, pronunciationHint);
-      setPronunciationMessage(`Saved a local pronunciation rule for “${pronunciationWord.trim()}”.`);
-      setPronunciationWord('');
-      setPronunciationHint('');
-    } catch (error) {
-      setPronunciationMessage(error instanceof Error ? error.message : 'Could not save this pronunciation.');
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const mediaRecorder = new MediaRecorder(stream);
+      mediaRecorderRef.current = mediaRecorder;
+      audioChunksRef.current = [];
+
+      mediaRecorder.ondataavailable = (e) => {
+        if (e.data.size > 0) {
+          audioChunksRef.current.push(e.data);
+        }
+      };
+
+      mediaRecorder.onstop = async () => {
+        const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/wav' });
+        try {
+          const decoded = await decodeCustomAudioBlob(audioBlob);
+          setUserAudioBuffer(decoded);
+          if (onUpdateActiveModel) {
+            onUpdateActiveModel({
+              ...activeModel,
+              baseSampleId: 'custom-user',
+              samplePhrase: 'Custom microphone voice recording',
+            });
+          }
+        } catch (e: any) {
+          setRecordError('Failed to decode mic recording: ' + e.message);
+        }
+        stream.getTracks().forEach((track) => track.stop());
+      };
+
+      mediaRecorder.start();
+      setIsRecordingMic(true);
+    } catch (err: any) {
+      setRecordError('Microphone access denied or unavailable: ' + err.message);
     }
   };
 
-  const words = scriptText.split(/\s+/).filter(Boolean);
-  const estimatedSeconds = Math.max(1, Math.round((words.length * 0.38) / activeModel.rate));
+  const stopMicRecording = () => {
+    if (mediaRecorderRef.current && isRecordingMic) {
+      mediaRecorderRef.current.stop();
+      setIsRecordingMic(false);
+    }
+  };
+
+  // Custom audio file upload (.wav / .mp3)
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    try {
+      const decoded = await decodeCustomAudioBlob(file);
+      setUserAudioBuffer(decoded);
+      if (onUpdateActiveModel) {
+        onUpdateActiveModel({
+          ...activeModel,
+          baseSampleId: 'custom-user',
+          samplePhrase: `Uploaded file: ${file.name}`,
+        });
+      }
+    } catch (err: any) {
+      setRecordError('Failed to load audio file: ' + err.message);
+    }
+  };
 
   return (
     <div className="space-y-6 max-w-5xl mx-auto">
@@ -192,47 +219,126 @@ export const SpeechStudio: React.FC<SpeechStudioProps> = ({
         onLoadedMetadata={handleTimeUpdate}
       />
 
-      {/* Voice Selection Banner */}
-      <div className="bg-slate-900/90 border border-slate-800 rounded-3xl p-5 shadow-xl flex flex-wrap items-center justify-between gap-4">
-        <div className="flex items-center gap-3">
-          <div
-            className="w-12 h-12 rounded-2xl flex items-center justify-center font-bold text-lg text-white shadow-md shrink-0"
-            style={{ backgroundColor: activeModel.avatarColor }}
-          >
-            {activeModel.name.charAt(0)}
-          </div>
-          <div>
-            <div className="flex items-center gap-2">
-              <span className="text-xs uppercase font-bold tracking-wider text-slate-400">
-                Active Speaking Voice:
-              </span>
-              <span className="text-sm font-bold text-white">{activeModel.name}</span>
+      {/* Attribution Banner for CMU ARCTIC */}
+      <SourceVoiceAttribution />
+
+      {/* Voice Selection & Acoustic Banner */}
+      <div className="bg-slate-900/90 border border-slate-800 rounded-3xl p-5 sm:p-6 shadow-xl space-y-4">
+        <div className="flex flex-wrap items-center justify-between gap-4">
+          <div className="flex items-center gap-3">
+            <div
+              className="w-12 h-12 rounded-2xl flex items-center justify-center font-bold text-lg text-white shadow-md shrink-0"
+              style={{ backgroundColor: activeModel.avatarColor }}
+            >
+              {activeModel.flag || activeModel.name.charAt(0)}
             </div>
-            <p className="text-xs text-indigo-400 font-medium">
-              {activeModel.archetype} &bull; Pitch: {activeModel.pitch.toFixed(2)}x &bull; Rate: {activeModel.rate.toFixed(2)}x
-            </p>
+            <div>
+              <div className="flex items-center gap-2">
+                <span className="text-xs uppercase font-bold tracking-wider text-slate-400">
+                  Target Voice Character:
+                </span>
+                <span className="text-sm font-bold text-white">{activeModel.name}</span>
+              </div>
+              <p className="text-xs text-indigo-400 font-medium">
+                {activeModel.archetype} &bull; Pitch: {activeModel.pitch.toFixed(2)}x &bull; Rate: {activeModel.rate.toFixed(2)}x
+              </p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-3">
+            <select
+              value={activeModel.id}
+              onChange={(e) => {
+                const found = models.find((m) => m.id === e.target.value);
+                if (found) onSelectModel(found);
+              }}
+              className="bg-slate-950 border border-slate-800 text-xs text-white rounded-xl px-3 py-2 focus:outline-none focus:ring-1 focus:ring-indigo-500 font-medium cursor-pointer"
+            >
+              {models.map((m) => (
+                <option key={m.id} value={m.id}>
+                  {m.name} ({m.archetype})
+                </option>
+              ))}
+            </select>
           </div>
         </div>
 
-        <div className="flex items-center gap-3">
-          <select
-            value={activeModel.id}
-            onChange={(e) => {
-              const found = models.find((m) => m.id === e.target.value);
-              if (found) onSelectModel(found);
-            }}
-            className="bg-slate-950 border border-slate-800 text-xs text-white rounded-xl px-3 py-2 focus:outline-none focus:ring-1 focus:ring-indigo-500 font-medium"
-          >
-            {models.map((m) => (
-              <option key={m.id} value={m.id}>
-                {m.name} ({m.archetype})
-              </option>
-            ))}
-          </select>
+        {/* Source Natural Human Voice Selector */}
+        <div className="pt-3 border-t border-slate-800/80 grid grid-cols-1 md:grid-cols-12 gap-4 items-center">
+          <div className="md:col-span-8 space-y-1">
+            <div className="flex items-center justify-between">
+              <label className="text-xs font-bold uppercase tracking-wider text-slate-300 flex items-center gap-1.5">
+                <Radio className="w-3.5 h-3.5 text-indigo-400" />
+                Select Natural Human Voice Sample to Convert:
+              </label>
+              <span className="text-[10px] text-emerald-400 font-mono">100% Non-AI Human</span>
+            </div>
+
+            <select
+              value={activeModel.baseSampleId}
+              onChange={(e) => {
+                const newSampleId = e.target.value;
+                const sample = NATURAL_HUMAN_SAMPLES.find((s) => s.id === newSampleId);
+                if (onUpdateActiveModel && sample) {
+                  onUpdateActiveModel({
+                    ...activeModel,
+                    baseSampleId: newSampleId,
+                    samplePhrase: sample.transcript,
+                  });
+                }
+              }}
+              className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white cursor-pointer"
+            >
+              {NATURAL_HUMAN_SAMPLES.map((s) => (
+                <option key={s.id} value={s.id}>
+                  {s.name} ({s.speaker}) &mdash; "{s.transcript}"
+                </option>
+              ))}
+              {getUserAudioBuffer() && (
+                <option value="custom-user">Your Custom Recording / Uploaded Audio</option>
+              )}
+            </select>
+          </div>
+
+          {/* User Mic & File Upload Option */}
+          <div className="md:col-span-4 flex items-center gap-2">
+            {!isRecordingMic ? (
+              <button
+                onClick={startMicRecording}
+                className="flex-1 py-2 px-3 rounded-xl bg-slate-950 hover:bg-slate-800 border border-slate-800 text-xs font-semibold text-slate-200 flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
+                title="Record from microphone to convert your own voice"
+              >
+                <Mic2 className="w-3.5 h-3.5 text-rose-400" /> Record Mic
+              </button>
+            ) : (
+              <button
+                onClick={stopMicRecording}
+                className="flex-1 py-2 px-3 rounded-xl bg-rose-600 hover:bg-rose-500 text-xs font-semibold text-white flex items-center justify-center gap-1.5 animate-pulse cursor-pointer shadow-lg shadow-rose-600/30"
+              >
+                <StopCircle className="w-3.5 h-3.5" /> Stop Recording
+              </button>
+            )}
+
+            <label className="flex-1 py-2 px-3 rounded-xl bg-slate-950 hover:bg-slate-800 border border-slate-800 text-xs font-semibold text-slate-200 flex items-center justify-center gap-1.5 cursor-pointer transition-colors">
+              <Upload className="w-3.5 h-3.5 text-cyan-400" /> Upload WAV
+              <input
+                type="file"
+                accept="audio/*"
+                onChange={handleFileUpload}
+                className="hidden"
+              />
+            </label>
+          </div>
         </div>
 
-        {/* In-Studio Quick Acoustic Pitch & Speed Tuning */}
-        <div className="w-full pt-3 mt-1 border-t border-slate-800/80 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+        {recordError && (
+          <p className="text-xs text-rose-400 bg-rose-950/40 p-2 rounded-xl border border-rose-800/40">
+            {recordError}
+          </p>
+        )}
+
+        {/* Quick Pitch & Speed Sliders */}
+        <div className="w-full pt-3 border-t border-slate-800/80 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
           <div className="space-y-1">
             <div className="flex justify-between text-[11px]">
               <span className="text-slate-400 font-medium">Pitch Height</span>
@@ -253,8 +359,8 @@ export const SpeechStudio: React.FC<SpeechStudioProps> = ({
               className="w-full accent-cyan-500 h-1 bg-slate-950 rounded cursor-pointer"
             />
             <div className="flex justify-between text-[9px] text-slate-500">
-              <span>Deeper Baritone</span>
-              <span>Higher Pitch</span>
+              <span>Deep Bass</span>
+              <span>High Soprano</span>
             </div>
           </div>
 
@@ -290,179 +396,94 @@ export const SpeechStudio: React.FC<SpeechStudioProps> = ({
                   onUpdateActiveModel({ ...activeModel, pitch: 1.0, rate: 1.0 });
                 }
               }}
-              className="text-xs text-slate-400 hover:text-slate-200 flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-slate-950 border border-slate-800 transition-colors"
+              className="text-xs text-slate-400 hover:text-slate-200 flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-slate-950 border border-slate-800 transition-colors cursor-pointer"
               title="Reset Pitch & Pace to 1.0x"
             >
               <RotateCcw className="w-3 h-3" /> Reset 1.0x
             </button>
-            <span className="text-[10px] text-slate-500">Live vocal tuning</span>
+            <span className="text-[10px] text-slate-500">Web Audio DSP</span>
           </div>
         </div>
       </div>
 
-      {/* Script Text Box & Live Spoken Viewport */}
+      {/* Main Studio Console */}
       <div className="bg-slate-900/90 border border-slate-800 rounded-3xl p-6 sm:p-8 shadow-2xl space-y-5">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="flex items-center gap-2">
-            <Mic2 className="w-5 h-5 text-indigo-400" />
-            <h3 className="font-bold text-white text-base">Spoken Word Studio</h3>
+            <AudioWaveform className="w-5 h-5 text-indigo-400" />
+            <h3 className="font-bold text-white text-base">Acoustic Transformation Studio</h3>
           </div>
-          <div className="flex items-center gap-3 text-xs text-slate-400">
-            <span>{words.length} words</span>
-            <span>&bull;</span>
-            <span>~{estimatedSeconds}s duration</span>
-            <span>&bull;</span>
-            <button
-              onClick={() => {
-                navigator.clipboard.writeText(scriptText);
-                setCopied(true);
-                setTimeout(() => setCopied(false), 2000);
-              }}
-              className="p-1 text-slate-400 hover:text-slate-200 transition-colors"
-              title="Copy script"
-            >
-              {copied ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
-            </button>
-            <button
-              onClick={() => setScriptText('')}
-              className="p-1 text-slate-400 hover:text-rose-400 transition-colors"
-              title="Clear script text"
-            >
-              <Trash2 className="w-3.5 h-3.5" />
-            </button>
+          <span className="text-xs text-slate-400 font-mono">
+            Source Sentence: "{activeModel.samplePhrase}"
+          </span>
+        </div>
+
+        {/* Live Acoustic Visualizer */}
+        <div className="space-y-1">
+          <VoiceVisualizer isPlaying={isPlayingLive} avatarColor={activeModel.avatarColor} />
+          <div className="flex justify-between text-[10px] text-slate-500 font-mono">
+            <span>Acoustic Frequency Domain</span>
+            <span>{isPlayingLive ? 'Playing converted voice' : 'Ready'}</span>
           </div>
         </div>
 
-        {/* Script Editor & Highlight Viewer */}
-        <div className="relative">
-          {isSpeakingAloud && activeWordChar ? (
-            <div className="w-full min-h-[140px] bg-slate-950 border border-slate-800 rounded-2xl p-4 text-sm text-slate-100 font-sans leading-relaxed">
-              <span>{scriptText.slice(0, activeWordChar.start)}</span>
-              <span className="bg-indigo-500 text-white font-bold px-1.5 py-0.5 rounded shadow inline-block">
-                {scriptText.slice(
-                  activeWordChar.start,
-                  activeWordChar.start + activeWordChar.length
-                )}
-              </span>
-              <span>{scriptText.slice(activeWordChar.start + activeWordChar.length)}</span>
-            </div>
-          ) : (
-            <textarea
-              rows={5}
-              value={scriptText}
-              onChange={(e) => setScriptText(e.target.value)}
-              placeholder="Enter text to synthesize with the selected local voice method..."
-              className="w-full bg-slate-950 border border-slate-800 rounded-2xl p-4 text-sm text-slate-100 placeholder-slate-600 focus:outline-none focus:ring-2 focus:ring-indigo-500 font-sans leading-relaxed resize-y"
-            />
-          )}
-        </div>
-
-        <div className="rounded-2xl border border-slate-800 bg-slate-950/70 p-4 space-y-3">
-          <div>
-            <h4 className="text-xs font-bold text-slate-200">Custom pronunciation hints</h4>
-            <p className="mt-1 text-[11px] text-slate-500">Add a local spelling rule for names or tricky words. This adjusts the pronunciation dictionary; it does not train a voice model.</p>
-          </div>
-          <div className="grid grid-cols-1 sm:grid-cols-[1fr_1.4fr_auto] gap-2">
-            <input
-              value={pronunciationWord}
-              onChange={(event) => setPronunciationWord(event.target.value)}
-              placeholder="Word (e.g. Vocalis)"
-              className="min-w-0 rounded-xl border border-slate-800 bg-slate-900 px-3 py-2 text-xs text-white placeholder:text-slate-600"
-            />
-            <input
-              value={pronunciationHint}
-              onChange={(event) => setPronunciationHint(event.target.value)}
-              placeholder="Pronounce like (e.g. voh kal iss)"
-              className="min-w-0 rounded-xl border border-slate-800 bg-slate-900 px-3 py-2 text-xs text-white placeholder:text-slate-600"
-            />
-            <button
-              onClick={handleSavePronunciation}
-              disabled={!pronunciationWord.trim() || !pronunciationHint.trim()}
-              className="rounded-xl bg-indigo-600 px-3 py-2 text-xs font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              Save rule
-            </button>
-          </div>
-          {pronunciationMessage && <p role="status" className="text-[11px] text-emerald-400">{pronunciationMessage}</p>}
-        </div>
-
-        {/* Preset Sentences */}
-        <div className="flex flex-wrap gap-2 items-center">
-          <span className="text-xs text-slate-500">Preset Scripts:</span>
-          {scriptPresets.map((pr, idx) => (
-            <button
-              key={idx}
-              onClick={() => {
-                if (isSpeakingAloud) stopSpeaking();
-                setIsSpeakingAloud(false);
-                setActiveWordChar(null);
-                setScriptText(pr.text);
-              }}
-              className="text-xs bg-slate-950/70 hover:bg-slate-800 text-slate-400 hover:text-slate-200 px-2.5 py-1 rounded-xl border border-slate-800 transition-colors"
-            >
-              {pr.title}
-            </button>
-          ))}
-        </div>
-
-        {/* Actions Bar */}
+        {/* Studio Actions Bar */}
         <div className="pt-4 border-t border-slate-800 flex flex-wrap items-center justify-between gap-4">
           <div className="flex flex-wrap items-center gap-3">
-            {/* Action 1: Speak Aloud */}
+            {/* Action 1: Play Live Converted Voice */}
             <button
-              onClick={handleSpeakAloud}
-              disabled={!scriptText.trim()}
+              onClick={handlePlayLive}
               className={`px-6 py-3.5 rounded-2xl font-bold text-sm flex items-center gap-2.5 shadow-xl transition-all active:scale-[0.98] select-none cursor-pointer ${
-                isSpeakingAloud
+                isPlayingLive
                   ? 'bg-rose-600 hover:bg-rose-500 text-white shadow-rose-600/40 animate-pulse'
                   : 'bg-gradient-to-r from-indigo-500 via-indigo-600 to-cyan-500 hover:brightness-110 text-white shadow-indigo-500/30'
               }`}
             >
-              {isSpeakingAloud ? (
+              {isPlayingLive ? (
                 <>
-                  <Square className="w-4 h-4 fill-current" /> Stop Speaking
+                  <Square className="w-4 h-4 fill-current" /> Stop Audio
                 </>
               ) : (
                 <>
-                  <Volume2 className="w-4 h-4" /> Speak Words Aloud
+                  <Volume2 className="w-4 h-4" /> Play Converted Voice
                 </>
               )}
             </button>
 
-            {/* Action 2: Render WAV Take */}
+            {/* Action 2: Render Transformed WAV */}
             <button
               onClick={handleRenderWav}
-              disabled={isRenderingWav || !scriptText.trim()}
-              className="px-5 py-3 rounded-2xl bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold text-xs flex items-center gap-2 border border-slate-700 transition-colors"
+              disabled={isRenderingWav}
+              className="px-5 py-3.5 rounded-2xl bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold text-xs flex items-center gap-2 border border-slate-700 transition-colors cursor-pointer"
             >
               <Download className="w-3.5 h-3.5" />
-              {isRenderingWav ? 'Rendering Audio...' : 'Generate WAV File'}
+              {isRenderingWav ? 'Rendering WAV...' : 'Export Converted WAV'}
             </button>
           </div>
 
-          <span className="text-xs text-slate-500">
-            {(activeModel.synthesisMethod ?? 'cmu-arctic') === 'cmu-arctic' ? 'CMU ARCTIC recorded units' : 'Experimental mathematical formant voice'} · no AI or cloud TTS
+          <span className="text-xs text-slate-400">
+            Real human acoustic phonemes converted via pure Web Audio DSP
           </span>
         </div>
       </div>
 
-      {/* Generated Audio Take Player */}
+      {/* Generated Audio Take Player & Downloader */}
       {generatedWavUrl && (
         <div className="bg-slate-900/90 border border-slate-800 rounded-3xl p-6 shadow-2xl space-y-4 animate-in fade-in duration-200">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
               <AudioWaveform className="w-5 h-5 text-indigo-400" />
               <div>
-                <h4 className="font-bold text-white text-sm">Locally Synthesized Speech (WAV)</h4>
+                <h4 className="font-bold text-white text-sm">Converted Vocal Master (16-bit WAV)</h4>
                 <span className="text-[10px] text-emerald-400 font-mono">
-                  {(activeModel.synthesisMethod ?? 'cmu-arctic') === 'cmu-arctic' ? 'CMU ARCTIC recorded units' : 'Experimental mathematical formant synthesis'} &bull; no AI or cloud TTS
+                  100% Vocalis DSP Engine &bull; Zero External AI Models
                 </span>
               </div>
             </div>
             <div className="flex items-center gap-2">
               <button
                 onClick={handleSaveTake}
-                className="px-3.5 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-xs font-semibold text-slate-200 flex items-center gap-1.5 transition-colors"
+                className="px-3.5 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-xs font-semibold text-slate-200 flex items-center gap-1.5 transition-colors cursor-pointer"
               >
                 {takeSaved ? (
                   <>
@@ -477,7 +498,7 @@ export const SpeechStudio: React.FC<SpeechStudioProps> = ({
 
               <a
                 href={generatedWavUrl}
-                download={`${activeModel.name.toLowerCase().replace(/\s+/g, '-')}-speech.wav`}
+                download={`${activeModel.name.toLowerCase().replace(/\s+/g, '-')}-transformed.wav`}
                 className="px-4 py-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-xs font-semibold text-white flex items-center gap-1.5 shadow transition-colors"
               >
                 <Download className="w-3.5 h-3.5" /> Download WAV
@@ -489,7 +510,7 @@ export const SpeechStudio: React.FC<SpeechStudioProps> = ({
           <div className="p-4 rounded-2xl bg-slate-950 border border-slate-800 flex items-center gap-4">
             <button
               onClick={toggleWavPlay}
-              className="w-12 h-12 rounded-2xl bg-indigo-600 hover:bg-indigo-500 text-white flex items-center justify-center shadow-lg shadow-indigo-600/30 transition-all shrink-0"
+              className="w-12 h-12 rounded-2xl bg-indigo-600 hover:bg-indigo-500 text-white flex items-center justify-center shadow-lg shadow-indigo-600/30 transition-all shrink-0 cursor-pointer"
             >
               {isPlayingWav ? (
                 <Square className="w-5 h-5 fill-current" />
@@ -502,7 +523,7 @@ export const SpeechStudio: React.FC<SpeechStudioProps> = ({
               <input
                 type="range"
                 min="0"
-                max={duration || 100}
+                max={duration || 10}
                 step="0.05"
                 value={currentTime}
                 onChange={(e) => handleSeek(parseFloat(e.target.value))}

@@ -6,10 +6,7 @@ import {
   Sliders,
   Check,
   Search,
-  Sparkles,
   ShieldCheck,
-  User,
-  Plus,
 } from 'lucide-react';
 
 interface PredefinedVoiceListProps {
@@ -23,7 +20,6 @@ export const PredefinedVoiceList: React.FC<PredefinedVoiceListProps> = ({
   voices,
   activeVoice,
   onSelectVoice,
-  onNewVoice,
 }) => {
   const [filterRegion, setFilterRegion] = useState<'ALL' | 'US' | 'UK' | 'AU' | 'Global' | 'Custom'>('ALL');
   const [filterGender, setFilterGender] = useState<'ALL' | 'Female' | 'Male'>('ALL');
@@ -67,41 +63,40 @@ export const PredefinedVoiceList: React.FC<PredefinedVoiceListProps> = ({
         <div>
           <div className="flex items-center gap-2">
             <h3 className="font-extrabold text-white text-lg tracking-tight">
-              Predefined Vocalis Voices
+              Acoustic Voice Character Transformations
             </h3>
             <span className="text-xs bg-indigo-500/20 text-indigo-300 font-mono px-2 py-0.5 rounded-full border border-indigo-500/30">
-              {voices.length} Available
+              {voices.length} Configured
             </span>
           </div>
           <p className="text-xs text-slate-400 mt-0.5">
-            Select any predefined voice to manipulate pitch, cadence, and tone below.
+            Crafted from real human speech recordings (CMU ARCTIC) & transformed via Web Audio DSP.
           </p>
         </div>
 
-        {/* 100% Local badge */}
+        {/* 100% Non-AI Human Voice Badge */}
         <div className="flex items-center gap-2 bg-emerald-950/40 border border-emerald-500/30 px-3 py-1.5 rounded-xl text-emerald-300 text-xs">
           <ShieldCheck className="w-4 h-4 text-emerald-400 shrink-0" />
-          <span className="font-medium">100% Vocalis Generator &bull; Zero External TTS Files</span>
+          <span className="font-medium">100% Non-AI &bull; Real Human Studio Voice Foundation</span>
         </div>
       </div>
 
       {/* Filter and Search Bar */}
       <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3 pt-1">
-        {/* Accent / Region Filter */}
+        {/* Category Filter */}
         <div className="flex flex-wrap items-center gap-1.5">
-          <span className="text-[11px] text-slate-400 font-medium mr-1">Region:</span>
+          <span className="text-[11px] text-slate-400 font-medium mr-1">Filter:</span>
           {[
-            { id: 'ALL', label: 'All Regions' },
-            { id: 'US', label: '🇺🇸 US / North America' },
-            { id: 'UK', label: '🇬🇧 British UK' },
-            { id: 'AU', label: '🇦🇺 Australia' },
-            { id: 'Global', label: '🌐 Global & Sci-Fi' },
+            { id: 'ALL', label: 'All Voices' },
+            { id: 'US', label: '🇺🇸 North America' },
+            { id: 'UK', label: '🇬🇧 British' },
+            { id: 'Global', label: '🌐 Global / Sci-Fi' },
             { id: 'Custom', label: '✨ Custom Crafted' },
           ].map((f) => (
             <button
               key={f.id}
               onClick={() => setFilterRegion(f.id as any)}
-              className={`text-xs px-2.5 py-1 rounded-xl font-medium border transition-all ${
+              className={`text-xs px-2.5 py-1 rounded-xl font-medium border transition-all cursor-pointer ${
                 filterRegion === f.id
                   ? 'bg-indigo-600 text-white border-indigo-400 shadow-sm'
                   : 'bg-slate-950 text-slate-400 border-slate-800 hover:text-slate-200 hover:bg-slate-800/60'
@@ -119,13 +114,13 @@ export const PredefinedVoiceList: React.FC<PredefinedVoiceListProps> = ({
               <button
                 key={g}
                 onClick={() => setFilterGender(g)}
-                className={`text-[11px] px-2.5 py-1 rounded-lg font-medium transition-colors ${
+                className={`text-[11px] px-2.5 py-1 rounded-lg font-medium transition-colors cursor-pointer ${
                   filterGender === g
                     ? 'bg-indigo-600 text-white'
                     : 'text-slate-400 hover:text-slate-200'
                 }`}
               >
-                {g === 'ALL' ? 'Any Gender' : g}
+                {g === 'ALL' ? 'Any Voice' : g}
               </button>
             ))}
           </div>
@@ -143,7 +138,7 @@ export const PredefinedVoiceList: React.FC<PredefinedVoiceListProps> = ({
         </div>
       </div>
 
-      {/* Predefined Voice Cards Grid */}
+      {/* Voice Cards Grid */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3 max-h-[380px] overflow-y-auto pr-1">
         {filteredVoices.map((voice) => {
           const isSelected = activeVoice.id === voice.id;
@@ -189,12 +184,12 @@ export const PredefinedVoiceList: React.FC<PredefinedVoiceListProps> = ({
                 </p>
 
                 {/* Pitch & Rate metrics */}
-                <div className="flex items-center gap-1.5 text-[9px] font-mono text-slate-400">
+                <div className="flex items-center gap-1.5 text-[9px] font-mono text-slate-400 flex-wrap">
                   <span className="px-1.5 py-0.5 rounded bg-slate-900 border border-slate-800">
                     Pitch: {voice.pitch.toFixed(2)}x
                   </span>
                   <span className="px-1.5 py-0.5 rounded bg-slate-900 border border-slate-800">
-                    Speed: {voice.rate.toFixed(2)}x
+                    Rate: {voice.rate.toFixed(2)}x
                   </span>
                   <span className="px-1.5 py-0.5 rounded bg-slate-900 border border-slate-800 capitalize">
                     {voice.toneStyle}
@@ -207,12 +202,12 @@ export const PredefinedVoiceList: React.FC<PredefinedVoiceListProps> = ({
                 <button
                   type="button"
                   onClick={(e) => handleAudition(e, voice)}
-                  className={`px-3 py-1.5 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition-all shadow-sm active:scale-95 ${
+                  className={`px-3 py-1.5 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition-all shadow-sm active:scale-95 cursor-pointer ${
                     isAuditioning
                       ? 'bg-rose-600 hover:bg-rose-500 text-white shadow-rose-600/40 animate-pulse'
                       : 'bg-slate-900 hover:bg-slate-800 text-slate-200 border border-slate-700/80 hover:border-slate-600'
                   }`}
-                  title="Audition spoken sample"
+                  title="Audition transformed voice"
                 >
                   {isAuditioning ? (
                     <>
@@ -231,7 +226,7 @@ export const PredefinedVoiceList: React.FC<PredefinedVoiceListProps> = ({
                   }`}
                 >
                   <Sliders className="w-3 h-3" />
-                  {isSelected ? 'Manipulating' : 'Manipulate'}
+                  {isSelected ? 'Editing' : 'Tune Knobs'}
                 </span>
               </div>
             </div>
@@ -241,7 +236,7 @@ export const PredefinedVoiceList: React.FC<PredefinedVoiceListProps> = ({
 
       {filteredVoices.length === 0 && (
         <div className="text-center py-8 text-xs text-slate-500">
-          No voices match your filters. Try clearing your search query or region filter.
+          No voices match your filters. Try clearing your search query.
         </div>
       )}
     </div>

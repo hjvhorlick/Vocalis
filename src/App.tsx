@@ -137,6 +137,8 @@ export function App() {
       description: 'Custom tuned vocal pitch, pacing, and tone.',
       gender: 'Neutral',
       synthesisMethod: 'cmu-arctic',
+      baseSampleId: 'cmu-slt-1',
+      baseVoiceId: 'slt',
       accent: 'US',
       flag: '✨',
       pitch: 1.0,
