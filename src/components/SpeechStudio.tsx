@@ -1,6 +1,7 @@
 import React, { useState, useRef } from 'react';
 import {
   VoiceModelConfig,
+  addLocalPronunciation,
   speakRealWords,
   stopSpeaking,
   generateSpokenAudioWav,
@@ -37,7 +38,7 @@ export const SpeechStudio: React.FC<SpeechStudioProps> = ({
   onSaveTake,
 }) => {
   const [scriptText, setScriptText] = useState<string>(
-    'Welcome to Vocalis Voice Studio. You are listening to clear, natural spoken words with custom pitch and pacing.'
+    'Welcome to Vocalis Voice Studio. Vocalis builds speech locally from recorded CMU ARCTIC units.'
   );
   const [copied, setCopied] = useState(false);
 
@@ -54,6 +55,9 @@ export const SpeechStudio: React.FC<SpeechStudioProps> = ({
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
   const [takeSaved, setTakeSaved] = useState(false);
+  const [pronunciationWord, setPronunciationWord] = useState('');
+  const [pronunciationHint, setPronunciationHint] = useState('');
+  const [pronunciationMessage, setPronunciationMessage] = useState('');
 
   const audioRef = useRef<HTMLAudioElement | null>(null);
 
@@ -163,6 +167,17 @@ export const SpeechStudio: React.FC<SpeechStudioProps> = ({
     onSaveTake(take);
     setTakeSaved(true);
     setTimeout(() => setTakeSaved(false), 2500);
+  };
+
+  const handleSavePronunciation = async () => {
+    try {
+      await addLocalPronunciation(pronunciationWord, pronunciationHint);
+      setPronunciationMessage(`Saved a local pronunciation rule for “${pronunciationWord.trim()}”.`);
+      setPronunciationWord('');
+      setPronunciationHint('');
+    } catch (error) {
+      setPronunciationMessage(error instanceof Error ? error.message : 'Could not save this pronunciation.');
+    }
   };
 
   const words = scriptText.split(/\s+/).filter(Boolean);
@@ -336,10 +351,39 @@ export const SpeechStudio: React.FC<SpeechStudioProps> = ({
               rows={5}
               value={scriptText}
               onChange={(e) => setScriptText(e.target.value)}
-              placeholder="Type any sentence to hear real spoken words..."
+              placeholder="Enter text to synthesize with the selected local voice method..."
               className="w-full bg-slate-950 border border-slate-800 rounded-2xl p-4 text-sm text-slate-100 placeholder-slate-600 focus:outline-none focus:ring-2 focus:ring-indigo-500 font-sans leading-relaxed resize-y"
             />
           )}
+        </div>
+
+        <div className="rounded-2xl border border-slate-800 bg-slate-950/70 p-4 space-y-3">
+          <div>
+            <h4 className="text-xs font-bold text-slate-200">Custom pronunciation hints</h4>
+            <p className="mt-1 text-[11px] text-slate-500">Add a local spelling rule for names or tricky words. This adjusts the pronunciation dictionary; it does not train a voice model.</p>
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-[1fr_1.4fr_auto] gap-2">
+            <input
+              value={pronunciationWord}
+              onChange={(event) => setPronunciationWord(event.target.value)}
+              placeholder="Word (e.g. Vocalis)"
+              className="min-w-0 rounded-xl border border-slate-800 bg-slate-900 px-3 py-2 text-xs text-white placeholder:text-slate-600"
+            />
+            <input
+              value={pronunciationHint}
+              onChange={(event) => setPronunciationHint(event.target.value)}
+              placeholder="Pronounce like (e.g. voh kal iss)"
+              className="min-w-0 rounded-xl border border-slate-800 bg-slate-900 px-3 py-2 text-xs text-white placeholder:text-slate-600"
+            />
+            <button
+              onClick={handleSavePronunciation}
+              disabled={!pronunciationWord.trim() || !pronunciationHint.trim()}
+              className="rounded-xl bg-indigo-600 px-3 py-2 text-xs font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              Save rule
+            </button>
+          </div>
+          {pronunciationMessage && <p role="status" className="text-[11px] text-emerald-400">{pronunciationMessage}</p>}
         </div>
 
         {/* Preset Sentences */}
@@ -397,7 +441,7 @@ export const SpeechStudio: React.FC<SpeechStudioProps> = ({
           </div>
 
           <span className="text-xs text-slate-500">
-            Real human phoneme articulation & custom voice modeling
+            {(activeModel.synthesisMethod ?? 'cmu-arctic') === 'cmu-arctic' ? 'CMU ARCTIC recorded units' : 'Experimental mathematical formant voice'} · no AI or cloud TTS
           </span>
         </div>
       </div>
@@ -409,9 +453,9 @@ export const SpeechStudio: React.FC<SpeechStudioProps> = ({
             <div className="flex items-center gap-2">
               <AudioWaveform className="w-5 h-5 text-indigo-400" />
               <div>
-                <h4 className="font-bold text-white text-sm">Generated Spoken Word Master (WAV)</h4>
+                <h4 className="font-bold text-white text-sm">Locally Synthesized Speech (WAV)</h4>
                 <span className="text-[10px] text-emerald-400 font-mono">
-                  100% Generated by Vocalis &bull; Zero External TTS Files
+                  {(activeModel.synthesisMethod ?? 'cmu-arctic') === 'cmu-arctic' ? 'CMU ARCTIC recorded units' : 'Experimental mathematical formant synthesis'} &bull; no AI or cloud TTS
                 </span>
               </div>
             </div>

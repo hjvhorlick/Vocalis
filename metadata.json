@@ -1,10 +1,12 @@
 {
-  "name": "Vocalis - Vocal Studio & Pitch Trainer",
-  "description": "Custom voice creation and spoken word speech synthesis studio to design voice characters, shape pitch and cadence, and generate speech audio.",
+  "name": "Vocalis - Local Speech Studio",
+  "description": "Non-AI local text-to-speech from CMU ARCTIC recorded units, with an experimental mathematical formant voice, configurable delivery profiles, and pitch analysis.",
   "permissions": [
     "microphone"
   ],
   "capabilities": [
-    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+    "LOCAL_RECORDED_UNIT_SPEECH_SYNTHESIS",
+    "EXPERIMENTAL_LOCAL_MATHEMATICAL_FORMANT_SYNTHESIS",
+    "MICROPHONE_PITCH_ANALYSIS"
   ]
 }

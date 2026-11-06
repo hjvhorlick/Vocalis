@@ -1,4 +1,5 @@
 import express, { Request, Response } from 'express';
+import { createServer as createHttpServer } from 'node:http';
 import { createServer as createViteServer } from 'vite';
 import path from 'path';
 import fs from 'fs';
@@ -116,6 +117,10 @@ async function startServer() {
     });
   });
 
+  // Use one HTTP server for Express and Vite. In middleware mode, Vite otherwise
+  // opens a separate HMR-only port, which can be mistaken for the app preview.
+  const httpServer = createHttpServer(app);
+
   // Mount Vite in development or static in production
   if (process.env.NODE_ENV === 'production') {
     app.use(express.static(path.join(__dirname, 'dist')));
@@ -124,13 +129,19 @@ async function startServer() {
     });
   } else {
     const vite = await createViteServer({
-      server: { middlewareMode: true, host: '0.0.0.0', port: 3000 },
+      server: {
+        middlewareMode: true,
+        host: '0.0.0.0',
+        allowedHosts: ['.e2b.app'],
+        port: 3000,
+        hmr: { server: httpServer },
+      },
       appType: 'spa',
     });
     app.use(vite.middlewares);
   }
 
-  app.listen(Number(PORT), '0.0.0.0', () => {
+  httpServer.listen(Number(PORT), '0.0.0.0', () => {
     console.log(`Vocalis Voice Studio Server listening on http://0.0.0.0:${PORT}`);
   });
 }

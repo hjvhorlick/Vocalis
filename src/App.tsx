@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { VoiceModelConfig, PRESET_VOICE_MODELS } from './utils/naturalVoiceEngine';
+import React, { useEffect, useState } from 'react';
+import { initializeLocalSpeechEngine, VoiceModelConfig, PRESET_VOICE_MODELS } from './utils/naturalVoiceEngine';
 import { GeneratedTake } from './types/voice';
 import { VoiceNavbar } from './components/VoiceNavbar';
 import { PredefinedVoiceList } from './components/PredefinedVoiceList';
@@ -8,6 +8,7 @@ import { SpeechStudio } from './components/SpeechStudio';
 import { DialogueStudio } from './components/DialogueStudio';
 import { VoiceLibrary } from './components/VoiceLibrary';
 import { GitHubSyncModal } from './components/GitHubSyncModal';
+import { VoiceCredits } from './components/VoiceCredits';
 
 export function App() {
   const [activeTab, setActiveTab] = useState<'studio' | 'dialogue' | 'library'>('studio');
@@ -28,6 +29,10 @@ export function App() {
   });
 
   const [activeModel, setActiveModel] = useState<VoiceModelConfig>(models[0]);
+
+  useEffect(() => {
+    initializeLocalSpeechEngine(activeModel);
+  }, [activeModel.gender, activeModel.baseVoiceId, activeModel.synthesisMethod]);
 
   // Saved audio takes
   const [savedTakes, setSavedTakes] = useState<GeneratedTake[]>(() => {
@@ -131,6 +136,7 @@ export function App() {
       archetype: 'Articulate Speaker',
       description: 'Custom tuned vocal pitch, pacing, and tone.',
       gender: 'Neutral',
+      synthesisMethod: 'cmu-arctic',
       accent: 'US',
       flag: '✨',
       pitch: 1.0,
@@ -224,13 +230,15 @@ export function App() {
             <span>Voice Creation & Spoken Word Synthesizer</span>
           </div>
           <div className="flex items-center gap-4 text-[11px] text-slate-500">
-            <span>Real Spoken Word Articulation</span>
+            <span>CMU ARCTIC Recorded Speech Units · No AI</span>
             <span>&bull;</span>
             <span>Custom Pitch & Cadence Knobs</span>
             <span>&bull;</span>
             <span>Dual-Speaker Dialogue</span>
             <span>&bull;</span>
             <span>WAV Audio Export</span>
+            <span>&bull;</span>
+            <VoiceCredits />
           </div>
         </div>
       </footer>
