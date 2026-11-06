@@ -57,7 +57,39 @@ async function startServer() {
     });
   });
 
-  // Direct In-App GitHub Push Endpoint
+  // Return all project files for in-browser file browser & copy
+  app.get('/api/project/files', (_req: Request, res: Response) => {
+    try {
+      const fileList: { path: string; size: number; content: string }[] = [];
+      const walk = (dir: string) => {
+        const entries = fs.readdirSync(dir, { withFileTypes: true });
+        for (const entry of entries) {
+          const fullPath = path.join(dir, entry.name);
+          const relPath = path.relative(process.cwd(), fullPath);
+          if (
+            relPath.startsWith('node_modules') ||
+            relPath.startsWith('dist') ||
+            relPath.startsWith('.git') ||
+            relPath.endsWith('.zip') ||
+            relPath.startsWith('scripts')
+          ) {
+            continue;
+          }
+          if (entry.isDirectory()) {
+            walk(fullPath);
+          } else {
+            const stat = fs.statSync(fullPath);
+            const content = fs.readFileSync(fullPath, 'utf-8');
+            fileList.push({ path: relPath, size: stat.size, content });
+          }
+        }
+      };
+      walk(process.cwd());
+      res.json({ files: fileList });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
   app.post('/api/project/push-github', (req: Request, res: Response) => {
     const { token } = req.body;
     if (!token || typeof token !== 'string') {

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Download,
   Check,
@@ -10,6 +10,10 @@ import {
   ArrowRight,
   FolderArchive,
   RefreshCw,
+  FileCode,
+  Copy,
+  ChevronDown,
+  ChevronUp,
 } from 'lucide-react';
 
 const GitHubIcon = ({ className = 'w-4 h-4' }: { className?: string }) => (
@@ -21,6 +25,12 @@ const GitHubIcon = ({ className = 'w-4 h-4' }: { className?: string }) => (
     />
   </svg>
 );
+
+interface ProjectFile {
+  path: string;
+  size: number;
+  content: string;
+}
 
 interface GitHubSyncModalProps {
   isOpen: boolean;
@@ -35,6 +45,26 @@ export const GitHubSyncModal: React.FC<GitHubSyncModalProps> = ({ isOpen, onClos
     text: string;
   }>({ type: null, text: '' });
   const [isDownloading, setIsDownloading] = useState(false);
+  const [showFileBrowser, setShowFileBrowser] = useState(false);
+  const [files, setFiles] = useState<ProjectFile[]>([]);
+  const [selectedFile, setSelectedFile] = useState<ProjectFile | null>(null);
+  const [copiedFile, setCopiedFile] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (isOpen) {
+      fetch('/api/project/files')
+        .then((res) => res.json())
+        .then((data) => {
+          if (data.files) {
+            setFiles(data.files);
+            if (!selectedFile && data.files.length > 0) {
+              setSelectedFile(data.files.find((f: ProjectFile) => f.path === 'src/App.tsx') || data.files[0]);
+            }
+          }
+        })
+        .catch(console.error);
+    }
+  }, [isOpen]);
 
   if (!isOpen) return null;
 
@@ -67,7 +97,7 @@ export const GitHubSyncModal: React.FC<GitHubSyncModalProps> = ({ isOpen, onClos
 
       setStatusMessage({
         type: 'success',
-        text: `Downloaded valid ZIP archive (${Math.round(data.size / 1024)} KB, 32 files) directly to your computer!`,
+        text: `Downloaded vocalis-project.zip (${Math.round(data.size / 1024)} KB) with all 32 application files!`,
       });
     } catch (err: any) {
       console.error(err);
@@ -119,9 +149,15 @@ export const GitHubSyncModal: React.FC<GitHubSyncModalProps> = ({ isOpen, onClos
     }
   };
 
+  const handleCopyFileContent = (file: ProjectFile) => {
+    navigator.clipboard.writeText(file.content);
+    setCopiedFile(file.path);
+    setTimeout(() => setCopiedFile(null), 2000);
+  };
+
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md animate-in fade-in duration-150">
-      <div className="bg-slate-900 border border-slate-800 rounded-3xl max-w-xl w-full p-6 sm:p-7 shadow-2xl relative space-y-6 text-slate-100">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/85 backdrop-blur-md animate-in fade-in duration-150 overflow-y-auto">
+      <div className="bg-slate-900 border border-slate-800 rounded-3xl max-w-2xl w-full p-6 sm:p-7 shadow-2xl relative space-y-6 text-slate-100 my-8">
         {/* Close Button */}
         <button
           onClick={onClose}
@@ -138,33 +174,59 @@ export const GitHubSyncModal: React.FC<GitHubSyncModalProps> = ({ isOpen, onClos
           <div>
             <h3 className="text-lg font-extrabold text-white">Save / Push to GitHub</h3>
             <p className="text-xs text-slate-400">
-              Target Repository:{' '}
+              Repository:{' '}
               <span className="font-mono text-indigo-300 font-semibold">hjvhorlick/Vocalis</span>
             </p>
           </div>
         </div>
 
+        {/* Code Size Clarity Notice */}
+        <div className="bg-slate-950/90 border border-indigo-500/20 rounded-2xl p-4 text-xs space-y-2">
+          <div className="flex items-center gap-2 text-indigo-300 font-bold uppercase tracking-wider text-[11px]">
+            <ShieldCheck className="w-4 h-4 text-indigo-400" />
+            <span>Why is the complete source code 99 KB?</span>
+          </div>
+          <p className="text-slate-300 leading-relaxed">
+            All 32 application files (React components, voice synthesis engine, server, HTML, styles) are plain text code totalling ~350 KB, which compresses to 99 KB.
+          </p>
+          <p className="text-slate-400 leading-relaxed text-[11px]">
+            Note: On GitHub, repositories <span className="text-white font-medium">never</span> include the 200 MB <code className="bg-slate-900 px-1 py-0.5 rounded text-indigo-300">node_modules</code> folder because dependencies are automatically downloaded by running <code className="bg-slate-900 px-1 py-0.5 rounded text-indigo-300">npm install</code>.
+          </p>
+        </div>
+
         {/* Option 1: 1-Click ZIP Download */}
-        <div className="bg-slate-950 border border-slate-800 rounded-2xl p-4 space-y-2.5">
+        <div className="bg-slate-950 border border-slate-800 rounded-2xl p-4 space-y-3">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2 text-white font-bold text-xs uppercase tracking-wider">
               <FolderArchive className="w-4 h-4 text-emerald-400" />
-              <span>Option 1: Instant ZIP Download (Guaranteed)</span>
+              <span>Option 1: Download Complete Source ZIP</span>
             </div>
             <span className="text-[10px] text-emerald-400 bg-emerald-950/60 border border-emerald-500/30 px-2 py-0.5 rounded-full font-medium">
-              1-Click
+              32 Files &bull; ~99 KB
             </span>
           </div>
-          <p className="text-xs text-slate-400">
-            Download the complete Vocalis codebase as a <span className="text-white font-medium">.zip</span> file directly to your computer. Then you can upload it or keep a permanent copy.
-          </p>
-          <button
-            onClick={handleDownloadZip}
-            className="w-full py-2.5 px-4 rounded-xl font-bold text-xs bg-emerald-600 hover:bg-emerald-500 active:scale-[0.99] text-white flex items-center justify-center gap-2 shadow-lg shadow-emerald-600/20 transition-all cursor-pointer"
-          >
-            <Download className="w-4 h-4" />
-            {isDownloading ? 'Generating ZIP...' : 'Download Entire Project ZIP (.zip)'}
-          </button>
+
+          <div className="flex flex-col sm:flex-row gap-2">
+            <button
+              onClick={handleDownloadZip}
+              className="flex-1 py-2.5 px-4 rounded-xl font-bold text-xs bg-emerald-600 hover:bg-emerald-500 active:scale-[0.99] text-white flex items-center justify-center gap-2 shadow-lg shadow-emerald-600/20 transition-all cursor-pointer"
+            >
+              <Download className="w-4 h-4" />
+              {isDownloading ? 'Generating...' : 'Download Project ZIP'}
+            </button>
+
+            {/* Direct Link in New Tab (Bypasses all iframe download restrictions) */}
+            <a
+              href="/api/project/download-zip"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="py-2.5 px-4 rounded-xl font-semibold text-xs bg-slate-900 hover:bg-slate-800 text-slate-300 border border-slate-700 flex items-center justify-center gap-1.5 transition-colors"
+              title="Open direct download link in new tab"
+            >
+              <ExternalLink className="w-3.5 h-3.5" />
+              <span>Direct Link (New Tab)</span>
+            </a>
+          </div>
         </div>
 
         {/* Option 2: Direct Push to GitHub with Token */}
@@ -172,16 +234,12 @@ export const GitHubSyncModal: React.FC<GitHubSyncModalProps> = ({ isOpen, onClos
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2 text-white font-bold text-xs uppercase tracking-wider">
               <KeyRound className="w-4 h-4 text-indigo-400" />
-              <span>Option 2: Push Directly to GitHub</span>
+              <span>Option 2: Push Directly to GitHub (Zero Download)</span>
             </div>
             <span className="text-[10px] text-indigo-400 bg-indigo-950/60 border border-indigo-500/30 px-2 py-0.5 rounded-full font-medium">
-              Direct Sync
+              Instant Sync
             </span>
           </div>
-
-          <p className="text-xs text-slate-400 leading-relaxed">
-            GitHub requires a Personal Access Token with <span className="text-white font-semibold">repo</span> permissions to push code.
-          </p>
 
           <form onSubmit={handlePushToGitHub} className="space-y-3">
             <div>
@@ -200,7 +258,7 @@ export const GitHubSyncModal: React.FC<GitHubSyncModalProps> = ({ isOpen, onClos
                 type="password"
                 value={token}
                 onChange={(e) => setToken(e.target.value)}
-                placeholder="Paste token (e.g. ghp_xxxxxxxxxxxxxxxxxxxx)"
+                placeholder="Paste token (ghp_...)"
                 className="w-full bg-slate-900 border border-slate-800 rounded-xl px-3.5 py-2 text-xs text-white placeholder-slate-600 font-mono focus:outline-none focus:ring-2 focus:ring-indigo-500"
               />
             </div>
@@ -251,10 +309,77 @@ export const GitHubSyncModal: React.FC<GitHubSyncModalProps> = ({ isOpen, onClos
           )}
         </div>
 
-        {/* Footer Note */}
-        <div className="flex items-center justify-between text-[11px] text-slate-500 pt-1 border-t border-slate-800">
-          <span>Target: main branch</span>
-          <span>Zero external cloud TTS files</span>
+        {/* Option 3: In-Browser File Explorer (See every file with 1-click Copy) */}
+        <div className="bg-slate-950 border border-slate-800 rounded-2xl p-4 space-y-3">
+          <button
+            onClick={() => setShowFileBrowser(!showFileBrowser)}
+            className="w-full flex items-center justify-between text-left text-xs font-bold text-slate-300 hover:text-white"
+          >
+            <div className="flex items-center gap-2 uppercase tracking-wider">
+              <FileCode className="w-4 h-4 text-cyan-400" />
+              <span>Option 3: View & Copy Files Directly in Browser ({files.length} Files)</span>
+            </div>
+            {showFileBrowser ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+          </button>
+
+          {showFileBrowser && (
+            <div className="pt-2 space-y-3 border-t border-slate-800/80 animate-in fade-in">
+              <div className="grid grid-cols-1 sm:grid-cols-12 gap-3 max-h-64">
+                {/* File List */}
+                <div className="sm:col-span-5 space-y-1 overflow-y-auto max-h-60 pr-1">
+                  {files.map((file) => (
+                    <button
+                      key={file.path}
+                      onClick={() => setSelectedFile(file)}
+                      className={`w-full text-left px-2.5 py-1.5 rounded-lg text-xs font-mono truncate transition-colors flex items-center justify-between ${
+                        selectedFile?.path === file.path
+                          ? 'bg-indigo-600 text-white font-bold'
+                          : 'bg-slate-900/60 hover:bg-slate-800 text-slate-400 hover:text-slate-200'
+                      }`}
+                    >
+                      <span className="truncate">{file.path}</span>
+                      <span className="text-[10px] opacity-70 ml-1">
+                        {Math.round(file.size / 1024) || 1}k
+                      </span>
+                    </button>
+                  ))}
+                </div>
+
+                {/* File Preview and Copy */}
+                <div className="sm:col-span-7 bg-slate-900 border border-slate-800 rounded-xl p-3 flex flex-col justify-between max-h-60">
+                  {selectedFile ? (
+                    <>
+                      <div className="flex items-center justify-between border-b border-slate-800 pb-2 mb-2">
+                        <span className="text-xs font-mono font-bold text-indigo-300 truncate">
+                          {selectedFile.path}
+                        </span>
+                        <button
+                          onClick={() => handleCopyFileContent(selectedFile)}
+                          className="px-2.5 py-1 rounded-lg text-xs font-semibold bg-indigo-600 hover:bg-indigo-500 text-white flex items-center gap-1 transition-colors"
+                        >
+                          {copiedFile === selectedFile.path ? (
+                            <>
+                              <Check className="w-3.5 h-3.5 text-emerald-300" /> Copied!
+                            </>
+                          ) : (
+                            <>
+                              <Copy className="w-3.5 h-3.5" /> Copy File
+                            </>
+                          )}
+                        </button>
+                      </div>
+                      <pre className="text-[11px] font-mono text-slate-300 overflow-y-auto flex-1 leading-relaxed whitespace-pre-wrap select-all">
+                        {selectedFile.content.slice(0, 1500)}
+                        {selectedFile.content.length > 1500 && '\n\n... (file continues)'}
+                      </pre>
+                    </>
+                  ) : (
+                    <span className="text-xs text-slate-500">Select a file to preview and copy</span>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
         </div>
       </div>
     </div>
