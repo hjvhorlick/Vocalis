@@ -201,14 +201,14 @@ export const VoiceManipulator: React.FC<VoiceManipulatorProps> = ({
         <label className="space-y-1.5 text-[11px] font-semibold uppercase tracking-wider text-slate-400">
           Speech generation method
           <select
-            value={voice.synthesisMethod ?? 'formant'}
+            value={voice.synthesisMethod ?? 'cmu-arctic'}
             onChange={(e) => onUpdateVoice({ ...voice, synthesisMethod: e.target.value as VoiceModelConfig['synthesisMethod'] })}
             className="w-full mt-1 bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-sm normal-case tracking-normal text-slate-200"
           >
-            <option value="formant">Mathematical formant voice (default)</option>
-            <option value="cmu-arctic">CMU ARCTIC recordings (experimental)</option>
+            <option value="cmu-arctic">CMU ARCTIC recorded units (default)</option>
+            <option value="formant">Mathematical formant voice (experimental)</option>
           </select>
-          <span className="block normal-case tracking-normal font-normal text-slate-500">The default is a synthetic voice built from phonemes, shaped glottal pulses, and formant resonators—not a human recording or AI model.</span>
+          <span className="block normal-case tracking-normal font-normal text-slate-500">The default uses time-aligned units from real CMU ARCTIC recordings. The mathematical alternative is synthetic, experimental, and does not use a human recording or AI model.</span>
         </label>
         <label className="space-y-1.5 text-[11px] font-semibold uppercase tracking-wider text-slate-400">
           Voice register
@@ -221,7 +221,7 @@ export const VoiceManipulator: React.FC<VoiceManipulatorProps> = ({
             <option value="Male">Lower register</option>
             <option value="Neutral">Middle register</option>
           </select>
-          <span className="block normal-case tracking-normal font-normal text-slate-500">Sets the modeled vocal register in mathematical mode; selects the matching recorded speaker only in experimental CMU mode.</span>
+          <span className="block normal-case tracking-normal font-normal text-slate-500">Selects the matching recorded speaker in CMU mode; sets modeled register in mathematical mode.</span>
         </label>
         <label className="space-y-1.5 text-[11px] font-semibold uppercase tracking-wider text-slate-400">
           Pronunciation accent

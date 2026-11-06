@@ -38,7 +38,7 @@ export const SpeechStudio: React.FC<SpeechStudioProps> = ({
   onSaveTake,
 }) => {
   const [scriptText, setScriptText] = useState<string>(
-    'Welcome to Vocalis Voice Studio. Vocalis generates speech locally with mathematical formant synthesis.'
+    'Welcome to Vocalis Voice Studio. Vocalis builds speech locally from recorded CMU ARCTIC units.'
   );
   const [copied, setCopied] = useState(false);
 
@@ -441,7 +441,7 @@ export const SpeechStudio: React.FC<SpeechStudioProps> = ({
           </div>
 
           <span className="text-xs text-slate-500">
-            {activeModel.synthesisMethod === 'cmu-arctic' ? 'Experimental CMU ARCTIC recorded units' : 'Mathematical formant voice'} · no AI or cloud TTS
+            {(activeModel.synthesisMethod ?? 'cmu-arctic') === 'cmu-arctic' ? 'CMU ARCTIC recorded units' : 'Experimental mathematical formant voice'} · no AI or cloud TTS
           </span>
         </div>
       </div>
@@ -455,7 +455,7 @@ export const SpeechStudio: React.FC<SpeechStudioProps> = ({
               <div>
                 <h4 className="font-bold text-white text-sm">Locally Synthesized Speech (WAV)</h4>
                 <span className="text-[10px] text-emerald-400 font-mono">
-                  {activeModel.synthesisMethod === 'cmu-arctic' ? 'Experimental recorded units' : 'Mathematical formant synthesis'} &bull; no AI or cloud TTS
+                  {(activeModel.synthesisMethod ?? 'cmu-arctic') === 'cmu-arctic' ? 'CMU ARCTIC recorded units' : 'Experimental mathematical formant synthesis'} &bull; no AI or cloud TTS
                 </span>
               </div>
             </div>

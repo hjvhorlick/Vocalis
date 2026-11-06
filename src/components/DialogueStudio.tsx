@@ -33,7 +33,7 @@ export const DialogueStudio: React.FC<DialogueStudioProps> = ({ models }) => {
     {
       id: '3',
       speakerId: 'A',
-      text: 'The text is mapped to phonemes and shaped by a local mathematical voice engine.'
+      text: 'The text is mapped to phonemes and assembled from recorded CMU ARCTIC speech units.'
     },
     {
       id: '4',

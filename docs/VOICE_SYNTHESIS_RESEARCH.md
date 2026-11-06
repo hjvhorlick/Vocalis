@@ -2,9 +2,9 @@
 
 ## Non-negotiable direction
 
-Vocalis's default voice is self-generated mathematical speech. Keep synthesis local and non-AI: no neural speech generation, voice cloning, cloud TTS, or browser/system TTS. Recorded CMU ARCTIC units may remain an explicitly optional experimental method; they must not silently replace the mathematical voice.
+Vocalis's speech must remain local and non-AI: no neural speech generation, voice cloning, cloud TTS, or browser/system TTS. The user has asked for a voice that is already ready to use, so the default is now the real CMU ARCTIC recorded-unit path. Mathematical formant synthesis remains available as an experimental alternative; neither method may silently masquerade as the other.
 
-A mathematical formant synthesizer is expected to sound synthetic. It can be made clearer, smoother, and more expressive, but should not be advertised as a natural human recording or a new human identity. A recorded-unit synthesizer can sound more human when its units and prosody match, but only if the corpus is adequately covered and the joins are good.
+A mathematical formant synthesizer is expected to sound synthetic. It can be made clearer, smoother, and more expressive, but should not be advertised as a natural human recording or a new human identity. Recorded-unit synthesis has real speaker audio as its source, but can still sound poor if unit coverage, timing, selection, or joins are inadequate.
 
 ## Evidence-based design choices
 
@@ -17,14 +17,14 @@ A mathematical formant synthesizer is expected to sound synthetic. It can be mad
 
 ## Current work in Vocalis
 
-The shared text-to-speech path now defaults to mathematical formant synthesis for audition, Speech Studio, dialogue, and WAV export. It preserves CMU dictionary stress, reduces artificial silence between ordinary words, models shaped voiced pulses, formant resonators, aspiration/frication and stop releases, and overlaps adjacent phone segments. It also adds smooth formant transitions across neighboring phones, stress-weighted timing, phrase-final vowel lengthening, and a basic question-rise/statement-fall contour. CMU ARCTIC remains selectable as an experimental alternative. This is an architectural correction and a better research-based baseline—not a claim that the mathematical voice is already natural.
+The shared text-to-speech path defaults to CMU ARCTIC recorded units for audition, Speech Studio, dialogue, and WAV export. A join-level amplitude bug that under-scaled one side of every crossfade has been corrected. The mathematical formant path remains explicitly experimental and includes shaped voiced pulses, formant resonators, modeled aspiration/frication and stop releases, smooth formant transitions, stress-weighted timing, phrase-final vowel lengthening, and a basic question-rise/statement-fall contour. These implementation changes do not substitute for listening-based quality checks.
 
 ## Next improvement sequence
 
 1. **Freeze an evaluation set:** common statements, questions, names, numbers, punctuation, difficult consonants, and multi-syllable stress patterns. Keep the exact text, settings, generated WAVs, and listening notes for each revision.
 2. **Improve the mathematical voice:** move from per-phone chunks to continuous frame-based parameter tracks; refine place-specific consonant targets and nasal poles/anti-resonances; add richer phrase grouping, rule-based pitch accents and emphasis, and controlled intensity variation. Avoid independent per-phone buzz and abrupt filter resets.
 3. **Improve persona adaptation:** separate vocal-source controls (F0 range, pulse shape, spectral tilt, aspiration) from vocal-tract controls (formant scale and bandwidth). Keep transformations moderate and label them as modeled characteristics. Accent-specific profiles need validated pronunciation rules and separate listening checks.
-4. **Improve the recorded alternative only if it earns its place:** keep multiple good, context-labelled units per transition; score stress/context and pitch/energy/spectral join continuity; select a sequence globally; use careful pitch-marked modification only when necessary. Continue to preserve complete source notices.
+4. **Improve the default recorded path:** retain multiple good, context-labelled candidates per transition; score stress/context and pitch/energy/spectral continuity; select a sequence globally; correct and verify segment boundaries; use pitch-marked modification only when necessary. Continue to preserve complete source notices.
 5. **Use listening gates:** compare versions blind with a consistent set of speakers; record intelligibility, smoothness, naturalness, and preference. Inspect F0/duration tracks and clipping as diagnostics. A successful build or RIFF header is not an audio-quality pass.
 
 The next implementation should be judged by listening results. If listeners still describe the mathematical mode as robotic, its status should remain experimental and the limitation should be visible rather than hidden by persona names.

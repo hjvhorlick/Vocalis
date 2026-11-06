@@ -1,12 +1,12 @@
 # Vocalis voice library — future specifications
 
-**Status: planning only.** These ideas are saved for later and are not implemented as active voice choices. The current catalog uses descriptive presets over the mathematical formant voice by default. CMU ARCTIC BDL and SLT remain an explicitly experimental alternative, not the default engine.
+**Status: planning only.** These ideas are saved for later and are not implemented as active voice choices. The current catalog uses descriptive presets over the real CMU ARCTIC BDL and SLT recordings by default. The mathematical formant voice is available only as an explicitly experimental alternative.
 
 ## Product direction
 
-Offer a broad set of **descriptive roles**, not celebrity names or implied voice clones. The default voice remains self-generating from pronunciation, phoneme timing, harmonic excitation, and formant parameters. Profiles may vary register, pitch, rhythm, pronunciation rules, and restrained signal processing; this does not create additional human identities or authentic regional accents.
+Offer a broad set of **descriptive roles**, not celebrity names or implied voice clones. The current default uses recorded CMU ARCTIC speech units. Profiles may vary register, pitch, rhythm, pronunciation rules, and restrained signal processing; this does not create additional human identities or authentic regional accents. Keep mathematical formant synthesis visibly labeled as synthetic and experimental until it passes listening-quality gates.
 
-A future recorded-speech profile must explicitly identify its licensed corpus/speaker and stay separate from the mathematical voice path. Persona descriptions must not imply a recorded voice when the profile is mathematically synthesized. Do not claim a regional accent unless supported by validated pronunciation rules or a suitable licensed recording corpus.
+Any future recorded-speech profile must explicitly identify its licensed corpus/speaker. Persona descriptions must not imply a new recorded voice when the profile only transforms an existing source. Do not claim a regional accent unless supported by validated pronunciation rules or a suitable licensed recording corpus.
 
 The role ideas below are inspired by the persona descriptions in [Scenering's voice preset catalogue](https://github.com/hjvhorlick/Scenering/blob/main/src/data/voice-presets.ts). They are a backlog, not a request to add all of them now.
 

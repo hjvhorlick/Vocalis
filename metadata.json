@@ -1,12 +1,12 @@
 {
   "name": "Vocalis - Local Speech Studio",
-  "description": "Non-AI, local mathematical formant speech synthesis with optional experimental CMU ARCTIC unit selection, configurable voice personas, and pitch analysis.",
+  "description": "Non-AI local text-to-speech from CMU ARCTIC recorded units, with an experimental mathematical formant voice, configurable delivery profiles, and pitch analysis.",
   "permissions": [
     "microphone"
   ],
   "capabilities": [
-    "LOCAL_MATHEMATICAL_FORMANT_SPEECH_SYNTHESIS",
-    "OPTIONAL_LOCAL_RECORDED_UNIT_SYNTHESIS",
+    "LOCAL_RECORDED_UNIT_SPEECH_SYNTHESIS",
+    "EXPERIMENTAL_LOCAL_MATHEMATICAL_FORMANT_SYNTHESIS",
     "MICROPHONE_PITCH_ANALYSIS"
   ]
 }

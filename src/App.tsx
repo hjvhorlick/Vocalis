@@ -136,7 +136,7 @@ export function App() {
       archetype: 'Articulate Speaker',
       description: 'Custom tuned vocal pitch, pacing, and tone.',
       gender: 'Neutral',
-      synthesisMethod: 'formant',
+      synthesisMethod: 'cmu-arctic',
       accent: 'US',
       flag: '✨',
       pitch: 1.0,
@@ -230,7 +230,7 @@ export function App() {
             <span>Voice Creation & Spoken Word Synthesizer</span>
           </div>
           <div className="flex items-center gap-4 text-[11px] text-slate-500">
-            <span>Mathematical Voice Synthesis · No AI</span>
+            <span>CMU ARCTIC Recorded Speech Units · No AI</span>
             <span>&bull;</span>
             <span>Custom Pitch & Cadence Knobs</span>
             <span>&bull;</span>

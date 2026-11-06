@@ -63,7 +63,7 @@ function crossfadeJoin(chunks: Float32Array[]): Float32Array {
     const start = cursor - blend;
     for (let i = 0; i < blend; i++) {
       const mix = (i + 1) / (blend + 1);
-      output[start + i] = output[start + i] * (1 - mix) + chunk[i] / 32768 * mix;
+      output[start + i] = output[start + i] * (1 - mix) + chunk[i] * mix;
     }
     output.set(chunk.subarray(blend), cursor);
     cursor += chunk.length - blend;

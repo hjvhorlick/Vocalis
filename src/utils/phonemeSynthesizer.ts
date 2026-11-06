@@ -494,6 +494,7 @@ function writeWav(samples: Float32Array, volume: number): Blob {
 
 export async function synthesizeText(text: string, model: VoiceModelConfig): Promise<SynthesisResult> {
   const dictionary = await loadDictionary();
+  const synthesisMethod = model.synthesisMethod ?? 'cmu-arctic';
   const matches = getWordMatches(text);
   const samples: Float32Array[] = [];
   const wordTimings: Timing[] = [];
@@ -525,7 +526,7 @@ export async function synthesizeText(text: string, model: VoiceModelConfig): Pro
       phones.push(...applyAccent(await wordPhones(spokenWord, dictionary), model.accent));
     }
     let wordSamples: Float32Array;
-    if (model.synthesisMethod === 'cmu-arctic') {
+    if (synthesisMethod === 'cmu-arctic') {
       const fallback = (phone: string, offset: number) => {
         const normalizedPhone = phone === 'AX' ? 'AH' : phone;
         return buildPhoneSamples(normalizedPhone, '0', fallbackModel, offset, random);
@@ -566,7 +567,7 @@ export async function synthesizeText(text: string, model: VoiceModelConfig): Pro
     offset += part.length;
   }
 
-  const combined = model.synthesisMethod === 'cmu-arctic' ? processCmuVoice(raw, model) : raw;
+  const combined = synthesisMethod === 'cmu-arctic' ? processCmuVoice(raw, model) : raw;
   const timingScale = raw.length ? combined.length / raw.length : 1;
   for (const timing of wordTimings) {
     timing.start *= timingScale;
