@@ -31,7 +31,13 @@ through an effects chain, whatever text you type. That single fact explains most
 ways: import-graph walk from `src/main.tsx`, and `grep -rn "synthesizeText|phonemeSynthesizer|prepareCmuVoice|renderCmuDiphones" src server.ts` outside those two files → no hits.
 Consequences:
 
-- There is **no text input for speech anywhere**. `grep -rln textarea src` → no hits.
+- **Speech Studio has no text input at all.** It renders `activeModel.samplePhrase`, a preset
+  string, at `SpeechStudio.tsx:77` (live play), `:88-89` (WAV render) and displays it as
+  "Source Sentence" at `:417`. The only speech-related text fields in the reachable tree are
+  Dialogue Studio's per-line inputs (`DialogueStudio.tsx:214-216`), whose text is passed to
+  `speakRealWords(line.text, voice, …)` at `:97` and then discarded; `PredefinedVoiceList.tsx:131`
+  is a voice-search box; the `VoiceShaper.tsx` inputs are dead code. There is no multi-line
+  script field anywhere (`grep -rln textarea src` → no hits).
 - `speakRealWords(text, model)` in `naturalVoiceEngine.ts` accepts `text` and never reads it.
   It calls `resolveBufferForModel(model)`, which returns the reference WAV named by
   `model.baseSampleId`. `tsconfig.json` sets `noUnusedParameters: false`, so the compiler
@@ -488,7 +494,7 @@ prohibited for the rest of this work.
 
 | ID | Severity | Finding | Measured evidence |
 | --- | --- | --- | --- |
-| A1 | P0 | Recorded-unit TTS engine orphaned; no text input; `speakRealWords` ignores its `text` argument | 818 dead lines; 0 importers; 0 `<textarea>` in `src` |
+| A1 | P0 | Recorded-unit TTS engine orphaned; Speech Studio has no text input; `speakRealWords` ignores its `text` argument | 818 dead lines; 0 importers; `SpeechStudio.tsx:77,89`; `DialogueStudio.tsx:97` |
 | A2 | P0 | "Pitch" is `playbackRate = pitch × rate` | `audioDspEngine.ts:38`, clamp 0.4–2.5 |
 | A3 | P1 | Accent has zero acoustic effect in the wired path | `model.accent` referenced only in dead code |
 | A4 | P1 | `synthesisMethod` / `baseVoiceId` have no UI | 8 presets omit `synthesisMethod` |

@@ -20,7 +20,9 @@ A mathematical formant synthesizer is expected to sound synthetic. It can be mad
 **Status correction, 2026-11-06.** The paragraph below described the intended state and is no
 longer accurate for the shipped tree. On `main` at commit `596f360` the shared speech path does
 **not** use CMU ARCTIC recorded units: no component imports `src/utils/phonemeSynthesizer.ts` or
-`src/utils/cmuDiphoneSynthesizer.ts`, there is no text input for speech anywhere in `src`, and
+`src/utils/cmuDiphoneSynthesizer.ts`, Speech Studio has no text input at all (it renders the
+preset `samplePhrase`), Dialogue Studio's typed line text is passed to `speakRealWords` and then
+discarded, and
 `speakRealWords(text, model)` ignores its `text` argument and plays the pre-recorded reference
 sentence selected by `model.baseSampleId` through a Web Audio effects chain. The recorded-unit
 engine and its 11 MB of diphone data are present and intact but unreachable. This is finding
