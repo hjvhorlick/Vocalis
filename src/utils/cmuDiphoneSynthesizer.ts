@@ -132,7 +132,10 @@ const packs = new Map<'slt' | 'bdl', Promise<VoicePack>>();
  */
 export function speakerForModel(model: VoiceModelConfig): 'slt' | 'bdl' {
   if (model.baseVoiceId === 'slt' || model.baseVoiceId === 'bdl') return model.baseVoiceId;
-  return model.gender === 'Female' ? 'slt' : 'bdl';
+  // A voice that never says which recording it comes from still has to come from
+  // one. Only an explicitly male identity is given the male speaker; everything
+  // else, including a neutral one, resolves to SLT rather than being guessed at.
+  return model.gender === 'Male' ? 'bdl' : 'slt';
 }
 
 async function loadVoicePack(speaker: 'slt' | 'bdl'): Promise<VoicePack> {
@@ -732,9 +735,17 @@ function applyStyle(input: Float32Array, style: VoiceModelConfig['toneStyle']): 
 
 export function processCmuVoice(samples: Float32Array, model: VoiceModelConfig): Float32Array {
   const stylePitch = model.toneStyle === 'deep' ? 0.92 : model.toneStyle === 'energetic' ? 1.06 : 1;
-  const pitch = resample(samples, model.pitch * stylePitch);
+  const pitchFactor = Math.max(0.25, Math.min(4, model.pitch * stylePitch));
+  const pitched = resample(samples, pitchFactor);
   const rateStyle = model.toneStyle === 'deep' ? 0.92 : model.toneStyle === 'energetic' ? 1.1 : 1;
-  const stretch = wsolaStretch(pitch, Math.floor(pitch.length / Math.max(0.55, model.rate * rateStyle)));
+  // Resampling moves pitch and duration together, so a pitch control that also
+  // slowed the reader down would not be a pitch control: at 0.72 the deep preset
+  // spoke at 68 words a minute and a quarter of its render was silence. The
+  // stretch target is measured from the ORIGINAL length, which puts the duration
+  // back where the recording had it and leaves `rate` as the only thing that
+  // changes how long the speaking takes.
+  const targetLength = Math.max(1, Math.floor(samples.length / Math.max(0.55, model.rate * rateStyle)));
+  const stretch = wsolaStretch(pitched, targetLength);
   return applyStyle(stretch, model.toneStyle);
 }
 
