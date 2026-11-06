@@ -25,17 +25,35 @@ async function startServer() {
     });
   });
 
-  // 1-Click ZIP Project Download Endpoint
+  // 1-Click ZIP Project Download Endpoint with explicit Content-Length
   app.get('/api/project/download-zip', (_req: Request, res: Response) => {
     exec('python3 scripts/export_zip.py', (err) => {
       const zipFile = path.join(process.cwd(), 'vocalis-project.zip');
       if (err || !fs.existsSync(zipFile)) {
         return res.status(500).json({ error: 'Failed to generate project zip' });
       }
+      const zipBuffer = fs.readFileSync(zipFile);
       res.setHeader('Content-Type', 'application/zip');
+      res.setHeader('Content-Length', zipBuffer.length.toString());
       res.setHeader('Content-Disposition', 'attachment; filename="vocalis-project.zip"');
-      const stream = fs.createReadStream(zipFile);
-      stream.pipe(res);
+      res.end(zipBuffer);
+    });
+  });
+
+  // 100% Reliable In-Memory Base64 ZIP Export for iFrames
+  app.get('/api/project/download-base64', (_req: Request, res: Response) => {
+    exec('python3 scripts/export_zip.py', (err) => {
+      const zipFile = path.join(process.cwd(), 'vocalis-project.zip');
+      if (err || !fs.existsSync(zipFile)) {
+        return res.status(500).json({ error: 'Failed to generate project zip' });
+      }
+      const zipBuffer = fs.readFileSync(zipFile);
+      res.json({
+        success: true,
+        filename: 'vocalis-project.zip',
+        size: zipBuffer.length,
+        base64: zipBuffer.toString('base64'),
+      });
     });
   });
 

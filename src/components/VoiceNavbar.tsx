@@ -38,15 +38,34 @@ export const VoiceNavbar: React.FC<VoiceNavbarProps> = ({
 }) => {
   const [isDownloading, setIsDownloading] = useState(false);
 
-  const handleQuickDownload = () => {
+  const handleQuickDownload = async () => {
     setIsDownloading(true);
-    const link = document.createElement('a');
-    link.href = '/api/project/download-zip';
-    link.setAttribute('download', 'vocalis-project.zip');
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    setTimeout(() => setIsDownloading(false), 2000);
+    try {
+      const res = await fetch('/api/project/download-base64');
+      const data = await res.json();
+      if (!data.base64) throw new Error('No archive data');
+
+      const byteCharacters = atob(data.base64);
+      const byteNumbers = new Array(byteCharacters.length);
+      for (let i = 0; i < byteCharacters.length; i++) {
+        byteNumbers[i] = byteCharacters.charCodeAt(i);
+      }
+      const byteArray = new Uint8Array(byteNumbers);
+      const blob = new Blob([byteArray], { type: 'application/zip' });
+      const blobUrl = URL.createObjectURL(blob);
+
+      const link = document.createElement('a');
+      link.href = blobUrl;
+      link.download = 'vocalis-project.zip';
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      setTimeout(() => URL.revokeObjectURL(blobUrl), 2000);
+    } catch (err) {
+      console.error('Download failed:', err);
+    } finally {
+      setIsDownloading(false);
+    }
   };
   const tabs = [
     { id: 'studio', label: 'Voice Hub & Studio', icon: Sliders, desc: 'Predefined Voices & Live Synthesizer' },

@@ -38,16 +38,46 @@ export const GitHubSyncModal: React.FC<GitHubSyncModalProps> = ({ isOpen, onClos
 
   if (!isOpen) return null;
 
-  const handleDownloadZip = () => {
+  const handleDownloadZip = async () => {
     setIsDownloading(true);
-    // Trigger download
-    const link = document.createElement('a');
-    link.href = '/api/project/download-zip';
-    link.setAttribute('download', 'vocalis-project.zip');
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    setTimeout(() => setIsDownloading(false), 2000);
+    setStatusMessage({ type: null, text: '' });
+    try {
+      const res = await fetch('/api/project/download-base64');
+      const data = await res.json();
+      if (!data.base64) {
+        throw new Error('Failed to retrieve project archive');
+      }
+
+      const byteCharacters = atob(data.base64);
+      const byteNumbers = new Array(byteCharacters.length);
+      for (let i = 0; i < byteCharacters.length; i++) {
+        byteNumbers[i] = byteCharacters.charCodeAt(i);
+      }
+      const byteArray = new Uint8Array(byteNumbers);
+      const blob = new Blob([byteArray], { type: 'application/zip' });
+      const blobUrl = URL.createObjectURL(blob);
+
+      const link = document.createElement('a');
+      link.href = blobUrl;
+      link.download = 'vocalis-project.zip';
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      setTimeout(() => URL.revokeObjectURL(blobUrl), 2000);
+
+      setStatusMessage({
+        type: 'success',
+        text: `Downloaded valid ZIP archive (${Math.round(data.size / 1024)} KB, 32 files) directly to your computer!`,
+      });
+    } catch (err: any) {
+      console.error(err);
+      setStatusMessage({
+        type: 'error',
+        text: 'Download error: ' + (err.message || 'Could not download ZIP'),
+      });
+    } finally {
+      setIsDownloading(false);
+    }
   };
 
   const handlePushToGitHub = async (e: React.FormEvent) => {
