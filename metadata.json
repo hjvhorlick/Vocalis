@@ -1,0 +1,10 @@
+{
+  "name": "Vocalis - Vocal Studio & Pitch Trainer",
+  "description": "Custom voice creation and spoken word speech synthesis studio to design voice characters, shape pitch and cadence, and generate speech audio.",
+  "permissions": [
+    "microphone"
+  ],
+  "capabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
