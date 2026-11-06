@@ -19,8 +19,8 @@ export function App() {
     try {
       const saved = localStorage.getItem('vocalis_natural_models');
       if (saved) {
-        const parsed = JSON.parse(saved);
-        return [...PRESET_VOICE_MODELS, ...parsed];
+        const parsed = JSON.parse(saved) as VoiceModelConfig[];
+        return [...PRESET_VOICE_MODELS, ...parsed.map((model) => ({ ...model, synthesisMethod: model.synthesisMethod ?? 'cmu-arctic' }))];
       }
     } catch {
       // ignore
@@ -134,7 +134,7 @@ export function App() {
       id: 'custom-' + Date.now(),
       name: 'Custom Crafted Voice',
       archetype: 'Articulate Speaker',
-      description: 'Custom tuned vocal pitch, pacing, and tone.',
+      description: 'Custom local speech profile with selectable speaker, pacing, and output volume.',
       gender: 'Neutral',
       synthesisMethod: 'cmu-arctic',
       accent: 'US',
@@ -230,7 +230,7 @@ export function App() {
             <span>Voice Creation & Spoken Word Synthesizer</span>
           </div>
           <div className="flex items-center gap-4 text-[11px] text-slate-500">
-            <span>CMU ARCTIC Recorded Speech Units · No AI</span>
+            <span>CMU ARCTIC Recorded Units · No AI</span>
             <span>&bull;</span>
             <span>Custom Pitch & Cadence Knobs</span>
             <span>&bull;</span>

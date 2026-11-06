@@ -8,7 +8,7 @@ export interface VoiceModelConfig {
   description: string;
   gender: 'Female' | 'Male' | 'Neutral';
   baseVoiceId?: 'slt' | 'bdl';
-  /** CMU recorded units are the default; the locally generated formant voice is experimental. */
+  /** CMU ARCTIC recorded units are the default; formant synthesis remains experimental. */
   synthesisMethod?: 'formant' | 'cmu-arctic';
   accent: 'US' | 'UK' | 'AU' | 'Global';
   flag: string;
@@ -233,10 +233,12 @@ export type SpeechCallbacks = {
   onError?: (err: unknown) => void;
 };
 
-let activeAudio: HTMLAudioElement | null = null;
+let playbackContext: AudioContext | null = null;
+let activeSource: AudioBufferSourceNode | null = null;
 let activeAudioUrl: string | null = null;
 let activeCallbacks: SpeechCallbacks | undefined;
 let activeWordTimings: Array<{ charIndex: number; charLength: number; start: number }> = [];
+let playbackStartTime = 0;
 let playbackTimer: ReturnType<typeof setInterval> | null = null;
 let playbackId = 0;
 
@@ -246,12 +248,15 @@ function finishPlayback(error?: unknown): void {
   activeWordTimings = [];
   if (playbackTimer) clearInterval(playbackTimer);
   playbackTimer = null;
-  if (activeAudio) {
-    activeAudio.onended = null;
-    activeAudio.onerror = null;
-    activeAudio.ontimeupdate = null;
-    activeAudio.pause();
-    activeAudio = null;
+  if (activeSource) {
+    activeSource.onended = null;
+    try {
+      activeSource.stop();
+    } catch {
+      // The source may already have ended.
+    }
+    activeSource.disconnect();
+    activeSource = null;
   }
   if (activeAudioUrl) URL.revokeObjectURL(activeAudioUrl);
   activeAudioUrl = null;
@@ -260,8 +265,9 @@ function finishPlayback(error?: unknown): void {
 }
 
 /**
- * Speak using the selected local mathematical-formant or CMU unit-synthesis method.
- * No browser TTS, remote TTS service, or neural voice model is used.
+ * Speak using local CMU ARCTIC recorded units or the experimental mathematical renderer.
+ * The AudioContext is resumed in the click handler so synthesis can play after local rendering.
+ * Vocalis does not use AI-generated voices or cloud TTS.
  */
 export function speakRealWords(text: string, model: VoiceModelConfig, callbacks?: SpeechCallbacks): void {
   stopSpeaking();
@@ -270,40 +276,70 @@ export function speakRealWords(text: string, model: VoiceModelConfig, callbacks?
     return;
   }
 
+  let resumePromise: Promise<void>;
+  try {
+    if (!playbackContext) playbackContext = new AudioContext();
+    resumePromise = playbackContext.resume();
+  } catch (error) {
+    callbacks?.onError?.(error);
+    callbacks?.onEnd?.();
+    return;
+  }
+
+  const context = playbackContext;
   const requestId = ++playbackId;
   activeCallbacks = callbacks;
-  void synthesizeText(text, model).then(({ audioUrl, wordTimings }) => {
+  void resumePromise.catch((error) => {
+    if (requestId === playbackId) {
+      playbackId++;
+      finishPlayback(error);
+    }
+  });
+  void synthesizeText(text, model).then(async ({ audioUrl, wordTimings }) => {
     if (requestId !== playbackId) {
       URL.revokeObjectURL(audioUrl);
       return;
     }
-    const audio = new Audio(audioUrl);
-    activeAudio = audio;
-    activeAudioUrl = audioUrl;
-    activeWordTimings = wordTimings;
-    let lastWord = -1;
-
-    const updateWord = () => {
-      if (!activeAudio) return;
-      const current = activeAudio.currentTime;
-      let found = -1;
-      for (let i = 0; i < activeWordTimings.length; i++) {
-        if (activeWordTimings[i].start <= current) found = i;
-        else break;
+    try {
+      const response = await fetch(audioUrl);
+      if (!response.ok) throw new Error('Could not read the locally rendered audio.');
+      const audioBuffer = await context.decodeAudioData(await response.arrayBuffer());
+      if (requestId !== playbackId) {
+        URL.revokeObjectURL(audioUrl);
+        return;
       }
-      if (found !== lastWord && found >= 0) {
-        lastWord = found;
-        const item = activeWordTimings[found];
-        callbacks?.onWord?.(item.charIndex, item.charLength);
-      }
-    };
 
-    audio.onplay = () => callbacks?.onStart?.();
-    audio.ontimeupdate = updateWord;
-    audio.onended = () => finishPlayback();
-    audio.onerror = () => finishPlayback(new Error('Local synthesized audio playback failed.'));
-    playbackTimer = setInterval(updateWord, 35);
-    audio.play().catch((error) => finishPlayback(error));
+      const source = context.createBufferSource();
+      source.buffer = audioBuffer;
+      source.connect(context.destination);
+      activeSource = source;
+      activeAudioUrl = audioUrl;
+      activeWordTimings = wordTimings;
+      playbackStartTime = context.currentTime;
+      let lastWord = -1;
+      const updateWord = () => {
+        if (!activeSource) return;
+        const current = context.currentTime - playbackStartTime;
+        let found = -1;
+        for (let i = 0; i < activeWordTimings.length; i++) {
+          if (activeWordTimings[i].start <= current) found = i;
+          else break;
+        }
+        if (found !== lastWord && found >= 0) {
+          lastWord = found;
+          const item = activeWordTimings[found];
+          callbacks?.onWord?.(item.charIndex, item.charLength);
+        }
+      };
+      source.onended = () => finishPlayback();
+      playbackTimer = setInterval(updateWord, 35);
+      source.start();
+      callbacks?.onStart?.();
+    } catch (error) {
+      if (requestId !== playbackId) return;
+      URL.revokeObjectURL(audioUrl);
+      finishPlayback(error);
+    }
   }).catch((error) => {
     if (requestId !== playbackId) return;
     finishPlayback(error);
@@ -313,7 +349,7 @@ export function speakRealWords(text: string, model: VoiceModelConfig, callbacks?
 /** Stop local synthesis playback and clear its temporary audio buffer. */
 export function stopSpeaking(): void {
   playbackId++;
-  if (activeAudio || activeCallbacks) finishPlayback();
+  if (activeSource || activeCallbacks) finishPlayback();
 }
 
 /** Generate downloadable PCM WAV speech entirely in the browser. */
