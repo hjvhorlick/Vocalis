@@ -17,7 +17,17 @@ A mathematical formant synthesizer is expected to sound synthetic. It can be mad
 
 ## Current work in Vocalis
 
-The shared text-to-speech path defaults to CMU ARCTIC recorded units for audition, Speech Studio, dialogue, and WAV export. A join-level amplitude bug that under-scaled one side of every crossfade has been corrected. The mathematical formant path remains explicitly experimental and includes shaped voiced pulses, formant resonators, modeled aspiration/frication and stop releases, smooth formant transitions, stress-weighted timing, phrase-final vowel lengthening, and a basic question-rise/statement-fall contour. These implementation changes do not substitute for listening-based quality checks.
+**Status correction, 2026-11-06.** The paragraph below described the intended state and is no
+longer accurate for the shipped tree. On `main` at commit `596f360` the shared speech path does
+**not** use CMU ARCTIC recorded units: no component imports `src/utils/phonemeSynthesizer.ts` or
+`src/utils/cmuDiphoneSynthesizer.ts`, there is no text input for speech anywhere in `src`, and
+`speakRealWords(text, model)` ignores its `text` argument and plays the pre-recorded reference
+sentence selected by `model.baseSampleId` through a Web Audio effects chain. The recorded-unit
+engine and its 11 MB of diphone data are present and intact but unreachable. This is finding
+**A1** in `APPLICATION_AUDIT.md`, and re-wiring it is Phase 0 of `VOICE_IMPROVEMENT_PLAN.md`.
+The base voice itself is permanent and unchanged — see `BASE_VOICE_CONTRACT.md`.
+
+The mathematical formant path remains explicitly experimental and includes shaped voiced pulses, formant resonators, modeled aspiration/frication and stop releases, smooth formant transitions, stress-weighted timing, phrase-final vowel lengthening, and a basic question-rise/statement-fall contour. A join-level amplitude bug that under-scaled one side of every crossfade was corrected in the recorded path earlier. These implementation changes do not substitute for listening-based quality checks.
 
 ## Next improvement sequence
 
