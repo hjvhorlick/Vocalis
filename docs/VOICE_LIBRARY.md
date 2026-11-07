@@ -150,6 +150,13 @@ checked against the audio (speech starts at 0.64 s where the second `pau` label 
 at 0.6245 s). A zero stand-in count means every unit the sentence asked for was cut
 from that speaker's own recordings.
 
+All six of these packs are committed, so this is what a clone already has. Open the
+**Recorded voice library**, press **Audition** on any card marked *installed* and it
+speaks; no install, no terminal. Browsers only allow sound after a click, which is
+one reason Audition is a button — `playRenderedSpeech` now waits for the audio
+context to actually start and reports it in the card if the browser refuses, instead
+of rendering silently.
+
 ### Installing from a directory you already have
 
 If `festvox.org` is slow, blocking, or you already have the data, `--from` accepts
@@ -308,7 +315,15 @@ machine.
 `public/optional-voices/<id>/` holds `manifest.json`, `diphones.bin`, `LICENSE.txt`
 (when the archive carried one), `voice.json` (provenance) and `installed.json`
 (units, bytes, date, source URL). `GET /api/voices` reports the total on disk, which
-the library header shows. Nothing in that directory is committed — see `.gitignore`.
+the library header shows.
+
+**Six packs ship inside the repository** — `arctic-awb`, `arctic-clb`,
+`arctic-jmk`, `arctic-ksp`, `arctic-rms` and `cmu-kal`, 36 MB in total. A fresh
+clone can press Audition and hear a real person with no terminal, no download and no
+install step; that is the difference between a library and a catalogue. `.gitignore`
+whitelists those six by name, so anything else you install stays untracked. The tests
+check the shipped files are complete (manifest, units, byte count, not ignored)
+rather than trusting the directory listing.
 
 ## 6b. The terminal commands
 

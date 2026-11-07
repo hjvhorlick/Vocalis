@@ -1,0 +1,8 @@
+{
+  "id": "cmu-kal",
+  "installedAt": "2026-11-07T20:57:49Z",
+  "units": 1578,
+  "bytes": 7034394,
+  "sourceUrl": "https://codeload.github.com/kastnerkyle/diphone_synthesizer/tar.gz/refs/heads/master",
+  "converter": "festival-est"
+}

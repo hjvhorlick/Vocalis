@@ -10,7 +10,25 @@ __pycache__/
 # See docs/APPLICATION_AUDIT.md finding C7 before committing either lockfile.
 package-lock.json
 
-# Optional voice packs are installed locally, never committed
+# Voice packs.
+#
+# Six packs ship with the repository so that a fresh clone can speak from
+# recordings immediately — no terminal, no download, no install step. They are the
+# five CMU ARCTIC speakers with published labels plus the CMU KAL diphone voice.
+# Everything else a user installs stays untracked, which is why the whitelist below
+# names each shipped pack instead of opening the directory.
 public/optional-voices/*
 !public/optional-voices/.gitkeep
+!public/optional-voices/arctic-awb
+!public/optional-voices/arctic-awb/**
+!public/optional-voices/arctic-clb
+!public/optional-voices/arctic-clb/**
+!public/optional-voices/arctic-jmk
+!public/optional-voices/arctic-jmk/**
+!public/optional-voices/arctic-ksp
+!public/optional-voices/arctic-ksp/**
+!public/optional-voices/arctic-rms
+!public/optional-voices/arctic-rms/**
+!public/optional-voices/cmu-kal
+!public/optional-voices/cmu-kal/**
 var/voice-progress/

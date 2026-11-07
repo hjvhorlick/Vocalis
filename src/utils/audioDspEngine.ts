@@ -210,8 +210,41 @@ export function playRenderedSpeech(
       }
       callbacks?.onEnded?.();
     };
-    callbacks?.onStart?.();
-    source.start(0);
+    // Browsers start a page's audio context suspended until a gesture unlocks it.
+    // Resuming is asynchronous, and a resume that is dropped on the floor is
+    // indistinguishable from a broken library: the samples are rendered, nothing
+    // is audible, and no error is raised. So wait for the context to actually run,
+    // start inside that callback, and report the failure when it cannot.
+    let started = false;
+    const begin = (): void => {
+      if (started) return;
+      started = true;
+      callbacks?.onStart?.();
+      source.start(0);
+    };
+    const failsToResume = (reason: string): void => {
+      isAudioPlaying = false;
+      activeSourceNode = null;
+      callbacks?.onError?.(
+        new Error(
+          `the browser is not allowing audio to start (${reason}). Click Audition again — ` +
+            'the first click is what unlocks sound.',
+        ),
+      );
+    };
+    if (typeof AudioContext !== 'undefined' && ctx instanceof AudioContext && ctx.state !== 'running') {
+      ctx
+        .resume()
+        .then(() => {
+          if (ctx.state === 'running') begin();
+          else failsToResume(`the audio context stayed ${ctx.state}`);
+        })
+        .catch((error: unknown) => {
+          failsToResume(error instanceof Error ? error.message : String(error));
+        });
+    } else {
+      begin();
+    }
     return { stop: () => stopTransformedVoice(), duration: buffer.duration };
   } catch (error) {
     isAudioPlaying = false;

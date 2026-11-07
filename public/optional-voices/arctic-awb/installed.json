@@ -1,0 +1,8 @@
+{
+  "id": "arctic-awb",
+  "installedAt": "2026-11-07T21:04:21Z",
+  "units": 1334,
+  "bytes": 5861792,
+  "sourceUrl": "file:///tmp/awbsrc/data/cmu_arctic/scottish-english-male-awb",
+  "converter": "festival-est"
+}

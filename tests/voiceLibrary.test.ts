@@ -282,6 +282,52 @@ check(
   'the resolver refuses to leave its directory',
   installedVoiceDir(voiceRoot, '../voicepacks/cmu-arctic/bdl') === null,
 );
+// A voice the user cannot hear is not a feature. Six packs ship inside the
+// repository — the five ARCTIC speakers with published labels and KAL — so a fresh
+// clone speaks as recorded with no terminal, no download and no install step. This
+// checks the files are complete, not that a directory exists.
+{
+  const shipped = ['arctic-awb', 'arctic-clb', 'arctic-jmk', 'arctic-ksp', 'arctic-rms', 'cmu-kal'];
+  const packFiles = (id: string) => ['manifest.json', 'diphones.bin', 'installed.json'];
+  check(
+    'the starter voice packs ship with the repository',
+    shipped.every((id) => packFiles(id).every((file) => existsSync(join(voiceRoot, id, file)))),
+    shipped.filter((id) => !packFiles(id).every((file) => existsSync(join(voiceRoot, id, file)))).join(', '),
+  );
+  check(
+    'every shipped pack is a catalogued voice with a licence',
+    shipped.every((id) => VOICE_CATALOGUE.some((voice) => voice.id === id && voice.licence.name.length > 0)),
+  );
+  let smallest = Infinity;
+  let unreadable = '';
+  for (const id of shipped) {
+    try {
+      const manifest = JSON.parse(readFileSync(join(voiceRoot, id, 'manifest.json'), 'utf8')) as {
+        units: Record<string, unknown>;
+      };
+      smallest = Math.min(smallest, Object.keys(manifest.units).length);
+    } catch (error) {
+      unreadable = `${id}: ${String(error)}`;
+    }
+  }
+  check('each shipped pack carries its recorded units', unreadable === '' && smallest >= 1000, unreadable || `${smallest} units in the smallest`);
+  check(
+    'and the bytes on disk are the size the pack declares',
+    shipped.every((id) => {
+      const manifest = JSON.parse(readFileSync(join(voiceRoot, id, 'manifest.json'), 'utf8')) as {
+        units: Record<string, { length: number }>;
+      };
+      const declared = Object.values(manifest.units).reduce((sum, unit) => sum + unit.length, 0) * 2;
+      return Math.abs(statSync(join(voiceRoot, id, 'diphones.bin')).size - declared) <= 2;
+    }),
+  );
+  const ignore = readFileSync(join(ROOT, '.gitignore'), 'utf8');
+  check(
+    'the ignore file cannot silently drop them from a clone',
+    shipped.every((id) => ignore.includes(`!public/optional-voices/${id}/**`)),
+  );
+}
+
 const resolved = installedVoiceDir(voiceRoot, 'arctic-awb');
 check('the resolver builds a path inside the library', resolved === join(voiceRoot, 'arctic-awb'), String(resolved));
 check('progress files are refused for base voices', progressFilePath(voiceRoot, 'slt') === null);
