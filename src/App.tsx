@@ -10,10 +10,18 @@ import { VoiceLibrary } from './components/VoiceLibrary';
 import { GitHubSyncModal } from './components/GitHubSyncModal';
 import { VoiceCredits } from './components/VoiceCredits';
 import { RecordedVoiceLibrary } from './components/RecordedVoiceLibrary';
+import { VoiceFileCreator } from './components/VoiceFileCreator';
 import { VOICE_CATALOGUE } from './data/voiceCatalogue';
+import {
+  applyProfileToModel,
+  buildLibraryRows,
+  fetchLibraryState,
+  modelForLibraryVoice,
+  registerInstalledVoices,
+} from './utils/voiceLibrary';
 
 export function App() {
-  const [activeTab, setActiveTab] = useState<'studio' | 'dialogue' | 'library'>('studio');
+  const [activeTab, setActiveTab] = useState<'studio' | 'voicefile' | 'dialogue' | 'library'>('studio');
   const [isGitHubModalOpen, setIsGitHubModalOpen] = useState(false);
 
   // Load models from localStorage
@@ -31,6 +39,35 @@ export function App() {
   });
 
   const [activeModel, setActiveModel] = useState<VoiceModelConfig>(models[0]);
+
+  // The installed recorded voices are models too, and the Text to Speech page has to
+  // offer them in its dropdown — otherwise the dropdown is a list of a different set
+  // of voices than the ones the library installs. A voice that came from a `.vls`
+  // file carries the switches it was sealed with, applied here.
+  const [libraryModels, setLibraryModels] = useState<VoiceModelConfig[]>([]);
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      try {
+        const state = await fetchLibraryState();
+        if (cancelled) return;
+        registerInstalledVoices(state.installed);
+        const installed = buildLibraryRows(state)
+          .filter((row) => row.installed !== null)
+          .map((row) => applyProfileToModel(modelForLibraryVoice(row), row.installed?.profile ?? null));
+        setLibraryModels(installed);
+      } catch {
+        // A static build has no /api/voices. The dropdown then lists the saved voices
+        // only, which is honest: nothing recorded is installed in that case.
+        if (!cancelled) setLibraryModels([]);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [activeTab]);
+
+  const selectableModels = [...models, ...libraryModels.filter((model) => !models.some((own) => own.id === model.id))];
 
   useEffect(() => {
     initializeLocalSpeechEngine(activeModel);
@@ -179,6 +216,42 @@ export function App() {
       <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-6">
         {activeTab === 'studio' && (
           <div className="space-y-6">
+            {/* Product one, on its own page, opening with the one control that matters:
+                which voice is going to speak. Everything below is the same studio. */}
+            <div className="rounded-2xl border border-slate-800 bg-slate-900/60 px-4 py-3">
+              <label htmlFor="tts-voice" className="block text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+                Voice
+              </label>
+              <div className="mt-1.5 flex flex-wrap items-center gap-3">
+                <select
+                  id="tts-voice"
+                  value={activeModel.id}
+                  onChange={(event) => {
+                    const chosen = selectableModels.find((model) => model.id === event.target.value);
+                    if (chosen) setActiveModel(chosen);
+                  }}
+                  className="min-w-[16rem] flex-1 rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-100 outline-none focus:border-indigo-500"
+                >
+                  {selectableModels.map((model) => (
+                    <option key={model.id} value={model.id}>
+                      {model.name}
+                      {model.baseVoiceId && !['slt', 'bdl'].includes(model.baseVoiceId)
+                        ? ' — recorded, installed'
+                        : model.isCustom
+                          ? ' — saved'
+                          : ' — factory voice'}
+                    </option>
+                  ))}
+                </select>
+                <button
+                  onClick={() => setActiveTab('voicefile')}
+                  className="shrink-0 rounded-xl border border-emerald-500/40 bg-emerald-600/15 px-3 py-1.5 text-xs font-semibold text-emerald-200 hover:bg-emerald-600/25 hover:text-white"
+                >
+                  Make a voice file →
+                </button>
+              </div>
+            </div>
+
             {/* The library is the reason this app has more than two people in it,
                 and it lives behind a tab. Point at it from here. */}
             <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-indigo-500/25 bg-indigo-500/5 px-4 py-3">
@@ -223,6 +296,8 @@ export function App() {
             />
           </div>
         )}
+
+        {activeTab === 'voicefile' && <VoiceFileCreator onOpenLibrary={() => setActiveTab('library')} />}
 
         {activeTab === 'dialogue' && <DialogueStudio models={models} />}
 

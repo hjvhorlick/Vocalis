@@ -100,6 +100,19 @@ export interface VocalisFileProvenance {
   transformed?: false | boolean;
 }
 
+/**
+ * The settings a voice file was made with, and — this is the point of the toggles —
+ * which of them were switched on. A feature that is `false` here was bypassed when
+ * the file was made, so the voice can be rebuilt without it when one setting turns
+ * out to be what spoils the sound.
+ */
+export interface VocalisVoiceProfile {
+  /** One flag per switch in the settings panel: false means bypassed. */
+  enabled: Record<string, boolean>;
+  /** The knob positions that were live when the file was sealed. */
+  settings: Record<string, number>;
+}
+
 /** The readable header: identity, licence, and what the sealed payload contains. */
 export interface VocalisFileHeader {
   format: 'vocalis';
@@ -118,6 +131,8 @@ export interface VocalisFileHeader {
   payloadSha256: string;
   licence?: VocalisFileLicence;
   provenance?: VocalisFileProvenance;
+  /** Present when the file was made by the voice-file creator. */
+  profile?: VocalisVoiceProfile;
   crypto: {
     cipher: 'AES-256-GCM';
     kdf: 'HKDF-SHA256';
@@ -216,6 +231,22 @@ async function deriveKey(salt: Uint8Array, id: string): Promise<CryptoKey> {
   );
 }
 
+/**
+ * Turn a name a person typed into a voice id: "My Radio Voice #2" → "my-radio-voice-2".
+ * The id is what the profile is keyed to and what the installer validates, so it has
+ * to be predictable and boring; the display name keeps the capitals and the spaces.
+ */
+export function slugifyVoiceName(name: string): string {
+  return name
+    .normalize('NFKD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 64)
+    .replace(/-+$/g, '');
+}
+
 // ---------------------------------------------------------------------------
 // Encoding
 // ---------------------------------------------------------------------------
@@ -228,6 +259,7 @@ export interface EncodeOptions extends VocalisPackLike {
   gender?: string;
   licence?: VocalisFileLicence;
   provenance?: VocalisFileProvenance;
+  profile?: VocalisVoiceProfile;
   createdAt?: string;
 }
 
@@ -236,7 +268,13 @@ export interface EncodeOptions extends VocalisPackLike {
  */
 export async function encodeVocalisVoice(options: EncodeOptions): Promise<ArrayBuffer> {
   const id = options.id.trim();
-  if (!id) throw new VocalisFormatError('corrupt', 'A .vocalis file needs a voice id.');
+  if (!id) throw new VocalisFormatError('corrupt', 'A .vls file needs a voice id.');
+  if (!/^[a-z0-9][a-z0-9-]{0,63}$/.test(id)) {
+    throw new VocalisFormatError(
+      'corrupt',
+      `"${id}" is not a usable voice id: use lower-case letters, digits and hyphens.`,
+    );
+  }
   const pcm = toBytes(options.audio);
   if (pcm.byteLength === 0 || pcm.byteLength % 2 !== 0) {
     throw new VocalisFormatError(
@@ -284,6 +322,7 @@ export async function encodeVocalisVoice(options: EncodeOptions): Promise<ArrayB
     payloadSha256: await sha256Hex(plaintext),
     licence: options.licence,
     provenance: options.provenance,
+    profile: options.profile,
     crypto: { cipher: 'AES-256-GCM', kdf: 'HKDF-SHA256', salt: toBase64(salt), iv: toBase64(iv) },
   };
 

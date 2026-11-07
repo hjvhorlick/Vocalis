@@ -80,6 +80,37 @@ silent tampering impossible. It does not stop someone who runs this application 
 instruments it. Treat `.vls` as a sealed container with provenance, not as DRM
 that outlives the app, and say so in any marketplace copy rather than overclaiming.
 
+## The creator page, and the switch block
+
+`Voice File Creator` is where a file is made: the recorded voices are cards you can
+reorder, every setting has its own switch, and the export sits on the same page. The
+settings block is the part that ends up in the file:
+
+```json
+"profile": {
+  "enabled":  { "pitch": true, "rate": true, "throatWarmth": false,
+                "oralClarity": true, "airPresence": false },
+  "settings": { "pitch": 1.12, "rate": 0.92, "throatWarmth": 0,
+                "oralClarity": 0.2, "airPresence": 0 }
+}
+```
+
+`enabled` records what was switched **on at the time of export**, and `settings` the
+knob positions that were live. A switched-off feature is stored as off, not as a
+neutral number, so "export it again without Clarity" is a decision the file itself
+carries rather than something the listener has to remember. On install, the profile
+is applied to the voice when it is selected, so an exported voice sounds like the one
+that was auditioned.
+
+`POST /api/voices/<id>/export` takes `{ "name": "My Radio Voice #2", "profile": … }`:
+
+* the name becomes the file's display name, and its slug becomes the voice id —
+  `my-radio-voice-2` — so the installed copy is addressable and can be re-exported;
+* the samples are still the source pack's, byte for byte; the profile rides in the
+  header and never touches the audio;
+* `GET` on the same route still exports under the source voice's own id with no
+  profile, which is what the library card's Export button uses.
+
 ## Using it
 
 Export an installed voice from the library card (**Export**), or from a terminal:
@@ -126,7 +157,8 @@ rather than opened on a guess.
 | File | What it is |
 |---|---|
 | `src/utils/vocalisVoiceFile.ts` | the format: encode, decode, header read, typed errors |
-| `tests/vocalisFile.test.ts` | 44 checks — quality, exclusivity, integrity, CLI and browser round trips |
+| `tests/vocalisFile.test.ts` | 53 checks — quality, exclusivity, integrity, CLI and browser round trips |
 | `scripts/voice_library.ts` | `pack` and `import`, and the shared pack loader |
 | `server.ts` | `GET /api/voices/<id>/export` |
 | `src/components/RecordedVoiceLibrary.tsx` | the Export control on an installed card |
+| `src/components/VoiceFileCreator.tsx` | the creator page: cards, switches, naming, export |

@@ -4,6 +4,7 @@ import {
   Mic2,
   Users,
   Library,
+  FileAudio,
   Plus,
   Sparkles,
   Volume2,
@@ -22,8 +23,8 @@ const GitHubIcon = ({ className = 'w-3.5 h-3.5' }: { className?: string }) => (
 );
 
 interface VoiceNavbarProps {
-  activeTab: 'studio' | 'dialogue' | 'library';
-  onSelectTab: (tab: 'studio' | 'dialogue' | 'library') => void;
+  activeTab: 'studio' | 'voicefile' | 'dialogue' | 'library';
+  onSelectTab: (tab: 'studio' | 'voicefile' | 'dialogue' | 'library') => void;
   savedVoicesCount: number;
   onNewVoice: () => void;
   onOpenGitHubModal: () => void;
@@ -68,7 +69,8 @@ export const VoiceNavbar: React.FC<VoiceNavbarProps> = ({
     }
   };
   const tabs = [
-    { id: 'studio', label: 'Voice Hub & Studio', icon: Sliders, desc: 'Predefined Voices & Live Synthesizer' },
+    { id: 'studio', label: 'Text to Speech', icon: Sliders, desc: 'Type it, pick a voice, hear it' },
+    { id: 'voicefile', label: 'Voice File Creator', icon: FileAudio, desc: 'Settings, switches and export in one place' },
     { id: 'dialogue', label: 'Dialogue Screenplay', icon: Users, desc: 'Two Voices in Conversation' },
     { id: 'library', label: 'Voice Library', icon: Library, desc: 'Recorded Voices & Saved Takes' },
   ] as const;

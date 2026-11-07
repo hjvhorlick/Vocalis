@@ -21,6 +21,7 @@ import {
   unregisterOptionalVoiceSource,
 } from './optionalVoicePacks';
 import { releaseVoicePack } from './cmuDiphoneSynthesizer';
+import type { VocalisVoiceProfile } from './vocalisVoiceFile';
 
 export interface InstalledVoiceInfo {
   id: string;
@@ -28,6 +29,10 @@ export interface InstalledVoiceInfo {
   bytes: number | null;
   installedAt: string | null;
   sourceUrl: string | null;
+  /** The name a voice file was exported under, when it came from the creator. */
+  name?: string | null;
+  /** The switches and knob positions the file was sealed with. */
+  profile?: VocalisVoiceProfile | null;
 }
 
 export interface LibraryState {
@@ -206,6 +211,32 @@ export function uniqueValues(rows: LibraryRow[], key: 'language' | 'accent'): st
  * path, so this is the voice exactly as it was recorded. Presets are where
  * transformation happens; the library is not.
  */
+/**
+ * Apply the switches a voice file was sealed with.
+ *
+ * A sealed file records which settings were on when it was made. Rebuilding the
+ * model from that record means an exported voice sounds like the one that was
+ * auditioned — and a switch that was off stays off instead of quietly returning to
+ * its default.
+ */
+export function applyProfileToModel(
+  model: VoiceModelConfig,
+  profile: VocalisVoiceProfile | null | undefined,
+): VoiceModelConfig {
+  if (!profile?.enabled) return model;
+  const on = (key: string) => profile.enabled[key] !== false;
+  const value = (key: string, fallback: number) =>
+    on(key) && Number.isFinite(profile.settings?.[key]) ? profile.settings[key] : fallback;
+  return {
+    ...model,
+    pitch: value('pitch', 1),
+    rate: value('rate', 1),
+    throatWarmth: value('throatWarmth', 0),
+    oralClarity: value('oralClarity', 0),
+    airPresence: value('airPresence', 0),
+  };
+}
+
 export function modelForLibraryVoice(row: LibraryRow): VoiceModelConfig {
   const accent: VoiceModelConfig['accent'] = row.accent.startsWith('British')
     ? 'UK'

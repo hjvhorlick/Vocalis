@@ -18,6 +18,7 @@ import {
   VOCALIS_EXTENSION_ALIASES,
   decodeVocalisVoice,
   encodeVocalisVoice,
+  slugifyVoiceName,
 } from './src/utils/vocalisVoiceFile';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -156,7 +157,11 @@ async function startServer() {
       .map((entry) => {
         const dir = path.join(VOICE_ROOT, entry.name);
         const infoPath = path.join(dir, 'installed.json');
-        if (!fs.existsSync(infoPath) || !fs.existsSync(path.join(dir, 'manifest.json'))) return null;
+        // A voice is installed if it has the old manifest pair *or* a sealed file.
+        const hasPack =
+          fs.existsSync(path.join(dir, 'manifest.json')) ||
+          VOCALIS_EXTENSION_ALIASES.some((extension) => fs.existsSync(path.join(dir, `voice.${extension}`)));
+        if (!fs.existsSync(infoPath) || !hasPack) return null;
         try {
           const info = JSON.parse(fs.readFileSync(infoPath, 'utf-8'));
           return {
@@ -165,6 +170,9 @@ async function startServer() {
             bytes: info.bytes ?? null,
             installedAt: info.installedAt ?? null,
             sourceUrl: info.sourceUrl ?? null,
+            // Present only for a voice made in the voice-file creator.
+            name: info.name ?? null,
+            profile: info.profile ?? null,
           };
         } catch {
           return null;
@@ -340,60 +348,102 @@ async function startServer() {
   //
   // The file is built from the pack on disk, so the samples are the ones that were
   // installed — the format is a container, not a codec, and nothing is re-encoded.
-  // A voice that is already sealed is handed back as-is rather than opened and
-  // sealed again, which would change its bytes for no benefit.
-  app.get('/api/voices/:id/export', async (req: Request, res: Response) => {
-    const id = req.params.id;
+  // A voice that is already sealed is handed back as-is unless a new name or a
+  // settings profile was supplied, in which case it is re-sealed with them.
+  //
+  // `POST` additionally takes `{ name, profile }`: the creator page uses it to save
+  // a voice under a name of the user's choosing, with the switches they left on.
+  const sealInstalledVoice = async (
+    id: string,
+    overrides?: { name?: string; profile?: unknown },
+  ): Promise<Buffer | { error: string; status: number }> => {
     const dir = installedVoiceDir(id);
-    if (!dir) return res.status(400).json({ error: 'That voice id is protected or invalid' });
-    if (!fs.existsSync(dir)) return res.status(404).json({ error: 'That voice is not installed' });
-    const sealedPath = VOCALIS_EXTENSION_ALIASES.map((extension) => path.join(dir, `voice.${extension}`)).find(
-      (candidate) => fs.existsSync(candidate),
-    );
+    if (!dir) return { error: 'That voice id is protected or invalid', status: 400 };
+    if (!fs.existsSync(dir)) return { error: 'That voice is not installed', status: 404 };
+    const sealedPath = VOCALIS_EXTENSION_ALIASES.map((extension) =>
+      path.join(dir, `voice.${extension}`),
+    ).find((candidate) => fs.existsSync(candidate));
+    const voice = findVoiceCandidate(id);
+    const wantsOverrides = Boolean(overrides?.name || overrides?.profile);
     try {
-      let sealed: Buffer;
+      if (sealedPath && !wantsOverrides) {
+        const existing = fs.readFileSync(sealedPath);
+        await decodeVocalisVoice(existing);
+        return existing;
+      }
+      let manifest: unknown;
+      let audioBuffer: ArrayBuffer;
       if (sealedPath) {
-        sealed = fs.readFileSync(sealedPath);
-        await decodeVocalisVoice(sealed);
+        const opened = await decodeVocalisVoice(fs.readFileSync(sealedPath));
+        manifest = opened.manifest;
+        audioBuffer = opened.audio;
       } else {
         const manifestPath = path.join(dir, 'manifest.json');
         const audioPath = path.join(dir, 'diphones.bin');
         if (!fs.existsSync(manifestPath) || !fs.existsSync(audioPath)) {
-          return res.status(409).json({ error: 'That voice has neither a manifest nor sealed audio to export.' });
+          return {
+            error: 'That voice has neither a manifest nor sealed audio to export.',
+            status: 409,
+          };
         }
-        const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
+        manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
         const audio = fs.readFileSync(audioPath);
-        const voice = findVoiceCandidate(id);
-        sealed = Buffer.from(
-          await encodeVocalisVoice({
-            id,
-            displayName: voice?.displayName ?? id,
-            language: voice?.language,
-            accent: voice?.accent,
-            gender: voice?.gender,
-            licence: voice?.licence,
-            provenance: voice
-              ? {
-                  sourceProject: voice.sourceProject,
-                  sourceUrl: voice.sourceUrl,
-                  originalFormat: voice.originalFormat,
-                }
-              : undefined,
-            manifest,
-            audio: audio.buffer.slice(audio.byteOffset, audio.byteOffset + audio.byteLength) as ArrayBuffer,
-          }),
-        );
+        audioBuffer = audio.buffer.slice(audio.byteOffset, audio.byteOffset + audio.byteLength) as ArrayBuffer;
       }
-      res.setHeader('Content-Type', 'application/vnd.vocalis.voice');
-      res.setHeader('Content-Disposition', `attachment; filename="${id}.${VOCALIS_EXTENSION}"`);
-      res.setHeader('Content-Length', String(sealed.byteLength));
-      res.setHeader('Cache-Control', 'no-store');
-      res.end(sealed);
+      const requestedName = overrides?.name?.trim();
+      const fileId = requestedName ? slugifyVoiceName(requestedName) : id;
+      if (!fileId) return { error: 'That name cannot be used for a voice file.', status: 400 };
+      return Buffer.from(
+        await encodeVocalisVoice({
+          id: fileId,
+          displayName: requestedName || voice?.displayName || id,
+          language: voice?.language,
+          accent: voice?.accent,
+          gender: voice?.gender,
+          licence: voice?.licence,
+          provenance: voice
+            ? {
+                sourceProject: voice.sourceProject,
+                sourceUrl: voice.sourceUrl,
+                originalFormat: voice.originalFormat,
+              }
+            : undefined,
+          profile: (overrides?.profile as never) ?? undefined,
+          manifest,
+          audio: audioBuffer,
+        }),
+      );
     } catch (error) {
-      res.status(500).json({
+      return {
         error: `That voice could not be sealed: ${error instanceof Error ? error.message : String(error)}`,
-      });
+        status: 500,
+      };
     }
+  };
+
+  const sendSealed = (res: Response, sealed: Buffer, filename: string): void => {
+    res.setHeader('Content-Type', 'application/vnd.vocalis.voice');
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    res.setHeader('Content-Length', String(sealed.byteLength));
+    res.setHeader('Cache-Control', 'no-store');
+    res.end(sealed);
+  };
+
+  app.get('/api/voices/:id/export', async (req: Request, res: Response) => {
+    const result = await sealInstalledVoice(req.params.id);
+    if (!Buffer.isBuffer(result)) return res.status(result.status).json({ error: result.error });
+    sendSealed(res, result, `${req.params.id}.${VOCALIS_EXTENSION}`);
+  });
+
+  app.post('/api/voices/:id/export', async (req: Request, res: Response) => {
+    const body = (req.body ?? {}) as { name?: unknown; profile?: unknown };
+    const name = typeof body.name === 'string' ? body.name.slice(0, 64) : undefined;
+    const profile =
+      body.profile && typeof body.profile === 'object' ? (body.profile as Record<string, unknown>) : undefined;
+    const result = await sealInstalledVoice(req.params.id, { name, profile });
+    if (!Buffer.isBuffer(result)) return res.status(result.status).json({ error: result.error });
+    const filename = name ? slugifyVoiceName(name) || req.params.id : req.params.id;
+    sendSealed(res, result, `${filename}.${VOCALIS_EXTENSION}`);
   });
 
   // Installed packs are plain files on disk, so they are served like any other

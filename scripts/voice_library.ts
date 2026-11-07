@@ -542,6 +542,10 @@ async function importVoiceFile(args: string[]): Promise<number> {
             sourceUrl: resolve(path),
             converter: 'vocalis-file',
             format: `vocalis-v${header.version}`,
+            // A voice made in the creator keeps the name it was given and the
+            // switches it was sealed with, so the app can show and reuse them.
+            name: header.displayName,
+            profile: header.profile ?? null,
           },
           null,
           2,

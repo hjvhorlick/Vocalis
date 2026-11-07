@@ -29,6 +29,7 @@ import {
   encodeVocalisVoice,
   looksLikeVocalisVoice,
   readVocalisVoiceHeader,
+  slugifyVoiceName,
 } from '../src/utils/vocalisVoiceFile';
 import { httpOptionalVoiceSource } from '../src/utils/optionalVoicePacks';
 
@@ -187,6 +188,42 @@ padded.copy(renamed, 16);
 for (let index = 16 + padded.length; index < 16 + headerLength; index += 1) renamed[index] = 0x20;
 const renamedRefused = await rejection(decodeVocalisVoice(renamed));
 check('a payload moved to another voice id does not open', renamedRefused !== null, renamedRefused?.code ?? 'opened!');
+
+console.log('\na named file with switches: the creator page path');
+
+// The creator exports through POST with a name and a profile. The name becomes the
+// id (so an installed copy is addressable), and the profile records which switches
+// were left on — the whole reason each setting has its own toggle.
+{
+  const profile = {
+    enabled: { pitch: true, rate: true, throatWarmth: false, oralClarity: true, airPresence: false },
+    settings: { pitch: 1.12, rate: 0.92, throatWarmth: 0, oralClarity: 0.2, airPresence: 0 },
+  };
+  const named = await encodeVocalisVoice({
+    id: slugifyVoiceName('My Radio Voice #2'),
+    displayName: 'My Radio Voice #2',
+    profile,
+    manifest,
+    audio,
+  });
+  const header = await readVocalisVoiceHeader(named);
+  equal('a typed name becomes a voice id', header.id, 'my-radio-voice-2');
+  equal('and the name itself is kept for display', header.displayName, 'My Radio Voice #2');
+  equal('the switches are sealed in', header.profile?.enabled.airPresence, false);
+  equal('with the knob positions beside them', header.profile?.settings.pitch, 1.12);
+  const reopenedNamed = await decodeVocalisVoice(named);
+  check('and the samples are still untouched', Buffer.from(reopenedNamed.audio).equals(audioFile));
+}
+
+equal('a name with punctuation slugs cleanly', slugifyVoiceName('  Deep   Voice!! (v2) '), 'deep-voice-v2');
+equal('a name with accents keeps its letters', slugifyVoiceName('José Müller'), 'jose-muller');
+equal('a name that is only punctuation slugs to nothing', slugifyVoiceName('!!!'), '');
+{
+  const refusedName = await rejection(
+    encodeVocalisVoice({ id: slugifyVoiceName('???'), displayName: '???', manifest, audio }),
+  );
+  check('and an empty id is refused rather than written', refusedName !== null, refusedName?.code ?? 'written!');
+}
 
 console.log('\nthe library uses it');
 
