@@ -253,7 +253,10 @@ npm run voices -- inspect arctic-ljm
 prints a short inventory: the top level, how many waveforms, label files and text
 files there are, any nested archives, the first paths, and a sample of the labels or
 transcription. It installs nothing and leaves the voice library unchanged, so it is
-safe to run on a voice you already have installed.
+safe to run on a voice you already have installed. While it runs it prints each
+stage as the installer reports it — `download … 12.3 of 45.0 MB` — so a large
+archive does not look like a hung terminal; Ctrl-C during the download is safe and
+leaves nothing behind.
 
 What the inventory usually means:
 
@@ -301,7 +304,7 @@ they cannot drift from the data.
 
 ## 8. Testing
 
-`npm run test:voices` — **104 checks**, all passing, no network access:
+`npm run test:voices` — **111 checks**, all passing, no network access:
 
 * catalogue: unique ids, ≥80 candidates, no protected id offered, every entry has a
   source URL, licence, attribution, class and a reason; nothing class D installable;
@@ -329,7 +332,9 @@ they cannot drift from the data.
   match the waveforms are refused with both counts; `--lab-dir` is honoured, and a
   `--lab-dir` with no `.lab` files is refused
 * `--inspect`: reports the waveforms and the absence of labels from an archive, exits
-  0, and writes nothing into the voice root — including for an already-installed id
+  0, and writes nothing into the voice root — including for an already-installed id;
+  at the CLI level it installs nothing, leaves the library directory unchanged, and
+  fails promptly with the filename when the archive does not exist
 * the terminal command: `list --ready`, `urls --class A` and `install slt` (refused,
   with the reason) run as subprocesses and are checked on their output and exit code
 * the runtime: a Python 3 is found on this machine, the candidate list covers every

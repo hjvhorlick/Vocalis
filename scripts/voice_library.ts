@@ -212,6 +212,32 @@ function installerArgs(voice: VoiceCandidate, archiveOverride?: string): string[
   return args;
 }
 
+// The installer reports each stage through a progress file. Both `install` and
+// `inspect` print it: a 45 MB download that prints nothing looks like a hang, and
+// the first thing anyone does with a silent terminal is kill it.
+function watchProgress(progressFile: string): { stop: () => void; lastLine: () => string } {
+  let last = '';
+  const timer = setInterval(() => {
+    if (!existsSync(progressFile)) return;
+    try {
+      const progress = JSON.parse(readFileSync(progressFile, 'utf-8')) as {
+        stage?: string;
+        message?: string;
+      };
+      const line = `${progress.stage ?? ''}: ${progress.message ?? ''}`.trim();
+      if (!line || line === last) return;
+      last = line;
+      for (const part of line.replace(/^:\s*/, '').split('\n')) {
+        if (part.trim()) console.log(`  … ${part.trim()}`);
+      }
+    } catch {
+      // The installer renames the file into place; the next tick will read it.
+    }
+  }, 400);
+  timer.unref?.();
+  return { stop: () => clearInterval(timer), lastLine: () => last };
+}
+
 function runInstaller(voice: VoiceCandidate, archiveOverride?: string): Promise<number> {
   const args = installerArgs(voice, archiveOverride);
   const recipe = voice.install;
@@ -224,6 +250,7 @@ function runInstaller(voice: VoiceCandidate, archiveOverride?: string): Promise<
 
   const progressFile = resolve(PROGRESS_ROOT, `${voice.id}.json`);
   mkdirSync(PROGRESS_ROOT, { recursive: true });
+  rmSync(progressFile, { force: true });
 
   console.log(`\n▸ ${voice.displayName}  (${voice.id})`);
   console.log(`  ${archiveOverride ? expandHome(archiveOverride) : recipe.url}`);
@@ -235,30 +262,15 @@ function runInstaller(voice: VoiceCandidate, archiveOverride?: string): Promise<
       stdio: ['ignore', 'pipe', 'pipe'],
       windowsHide: true,
     });
-    let lastLine = '';
-    const timer = setInterval(() => {
-      if (!existsSync(progressFile)) return;
-      try {
-        const progress = JSON.parse(readFileSync(progressFile, 'utf-8')) as {
-          stage?: string;
-          message?: string;
-        };
-        const line = `${progress.stage ?? ''}: ${progress.message ?? ''}`;
-        if (line !== lastLine) {
-          lastLine = line;
-          for (const part of line.split('\n')) console.log(`  … ${part}`);
-        }
-      } catch {
-        // The installer renames the file into place; the next tick will read it.
-      }
-    }, 400);
+    const progress = watchProgress(progressFile);
+    const lastLine = progress.lastLine;
 
     let stderr = '';
     child.stderr?.on('data', (chunk: Buffer) => {
       stderr += chunk.toString();
     });
     child.on('close', (code) => {
-      clearInterval(timer);
+      progress.stop();
       if (code === 0) {
         const info = installedInfo(voice.id);
         console.log(`  ✓ installed: ${info?.units ?? '?'} recorded units, ${humanBytes(info?.bytes)}`);
@@ -271,7 +283,7 @@ function runInstaller(voice: VoiceCandidate, archiveOverride?: string): Promise<
             .filter((line) => line && !line.startsWith('install failed:'))
             .slice(-4)
             .join(' ') ||
-          (lastLine.includes('failed:') ? lastLine.replace(/.*failed: /, '') : 'unknown error');
+          (lastLine().includes('failed:') ? lastLine().replace(/.*failed: /, '') : 'unknown error');
         console.error(`  ✗ ${explanation}`);
       }
       resolvePromise(code ?? 1);
@@ -302,15 +314,25 @@ async function inspect(args: string[]): Promise<number> {
   }
   const args2 = installerArgs(voice, fromArchive);
   if (!args2) return 1;
+  const source = fromArchive ? expandHome(fromArchive) : voice.install!.url;
+  const progressFile = resolve(PROGRESS_ROOT, `${voice.id}.json`);
+  mkdirSync(PROGRESS_ROOT, { recursive: true });
+  rmSync(progressFile, { force: true });
   console.log(`\n▸ inspecting ${voice.displayName} (${id})`);
-  console.log(`  ${fromArchive ? expandHome(fromArchive) : voice.install!.url}\n`);
+  console.log(`  ${source}`);
+  if (!fromArchive) console.log('  downloading the archive; this can take a minute — Ctrl-C is safe');
+  console.log('  nothing is installed by an inspection\n');
   return new Promise((resolvePromise) => {
+    const progress = watchProgress(progressFile);
     const child = spawn(python, [...args2, '--inspect'], {
       cwd: ROOT,
       stdio: ['ignore', 'inherit', 'inherit'],
       windowsHide: true,
     });
-    child.on('close', (code) => resolvePromise(code ?? 1));
+    child.on('close', (code) => {
+      progress.stop();
+      resolvePromise(code ?? 1);
+    });
   });
 }
 

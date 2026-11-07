@@ -616,6 +616,41 @@ const refusedInstall = (() => {
 check('`voices install slt` is refused', refusedInstall.code !== 0);
 check('with the reason', /protected base voice/.test(refusedInstall.text), refusedInstall.text.trim().split('\n').slice(-1)[0]);
 
+// `inspect` exists because a download that unpacks into something unexpected used
+// to end as "the pack has 0 units" with no explanation. It must report, and report
+// quickly, without touching the library.
+console.log('\nthe inspect command');
+
+{
+  const speaker = buildArcticSpeaker(join(workDir, 'cli-inspect'), { speaker: 'insp', labels: false });
+  const archive = packArctic(speaker.speakerDir, join(workDir, 'cli-inspect.tar.bz2'));
+  const libraryBefore = readdirSync(join(ROOT, 'public', 'optional-voices')).sort().join(',');
+  const inspected = cli(['inspect', 'arctic-ljm', '--from', archive]);
+  check('`voices inspect` reports on an archive', inspected.code === 0, inspected.out.trim().split('\n').slice(-1)[0]);
+  check(
+    'with its waveforms and its missing labels',
+    /2 wav/.test(inspected.out) && /0 lab/.test(inspected.out),
+    inspected.out.trim().split('\n').slice(-3).join(' / '),
+  );
+  check('and says where the archive came from', /cli-inspect\.tar\.bz2/.test(inspected.out));
+  check('and installs nothing', !/installed:/.test(inspected.out));
+  check(
+    'and leaves the voice library exactly as it was',
+    readdirSync(join(ROOT, 'public', 'optional-voices')).sort().join(',') === libraryBefore,
+  );
+
+  const missingArchive = (() => {
+    try {
+      return { code: 0, text: cli(['inspect', 'arctic-ljm', '--from', join(workDir, 'not-there.tar.bz2')]).out };
+    } catch (error) {
+      const failure = error as { status?: number; stdout?: string; stderr?: string };
+      return { code: failure.status ?? 1, text: `${failure.stdout ?? ''}${failure.stderr ?? ''}` };
+    }
+  })();
+  check('a missing archive fails instead of waiting', missingArchive.code !== 0);
+  check('and names the file it could not read', /not-there\.tar\.bz2/.test(missingArchive.text), missingArchive.text.trim().split('\n').slice(-1)[0]);
+}
+
 // ---------------------------------------------------------------------------
 // 4. An installed voice speaks typed text
 // ---------------------------------------------------------------------------
