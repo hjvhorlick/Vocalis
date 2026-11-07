@@ -13,7 +13,7 @@ import {
   type LibraryState,
 } from '../utils/voiceLibrary';
 import { VOCALIS_EXTENSION, slugifyVoiceName, type VocalisVoiceProfile } from '../utils/vocalisVoiceFile';
-import { VoiceSettingRow } from './VoiceSettingRow';
+import { VoiceSettingRow, VoiceToneRow } from './VoiceSettingRow';
 
 /**
  * The Voice File Creator: the whole voice-file job on one page.
@@ -28,7 +28,7 @@ import { VoiceSettingRow } from './VoiceSettingRow';
 
 /** One knob and its switch. `key` is both the model field and the profile field. */
 interface SettingSpec {
-  key: 'pitch' | 'rate' | 'throatWarmth' | 'oralClarity' | 'airPresence';
+  key: 'pitch' | 'rate' | 'volume' | 'throatWarmth' | 'oralClarity' | 'airPresence';
   label: string;
   hint: string;
   min: number;
@@ -58,6 +58,16 @@ const SETTINGS: SettingSpec[] = [
     step: 0.01,
     neutral: 1,
     format: (value) => `${value.toFixed(2)}×`,
+  },
+  {
+    key: 'volume',
+    label: 'Volume',
+    hint: 'Output level of the file. Off leaves the samples at their own level.',
+    min: 0.2,
+    max: 1,
+    step: 0.05,
+    neutral: 1,
+    format: (value) => `${Math.round(value * 100)}%`,
   },
   {
     key: 'throatWarmth',
@@ -91,12 +101,14 @@ const SETTINGS: SettingSpec[] = [
   },
 ];
 
-type SwitchState = Record<SettingSpec['key'], boolean>;
+type SwitchState = Record<SettingSpec['key'] | 'tone', boolean>;
 type KnobState = Record<SettingSpec['key'], number>;
 
 const ALL_ON: SwitchState = {
   pitch: true,
   rate: true,
+  volume: true,
+  tone: true,
   throatWarmth: true,
   oralClarity: true,
   airPresence: true,
@@ -105,31 +117,38 @@ const ALL_ON: SwitchState = {
 const NEUTRAL_KNOBS: KnobState = {
   pitch: 1.08,
   rate: 0.95,
+  volume: 1,
   throatWarmth: 0.2,
   oralClarity: 0.15,
   airPresence: 0,
 };
 
 /** The model to speak or export with: a switch that is off contributes neutral. */
-function effectiveModel(base: VoiceModelConfig, switches: SwitchState, knobs: KnobState): VoiceModelConfig {
+function effectiveModel(
+  base: VoiceModelConfig,
+  switches: SwitchState,
+  knobs: KnobState,
+  tone: string,
+): VoiceModelConfig {
   return {
     ...base,
     pitch: switches.pitch ? knobs.pitch : 1,
     rate: switches.rate ? knobs.rate : 1,
-    volume: 1,
-    toneStyle: 'natural',
+    volume: switches.volume ? knobs.volume : 1,
+    toneStyle: switches.tone ? (tone as VoiceModelConfig['toneStyle']) : 'natural',
     throatWarmth: switches.throatWarmth ? knobs.throatWarmth : 0,
     oralClarity: switches.oralClarity ? knobs.oralClarity : 0,
     airPresence: switches.airPresence ? knobs.airPresence : 0,
   };
 }
 
-function profileFrom(switches: SwitchState, knobs: KnobState): VocalisVoiceProfile {
+function profileFrom(switches: SwitchState, knobs: KnobState, tone: string): VocalisVoiceProfile {
   return {
     enabled: { ...switches },
     settings: Object.fromEntries(
       SETTINGS.map((setting) => [setting.key, switches[setting.key] ? knobs[setting.key] : setting.neutral]),
     ),
+    tone: switches.tone ? tone : 'natural',
   };
 }
 
@@ -168,9 +187,10 @@ export const VoiceFileCreator: React.FC<VoiceFileCreatorProps> = ({ onOpenLibrar
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [switches, setSwitches] = useState<SwitchState>(ALL_ON);
   const [knobs, setKnobs] = useState<KnobState>(NEUTRAL_KNOBS);
+  const [tone, setTone] = useState<string>('natural');
   const [fileName, setFileName] = useState('');
   const [busy, setBusy] = useState<'preview' | 'export' | null>(null);
-  const [testingKey, setTestingKey] = useState<SettingSpec['key'] | null>(null);
+  const [testingKey, setTestingKey] = useState<SettingSpec['key'] | 'tone' | null>(null);
   const [notice, setNotice] = useState<{ tone: 'ok' | 'error'; text: string } | null>(null);
 
   useEffect(() => {
@@ -232,8 +252,8 @@ export const VoiceFileCreator: React.FC<VoiceFileCreatorProps> = ({ onOpenLibrar
   );
 
   const model = useMemo(
-    () => (selected ? effectiveModel(modelForLibraryVoice(selected), switches, knobs) : null),
-    [selected, switches, knobs],
+    () => (selected ? effectiveModel(modelForLibraryVoice(selected), switches, knobs, tone) : null),
+    [selected, switches, knobs, tone],
   );
 
   const handlePreview = useCallback(() => {
@@ -260,7 +280,7 @@ export const VoiceFileCreator: React.FC<VoiceFileCreatorProps> = ({ onOpenLibrar
    * two listens, instead of by switching things off and re-exporting blind.
    */
   const handleTestSetting = useCallback(
-    async (key: SettingSpec['key']) => {
+    async (key: SettingSpec['key'] | 'tone') => {
       if (!model) return;
       if (testingKey === key) {
         stopSpeaking();
@@ -278,8 +298,8 @@ export const VoiceFileCreator: React.FC<VoiceFileCreatorProps> = ({ onOpenLibrar
       setNotice(null);
       try {
         await speak(model);
-        await speak(bypassOne(model, key));
-        const label = SETTINGS.find((setting) => setting.key === key)?.label ?? key;
+        await speak(key === 'tone' ? { ...model, toneStyle: 'natural' } : bypassOne(model, key));
+        const label = key === 'tone' ? 'Tone' : SETTINGS.find((setting) => setting.key === key)?.label ?? key;
         setNotice({ tone: 'ok', text: `${label}: first as set, then bypassed. Listen for what changed.` });
       } catch (error) {
         setNotice({ tone: 'error', text: error instanceof Error ? error.message : String(error) });
@@ -291,7 +311,8 @@ export const VoiceFileCreator: React.FC<VoiceFileCreatorProps> = ({ onOpenLibrar
   );
 
   const slug = slugifyVoiceName(fileName);
-  const activeSwitches = SETTINGS.filter((setting) => switches[setting.key]).length;
+  const activeSwitches = SETTINGS.filter((setting) => switches[setting.key]).length + (switches.tone ? 1 : 0);
+  const totalSwitches = SETTINGS.length + 1;
 
   const handleExport = useCallback(async () => {
     if (!selected) return;
@@ -305,7 +326,7 @@ export const VoiceFileCreator: React.FC<VoiceFileCreatorProps> = ({ onOpenLibrar
       const response = await fetch(`/api/voices/${encodeURIComponent(selected.id)}/export`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name: fileName.trim(), profile: profileFrom(switches, knobs) }),
+        body: JSON.stringify({ name: fileName.trim(), profile: profileFrom(switches, knobs, tone) }),
       });
       if (!response.ok) {
         const body = (await response.json().catch(() => ({}))) as { error?: string };
@@ -322,14 +343,14 @@ export const VoiceFileCreator: React.FC<VoiceFileCreatorProps> = ({ onOpenLibrar
       URL.revokeObjectURL(url);
       setNotice({
         tone: 'ok',
-        text: `${slug}.${VOCALIS_EXTENSION} saved — ${formatBytes(blob.size)}, ${activeSwitches} of ${SETTINGS.length} settings sealed in.`,
+        text: `${slug}.${VOCALIS_EXTENSION} saved — ${formatBytes(blob.size)}, ${activeSwitches} of ${totalSwitches} settings sealed in.`,
       });
     } catch (error) {
       setNotice({ tone: 'error', text: error instanceof Error ? error.message : String(error) });
     } finally {
       setBusy(null);
     }
-  }, [selected, slug, fileName, switches, knobs, activeSwitches]);
+  }, [selected, slug, fileName, switches, knobs, tone, activeSwitches]);
 
   return (
     <div className="space-y-6">
@@ -437,7 +458,7 @@ export const VoiceFileCreator: React.FC<VoiceFileCreatorProps> = ({ onOpenLibrar
             <div className="flex items-baseline justify-between">
               <h2 className="text-sm font-semibold text-slate-200">Settings</h2>
               <span className="text-[11px] text-slate-500">
-                {activeSwitches} of {SETTINGS.length} on
+                {activeSwitches} of {totalSwitches} on
               </span>
             </div>
 
@@ -462,6 +483,16 @@ export const VoiceFileCreator: React.FC<VoiceFileCreatorProps> = ({ onOpenLibrar
                   onTest={() => void handleTestSetting(setting.key)}
                 />
               ))}
+              <VoiceToneRow
+                on={switches.tone}
+                tone={tone}
+                hint="The delivery character — natural, deep, whisper, radio. Off leaves the recording's own character."
+                testing={testingKey === 'tone'}
+                disabled={!selected}
+                onToggle={() => setSwitches((current) => ({ ...current, tone: !current.tone }))}
+                onSelect={setTone}
+                onTest={() => void handleTestSetting('tone')}
+              />
             </div>
 
             <button

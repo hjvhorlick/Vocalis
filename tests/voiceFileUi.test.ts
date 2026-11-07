@@ -11,7 +11,7 @@
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 
-import { VoiceSettingRow } from '../src/components/VoiceSettingRow';
+import { VoiceSettingRow, VoiceToneRow } from '../src/components/VoiceSettingRow';
 import { VoiceManipulator } from '../src/components/VoiceManipulator';
 import { PRESET_VOICE_MODELS } from '../src/utils/naturalVoiceEngine';
 
@@ -109,8 +109,66 @@ const panel = renderToStaticMarkup(
 );
 const switchCount = (panel.match(/role="switch"/g) ?? []).length;
 const sliderCount = (panel.match(/type="range"/g) ?? []).length;
-check('every voice-changer slider has a switch beside it', switchCount === sliderCount, `${switchCount} switches, ${sliderCount} sliders`);
+check(
+  'every slider has a switch, and the tone row has one too',
+  switchCount === sliderCount + 1,
+  `${switchCount} switches, ${sliderCount} sliders`,
+);
 check('the switches start on for a saved voice', (panel.match(/aria-checked="true"/g) ?? []).length === switchCount, `${switchCount} switches`);
+check('and the tone chips are live', (panel.match(/aria-pressed="true"/g) ?? []).length === 1);
+
+console.log('\nthe tone row');
+
+const toneOn = renderToStaticMarkup(
+  createElement(VoiceToneRow, {
+    on: true,
+    tone: 'deep',
+    hint: 'The delivery character.',
+    onToggle: () => undefined,
+    onSelect: () => undefined,
+    onTest: () => undefined,
+  }),
+);
+const toneOff = renderToStaticMarkup(
+  createElement(VoiceToneRow, {
+    on: false,
+    tone: 'deep',
+    hint: 'The delivery character.',
+    onToggle: () => undefined,
+    onSelect: () => undefined,
+    onTest: () => undefined,
+  }),
+);
+check('the tone row has a switch', /role="switch"/.test(toneOn));
+check('its chips are pressable while it is on', /aria-pressed="true"/.test(toneOn));
+check('and disabled when it is off', (toneOff.match(/<button[^>]*disabled/g) ?? []).length >= 6, '6 chips disabled');
+check('the bypass is stated in words', /Tone is bypassed/.test(toneOff));
+check('and the row shows which tone is chosen', /Deep Cinema/.test(toneOn));
+
+// Every control that changes the voice in the creator is switchable, which is the
+// whole complaint: count the rows against the switches.
+const creatorRows = ['Pitch', 'Pace', 'Volume', 'Warmth', 'Clarity', 'Air'].map((label) =>
+  renderToStaticMarkup(
+    createElement(VoiceSettingRow, {
+      label,
+      hint: 'x',
+      on: true,
+      value: 0.5,
+      min: 0,
+      max: 1,
+      step: 0.05,
+      format: (value: number) => `${value}`,
+      onToggle: () => undefined,
+      onChange: () => undefined,
+      onTest: () => undefined,
+    }),
+  ),
+);
+check(
+  'six numeric settings plus the tone row: seven switches for seven controls',
+  creatorRows.every((markup) => /role="switch"/.test(markup)) && /role="switch"/.test(toneOn),
+  `${creatorRows.length + 1} rows`,
+);
 
 console.log(`\n${passed}/${passed + failures.length} switch checks passed.`);
 if (failures.length) {

@@ -27,9 +27,9 @@ import {
  * the model is set to that control's neutral value, the slider greys out, and the
  * previous position is remembered so switching back restores it exactly.
  */
-type BypassKey = 'pitch' | 'rate' | 'volume' | 'throatWarmth' | 'oralClarity' | 'airPresence';
+type BypassKey = 'pitch' | 'rate' | 'volume' | 'throatWarmth' | 'oralClarity' | 'airPresence' | 'tone';
 
-const BYPASS_NEUTRAL: Record<BypassKey, number> = {
+const BYPASS_NEUTRAL: Record<Exclude<BypassKey, 'tone'>, number> = {
   pitch: 1,
   rate: 1,
   volume: 1,
@@ -76,6 +76,7 @@ export const VoiceManipulator: React.FC<VoiceManipulatorProps> = ({
     throatWarmth: false,
     oralClarity: false,
     airPresence: false,
+    tone: false,
   });
   const [remembered, setRemembered] = useState<Partial<Record<BypassKey, number>>>({});
 
@@ -88,6 +89,7 @@ export const VoiceManipulator: React.FC<VoiceManipulatorProps> = ({
       throatWarmth: false,
       oralClarity: false,
       airPresence: false,
+      tone: false,
     });
     setRemembered({});
   }, [voice.id]);
@@ -95,11 +97,18 @@ export const VoiceManipulator: React.FC<VoiceManipulatorProps> = ({
   const toggleBypass = (key: BypassKey) => {
     const turningOff = !bypassed[key];
     if (turningOff) {
-      const current = voice[key];
-      setRemembered((rest) => ({ ...rest, [key]: typeof current === 'number' ? current : BYPASS_NEUTRAL[key] }));
-      onUpdateVoice({ ...voice, [key]: BYPASS_NEUTRAL[key] });
+      const current = key === 'tone' ? undefined : voice[key as Exclude<BypassKey, 'tone'>];
+      if (key === 'tone') {
+        onUpdateVoice({ ...voice, toneStyle: 'natural' });
+      } else {
+        setRemembered((rest) => ({ ...rest, [key]: typeof current === 'number' ? current : BYPASS_NEUTRAL[key] }));
+        onUpdateVoice({ ...voice, [key as Exclude<BypassKey, 'tone'>]: BYPASS_NEUTRAL[key as Exclude<BypassKey, 'tone'>] });
+      }
+    } else if (key === 'tone') {
+      onUpdateVoice({ ...voice, toneStyle: 'natural' });
     } else {
-      onUpdateVoice({ ...voice, [key]: remembered[key] ?? BYPASS_NEUTRAL[key] });
+      const numericKey = key as Exclude<BypassKey, 'tone'>;
+      onUpdateVoice({ ...voice, [numericKey]: remembered[numericKey] ?? BYPASS_NEUTRAL[numericKey] });
     }
     setBypassed((current) => ({ ...current, [key]: turningOff }));
   };
@@ -386,9 +395,24 @@ export const VoiceManipulator: React.FC<VoiceManipulatorProps> = ({
 
       {/* Tone Style Mode */}
       <div className="space-y-2">
-        <label className="text-[11px] font-semibold uppercase tracking-wider text-slate-400 block">
-          Acoustic Tone & Delivery Mode
-        </label>
+        {/* The tone row gets the same treatment as the sliders: one switch for the
+            whole character, because "is it the character or the recording?" is the
+            same question as "is it the pitch or the recording?". */}
+        <div className="flex items-center gap-2">
+          <BypassSwitch
+            on={!bypassed.tone}
+            onToggle={() => {
+              const turningOff = !bypassed.tone;
+              onUpdateVoice({ ...voice, toneStyle: turningOff ? 'natural' : voice.toneStyle });
+              setBypassed((current) => ({ ...current, tone: turningOff }));
+            }}
+            label="Tone character"
+          />
+          <label className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">
+            Acoustic Tone & Delivery Mode
+          </label>
+          <span className="ml-auto text-[11px] text-slate-500">{bypassed.tone ? 'off' : voice.toneStyle}</span>
+        </div>
         <div className="grid grid-cols-2 sm:grid-cols-6 gap-2">
           {[
             { id: 'natural', label: 'Natural Clean' },
@@ -400,6 +424,8 @@ export const VoiceManipulator: React.FC<VoiceManipulatorProps> = ({
           ].map((t) => (
             <button
               key={t.id}
+              disabled={bypassed.tone}
+              aria-pressed={!bypassed.tone && voice.toneStyle === t.id}
               onClick={() => onUpdateVoice({ ...voice, toneStyle: t.id as any })}
               className={`py-2 px-2 text-xs font-semibold rounded-xl border text-center transition-all cursor-pointer ${
                 voice.toneStyle === t.id

@@ -83,8 +83,10 @@ that outlives the app, and say so in any marketplace copy rather than overclaimi
 ## The creator page, and the switch block
 
 `Voice File Creator` is where a file is made: the recorded voices are cards you can
-reorder, every setting has its own switch **on the same line as its slider**, and the
-export sits on the same page. Each row's **A/B** button plays the sentence once with
+reorder, **all seven settings** each have a switch on the same line as their control —
+Pitch, Pace, Volume, Warmth, Clarity, Air and the Tone character — and the export sits
+on the same page. There is no control on that page that cannot be switched off, which
+is the only way to find out which one a particular voice file does not want. Each row's **A/B** button plays the sentence once with
 the setting as set and once with it bypassed, so "which one is spoiling it?" is
 answered by listening to the difference. The Text to Speech page's panels carry the
 same switch beside each slider, which bypasses that control for the model in use. The
@@ -92,10 +94,11 @@ settings block is the part that ends up in the file:
 
 ```json
 "profile": {
-  "enabled":  { "pitch": true, "rate": true, "throatWarmth": false,
-                "oralClarity": true, "airPresence": false },
-  "settings": { "pitch": 1.12, "rate": 0.92, "throatWarmth": 0,
-                "oralClarity": 0.2, "airPresence": 0 }
+  "enabled":  { "pitch": true, "rate": true, "volume": true, "tone": false,
+                "throatWarmth": false, "oralClarity": true, "airPresence": false },
+  "settings": { "pitch": 1.12, "rate": 0.92, "volume": 1, "throatWarmth": 0,
+                "oralClarity": 0.2, "airPresence": 0 },
+  "tone": "deep"
 }
 ```
 

@@ -231,9 +231,11 @@ export function applyProfileToModel(
     ...model,
     pitch: value('pitch', 1),
     rate: value('rate', 1),
+    volume: value('volume', 1),
     throatWarmth: value('throatWarmth', 0),
     oralClarity: value('oralClarity', 0),
     airPresence: value('airPresence', 0),
+    toneStyle: on('tone') && profile.tone ? (profile.tone as VoiceModelConfig['toneStyle']) : 'natural',
   };
 }
 

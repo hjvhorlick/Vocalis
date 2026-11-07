@@ -198,6 +198,7 @@ console.log('\na named file with switches: the creator page path');
   const profile = {
     enabled: { pitch: true, rate: true, throatWarmth: false, oralClarity: true, airPresence: false },
     settings: { pitch: 1.12, rate: 0.92, throatWarmth: 0, oralClarity: 0.2, airPresence: 0 },
+    tone: 'deep',
   };
   const named = await encodeVocalisVoice({
     id: slugifyVoiceName('My Radio Voice #2'),
@@ -210,6 +211,7 @@ console.log('\na named file with switches: the creator page path');
   equal('a typed name becomes a voice id', header.id, 'my-radio-voice-2');
   equal('and the name itself is kept for display', header.displayName, 'My Radio Voice #2');
   equal('the switches are sealed in', header.profile?.enabled.airPresence, false);
+  equal('the delivery character travels with them', header.profile?.tone, 'deep');
   equal('with the knob positions beside them', header.profile?.settings.pitch, 1.12);
   const reopenedNamed = await decodeVocalisVoice(named);
   check('and the samples are still untouched', Buffer.from(reopenedNamed.audio).equals(audioFile));

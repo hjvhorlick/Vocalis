@@ -111,6 +111,8 @@ export interface VocalisVoiceProfile {
   enabled: Record<string, boolean>;
   /** The knob positions that were live when the file was sealed. */
   settings: Record<string, number>;
+  /** The delivery character, when that row was switched on. */
+  tone?: string;
 }
 
 /** The readable header: identity, licence, and what the sealed payload contains. */
