@@ -14,11 +14,66 @@ Companion documents: `docs/BASE_VOICE_CONTRACT.md` (the permanent rule),
 
 ## Headline
 
+*Written 2026-11-06 against commit `596f360`. The status section below records what has
+since been fixed; the findings themselves are kept unchanged as the audit trail.*
+
 The base voice data is intact and verified, but **the base voice is not in the product**.
 The recorded-unit speech synthesizer exists, is complete, is the documented default — and
 nothing imports it. The app currently plays one of four pre-recorded reference sentences
 through an effects chain, whatever text you type. That single fact explains most of the
 "not perfect yet" feeling, and it is a wiring regression, not a voice-quality problem.
+
+---
+
+## Status after the pipeline correction (2026-11-07)
+
+The P0 wiring defect is closed and the Phase 1 naturalness work is built. Measurements come
+from `tests/renderSpeech.test.ts` (534 checks) and `tests/textAnalysis.test.ts` (212 checks);
+the full before-and-after record is
+[`PHASE2_PIPELINE_CORRECTION.md`](PHASE2_PIPELINE_CORRECTION.md).
+
+**Resolved**
+
+| ID | How |
+| --- | --- |
+| A1 | `naturalVoiceEngine.speakText` / `renderSpeech` / `renderDialogue` drive `synthesizeText`; Speech Studio has a script field and Dialogue Studio generates each line's own text. The contract guard now requires a *component* that speaks generated text. |
+| B1 | One phone stream per utterance, split only at sentence boundaries (`segmentUtterance`). Silence fell from 38 % to 9.1–15.7 % across ten passages (10.4 % on a 326-word passage); pace moved off the metronomic 94.8 wpm to a text-dependent 91–152 wpm (117.2 wpm on the long passage). |
+| B2 | A missing diphone is now covered by two half units of the same speaker, ranked by phone class and natural length. Mathematical stand-ins: 4.0 % of joins → **0** across every measured render (573 exact units and 8 same-speaker adaptations over ten passages, 1,205 + 4 over a 326-word passage; worst coverage 92.5 %, on a sentence of invented proper nouns). Coverage of the pair inventory is still 79.5 %, so the underlying data gap is unchanged. |
+| B3 | Stress is carried on every `PhoneToken` through accent rules and into unit selection. |
+| B8 | Dictionary `#` annotation lines are stripped at parse time (16 lines, 0 rejected tokens). |
+| B9 | Word timings come from measured phone midpoints via `crossfadeJoinWithOffsets`; no global rescale. |
+| B10 | Each render has one assembly scope, and playback reuses the render that was measured. |
+| D9 | Mic recordings keep the recorder's real MIME type; a custom recording replaces only the labelled audition reference and the UI says so. |
+| E7 | Corpus licence described as CMU's own permissive terms in `naturalHumanAudio.ts` and `SourceVoiceAttribution.tsx`. |
+| F1 | `public/CMUDICT-LICENSE.txt` now carries both the upstream CMU notice and the ISC redistribution notice. |
+| F2 | Unsourced "US California"/"US Boston" speaker claims removed; each sample names its recorded speaker and pack. |
+| F3 | `public/samples/LICENSE.txt` added. |
+
+**Resolved for generated speech, still open on the audition path**
+
+| ID | Note |
+| --- | --- |
+| A2 | Generated speech resamples for pitch and WSOLA-stretches for rate, with the stretch target measured from the original length so pitch no longer changes duration: rate 1.4 → 2.66 s and rate 0.7 → 5.33 s from a 3.73 s render, while pitch 0.72 moves the duration only by its style's own rate factor. `buildDspGraph` still couples them for the reference-recording audition. |
+| D4 | Export of generated speech is the same sample array as preview, verified by decoding the WAV. The audition's offline render still omits the robot ring-modulation. |
+
+**Partly resolved**
+
+| ID | Note |
+| --- | --- |
+| A3 | Accent now changes the phone stream (post-vocalic R dropped, vowels lengthened) and therefore the audio; it is still a rule-based approximation over US recordings. |
+| A4 | Every preset states `synthesisMethod` and `baseVoiceId` explicitly, and Speech Studio shows which method is active; there is still no UI control to switch either. |
+| D2 | Generated-speech object URLs are revoked by `releaseSynthesis` / `releaseDialogue`; the library and manipulator still leak theirs. |
+| D8 | `initializeLocalSpeechEngine` preloads the dictionary and the selected pack on mount and on speaker change; there is still no progress UI. |
+
+**Untouched:** B4–B7, B11, C1–C7, D1, D3, D5–D8 (except as noted), D10, E1–E6, F5, G.
+The transformation foundation (B4, B5) is the next phase and is specified in
+[`VOICE_IMPROVEMENT_PLAN.md`](VOICE_IMPROVEMENT_PLAN.md).
+
+Four further defects were found while measuring and are fixed: an unanchored currency test
+that could make the tokenizer stop advancing (`I-70` exhausted the heap), a doubled
+"negative" in number expansion, dotted abbreviations missing the abbreviation table
+(`6:30 a.m.` guessed from its spelling), and a make-up-gain cap that left the experimental
+path 8 dB quieter than the default. See `PHASE2_PIPELINE_CORRECTION.md` §4.
 
 ---
 
@@ -491,6 +546,8 @@ prohibited for the rest of this work.
 ---
 
 ## Summary table
+
+Findings as originally measured. For what has since been fixed, read the status section above.
 
 | ID | Severity | Finding | Measured evidence |
 | --- | --- | --- | --- |

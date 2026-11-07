@@ -13,3 +13,37 @@ ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
 WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
 ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
 OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
+
+-------------------------------------------------------------------------------
+Provenance of public/cmudict.txt
+-------------------------------------------------------------------------------
+
+Format: one entry per line, "WORD | PHONE PHONE PHONE" (pipe delimited).
+Vowel phones carry their stress as a trailing digit (0 = reduced, 1 = primary,
+2 = secondary).
+
+The data is the CMU Pronouncing Dictionary (CMUDict), created by the Carnegie
+Mellon University Speech Group:
+
+  Canonical copy: http://www.speech.cs.cmu.edu/cgi-bin/cmudict
+
+This redistribution follows the pipe-delimited packaging published as the npm
+module "cmu-pronouncing-dictionary" (version 3.0.0), authored by Zeke
+Sikelianos, repository https://github.com/words/cmudict-0.7a, and licensed
+under the ISC terms reproduced above. The vocabulary and phone set are CMU's
+own work (CMUDict 0.7b era); only the file format and packaging come from that
+module.
+
+How Vocalis uses it
+-------------------
+
+* Loaded at runtime by src/utils/textAnalysis.ts (preparePronunciation); it is
+  the primary pronunciation source for every word the engine speaks.
+* Bundled unmodified. The accent rules, number expansion and grapheme-to-
+  phoneme fallback all work on their own copies of the phones in memory and
+  never rewrite this file.
+* Spellings a user saves are kept separately in the browser's localStorage and
+  are never written back here.
+* Sixteen lines in the upstream file carry a trailing "# annotation" comment
+  after the phone list. The parser strips the comment and reports the line as
+  an annotated line, so nothing is silently dropped.

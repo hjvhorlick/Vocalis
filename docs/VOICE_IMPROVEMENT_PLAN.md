@@ -11,6 +11,27 @@ of this is technology *around* it, plus **new, additional** data files.
 
 ---
 
+## Status (2026-11-07)
+
+**Phase 0 and Phase 1 below are built and measured.** In the numbering used by
+[`PIPELINE_MAP.md`](PIPELINE_MAP.md) and
+[`PHASE2_PIPELINE_CORRECTION.md`](PHASE2_PIPELINE_CORRECTION.md) that work is called
+"Phase 2 — pipeline correction"; it is the same work, and this plan's Phase 2 and Phase 3
+are its Phase 3.
+
+| Plan phase | State | Evidence |
+| --- | --- | --- |
+| Phase 0 — put the base voice in the product | **done** | Speech Studio speaks typed text; Dialogue Studio renders a conversation as one timeline; `npm run verify:base-voice` reachability check requires a component that speaks generated text |
+| Phase 1 — speak in sentences, not isolated words | **done** | one phone stream per utterance, `pau` only at sentence ends; silence 38 % → 9.1–15.7 %; pace 94.8 → 91–152 wpm (117.2 on a 326-word passage); stress preserved; dictionary annotations parsed; timings measured from phone midpoints |
+| Phase 2 — modify the recorded units properly | next | needs pack v2 (pitch marks, phone boundary) — additive, v1 stays frozen |
+| Phase 3 — cover every transition with the same speaker | partly pre-empted | same-speaker half-unit backoff is built (0 mathematical stand-ins, 8 adaptations across ten passages and 4 across a 326-word passage); the mixed-rank inventory and cost-based selection are still to do |
+| Phase 4 — accent, speaker range, voice character | partly | accent rules now run over the whole stream and reach the audio; still an approximation over US recordings |
+| Phase 5 — evaluation harness | seeded | `tests/renderSpeech.test.ts` (534 checks) and `tests/textAnalysis.test.ts` (212 checks) are the objective half; blind listening gates are still to do |
+
+Measurements: [`PHASE2_PIPELINE_CORRECTION.md`](PHASE2_PIPELINE_CORRECTION.md) §3.
+
+---
+
 ## Ground rules for the work
 
 1. **Additive data only.** Any improved unit inventory ships as *new* files

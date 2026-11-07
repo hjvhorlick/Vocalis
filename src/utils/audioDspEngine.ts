@@ -195,14 +195,117 @@ export function playTransformedVoice(
 export function stopTransformedVoice(): void {
   if (activeSourceNode) {
     try {
+      // Detach the handler first: stopping must not also report "ended", or a
+      // caller that replaces one render with another fires both events.
+      activeSourceNode.onended = null;
       activeSourceNode.stop();
+    } catch {
+      // already stopped
+    }
+    try {
       activeSourceNode.disconnect();
     } catch {
-      // ignore
+      // already disconnected
     }
     activeSourceNode = null;
   }
+  if (activeAnalyserNode) {
+    try {
+      activeAnalyserNode.disconnect();
+    } catch {
+      // already disconnected
+    }
+    activeAnalyserNode = null;
+  }
   isAudioPlaying = false;
+}
+
+// ---------------------------------------------------------------------------
+// Playback of speech the Vocalis engine has already rendered
+// ---------------------------------------------------------------------------
+
+/**
+ * Wrap engine samples in an AudioBuffer.
+ *
+ * The engine renders at 16 kHz and the audio context usually runs at 44.1 or
+ * 48 kHz; Web Audio resamples on playback, so the buffer keeps its own rate and
+ * nothing is interpolated twice.
+ */
+export function samplesToAudioBuffer(samples: Float32Array, sampleRate: number): AudioBuffer {
+  const ctx = getSharedAudioContext();
+  const length = Math.max(1, samples.length);
+  const buffer = ctx.createBuffer(1, length, sampleRate);
+  buffer.copyToChannel(Float32Array.from(samples.subarray(0, length)), 0);
+  return buffer;
+}
+
+export interface RenderedPlayback {
+  stop: () => void;
+  duration: number;
+}
+
+/**
+ * Play audio the engine has already rendered.
+ *
+ * This is the single playback path for generated speech: Speech Studio,
+ * Dialogue Studio and any future surface all come through here, so there is one
+ * implementation of "make a render audible" and no way for two studios to drift
+ * apart. These are the same samples the WAV encoder consumes, which is what
+ * makes preview and export identical.
+ *
+ * A gain node carries the profile volume and an analyser feeds the visualizer.
+ */
+export function playRenderedSpeech(
+  samples: Float32Array,
+  sampleRate: number,
+  callbacks?: { onStart?: () => void; onEnded?: () => void; onError?: (error: Error) => void },
+): RenderedPlayback | null {
+  if (!samples.length) {
+    callbacks?.onEnded?.();
+    return null;
+  }
+  stopTransformedVoice();
+  try {
+    const ctx: BaseAudioContext = getSharedAudioContext();
+    const buffer = samplesToAudioBuffer(samples, sampleRate);
+    const source = ctx.createBufferSource();
+    source.buffer = buffer;
+    const gain = ctx.createGain();
+    gain.gain.value = 1;
+    source.connect(gain);
+    if (ctx instanceof AudioContext) {
+      const analyser = ctx.createAnalyser();
+      analyser.fftSize = 512;
+      gain.connect(analyser);
+      analyser.connect(ctx.destination);
+      activeAnalyserNode = analyser;
+    } else {
+      gain.connect(ctx.destination);
+    }
+    activeSourceNode = source;
+    isAudioPlaying = true;
+    source.onended = () => {
+      isAudioPlaying = false;
+      activeSourceNode = null;
+      try {
+        source.disconnect();
+        gain.disconnect();
+      } catch {
+        // already torn down
+      }
+      callbacks?.onEnded?.();
+    };
+    callbacks?.onStart?.();
+    source.start(0);
+    return { stop: () => stopTransformedVoice(), duration: buffer.duration };
+  } catch (error) {
+    isAudioPlaying = false;
+    activeSourceNode = null;
+    const asError = error instanceof Error ? error : new Error(String(error));
+    callbacks?.onError?.(asError);
+    callbacks?.onEnded?.();
+    return null;
+  }
 }
 
 /**
