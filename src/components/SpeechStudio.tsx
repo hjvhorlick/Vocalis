@@ -11,6 +11,9 @@ import {
   setUserAudioBuffer,
   getUserAudioBuffer,
   releaseSynthesis,
+  produceVoiceTake,
+  textMatchesRecording,
+  voiceNeedsGeneration,
   type SynthesisResult,
 } from '../utils/naturalVoiceEngine';
 import { decodeCustomAudioBlob } from '../utils/naturalHumanAudio';
@@ -84,6 +87,12 @@ export const SpeechStudio: React.FC<SpeechStudioProps> = ({
   const [lastKey, setLastKey] = useState<string>('');
   const [activeWord, setActiveWord] = useState<number>(-1);
   const [engineError, setEngineError] = useState<string | null>(null);
+  /**
+   * Where the take in the player came from. 'sound' is the recording file with this
+   * voice's settings on it; 'speech' is words built by the synthesizer. The player
+   * says which, because the difference is the whole point of this studio.
+   */
+  const [takeSource, setTakeSource] = useState<'sound' | 'speech'>('speech');
 
   // Audition of the original reference recording — two different features, and the
   // difference matters: the untouched one plays the file, the other runs it through
@@ -117,6 +126,9 @@ export const SpeechStudio: React.FC<SpeechStudioProps> = ({
 
   const applyResult = useCallback(
     (result: SynthesisResult, key: string) => {
+      // A sound take has no phones and no segments; a speech take always has phones.
+      // Deriving it from the result means no caller can forget to set it.
+      setTakeSource(result.diagnostics.phones === 0 ? 'sound' : 'speech');
       setLastResult((previous) => {
         if (previous && previous.audioUrl !== result.audioUrl) releaseSynthesis(previous);
         return result;
@@ -175,6 +187,22 @@ export const SpeechStudio: React.FC<SpeechStudioProps> = ({
       return;
     }
     setIsRendering(true);
+
+    // A voice that is the recording, speaking the sentence that recording says, has
+    // nothing to generate: its audio already exists. Play the file with the voice's
+    // settings on it instead of rebuilding the words - see produceVoiceTake.
+    if (!voiceNeedsGeneration(activeModel) && textMatchesRecording(activeModel, script)) {
+      try {
+        const { result } = await produceVoiceTake(activeModel, script);
+        applyResult(result, currentKey);
+        playRender(result, speechCallbacks);
+      } catch (error) {
+        setEngineError(error instanceof Error ? error.message : String(error));
+      }
+      setIsRendering(false);
+      return;
+    }
+
     const result = await speakText(script, activeModel, {
       ...speechCallbacks,
       onRendered: (rendered) => applyResult(rendered, currentKey),
@@ -198,7 +226,8 @@ export const SpeechStudio: React.FC<SpeechStudioProps> = ({
     setEngineError(null);
     setIsRendering(true);
     try {
-      const result = await renderSpeech(script, activeModel);
+      // The export is the same audio the play button produces, by construction.
+      const { result } = await produceVoiceTake(activeModel, script);
       applyResult(result, currentKey);
     } catch (error) {
       setEngineError(error instanceof Error ? error.message : String(error));
@@ -775,7 +804,12 @@ export const SpeechStudio: React.FC<SpeechStudioProps> = ({
                 </>
               ) : (
                 <>
-                  <Volume2 className="w-4 h-4" /> {isRendering ? 'Generating…' : 'Speak This Text'}
+                  <Volume2 className="w-4 h-4" />
+                  {isRendering
+                    ? 'Working…'
+                    : !voiceNeedsGeneration(activeModel) && textMatchesRecording(activeModel, script)
+                      ? 'Play This Recording'
+                      : 'Speak This Text'}
                 </>
               )}
             </button>
@@ -905,9 +939,19 @@ export const SpeechStudio: React.FC<SpeechStudioProps> = ({
             <div className="flex items-center gap-2">
               <AudioWaveform className="w-5 h-5 text-indigo-400" />
               <div>
-                <h4 className="font-bold text-white text-sm">Converted Vocal Master (16-bit WAV)</h4>
-                <span className="text-[10px] text-emerald-400 font-mono">
-                  100% Vocalis Engine &bull; Zero External AI Models
+                <h4 className="font-bold text-white text-sm">
+                  {takeSource === 'sound'
+                    ? 'The recording, with this voice\'s settings (16-bit WAV)'
+                    : 'Converted Vocal Master (16-bit WAV)'}
+                </h4>
+                <span
+                  className={`text-[10px] font-mono ${
+                    takeSource === 'sound' ? 'text-emerald-400' : 'text-amber-400'
+                  }`}
+                >
+                  {takeSource === 'sound'
+                    ? 'The licensed file, unchanged, with the effect graph applied to it'
+                    : '100% Vocalis Engine \u2022 words built by the synthesizer'}
                 </span>
               </div>
             </div>

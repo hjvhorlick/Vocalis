@@ -44,6 +44,7 @@ import {
   DEFAULT_DIALOGUE_TIMING,
   PRESET_VOICE_MODELS,
   generationReason,
+  textMatchesRecording,
   voiceNeedsGeneration,
   gapBeforeLine,
   initializeLocalSpeechEngine,
@@ -1284,6 +1285,38 @@ check(
   'the adjusted voices have a description long enough to describe the settings',
   adjustedTier.every((preset) => preset.description.length > 100),
   'an adjusted voice does not describe what it does',
+);
+
+// The sentence a voice speaks must be the sentence its file says. If the two drift
+// apart, the studio has to rebuild the words - which is exactly the failure this
+// whole structure exists to prevent.
+check(
+  'every recording-based voice speaks exactly the sentence its file says',
+  [...PRESET_VOICE_MODELS, ...ADAPTED_VOICE_MODELS]
+    .filter((model) => !voiceNeedsGeneration(model))
+    .every((model) => textMatchesRecording(model, model.samplePhrase)),
+  [...PRESET_VOICE_MODELS, ...ADAPTED_VOICE_MODELS]
+    .filter((model) => !voiceNeedsGeneration(model) && !textMatchesRecording(model, model.samplePhrase))
+    .map((model) => model.id)
+    .join(', '),
+);
+check(
+  'punctuation and capitalisation do not turn a match into a mismatch',
+  textMatchesRecording(PRESET_VOICE_MODELS[0], 'AUTHOR OF THE DANGER TRAIL PHILIP STEELS ETC'),
+  'a differently punctuated version of the same sentence was treated as new words',
+);
+check(
+  'different words are recognised as different words',
+  !textMatchesRecording(PRESET_VOICE_MODELS[0], 'The quick brown fox jumps over the lazy dog.'),
+  'unrelated text was treated as the recording sentence',
+);
+check(
+  'both accent voices speak the sentence of the file they name',
+  ADAPTED_VOICE_MODELS.every((model) => textMatchesRecording(model, model.samplePhrase)),
+  ADAPTED_VOICE_MODELS
+    .filter((model) => !textMatchesRecording(model, model.samplePhrase))
+    .map((model) => model.id)
+    .join(', '),
 );
 
 // Tier 3: the accents. They change words, so they render - and they must be the only

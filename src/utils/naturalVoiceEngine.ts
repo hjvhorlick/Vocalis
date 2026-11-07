@@ -22,6 +22,7 @@ import {
   HumanVoiceSample,
   loadHumanVoiceBuffer,
   ATTRIBUTION_DETAILS,
+  loadedSampleBytes,
 } from './naturalHumanAudio';
 import {
   VoiceDspConfig,
@@ -395,7 +396,7 @@ export const ADAPTED_VOICE_MODELS: VoiceModelConfig[] = [
     airPresence: 1,
     synthesisMethod: 'cmu-arctic',
     referenceRaw: true,
-    baseSampleId: 'cmu-bdl-1',
+    baseSampleId: 'cmu-bdl-2',
     baseVoiceId: 'bdl',
     samplePhrase: 'For the twentieth time that evening the two men shook hands.',
     avatarColor: '#3b82f6',
@@ -418,7 +419,7 @@ export const ADAPTED_VOICE_MODELS: VoiceModelConfig[] = [
     airPresence: 3,
     synthesisMethod: 'cmu-arctic',
     referenceRaw: true,
-    baseSampleId: 'cmu-slt-1',
+    baseSampleId: 'cmu-slt-2',
     baseVoiceId: 'slt',
     samplePhrase: 'For the twentieth time that evening the two men shook hands.',
     avatarColor: '#22d3ee',
@@ -991,6 +992,174 @@ export async function auditionVoice(
   return 'recording';
 }
 
+/**
+ * Make the sound file for a voice: the recording, with this voice's settings on it.
+ *
+ * This is the export and save path that matches `playRecordedWithEffects`. It hands
+ * back a SynthesisResult, so the studio's take player, its download link and its
+ * save-to-library button all work unchanged, but the samples are the recording's and
+ * the only thing done to them is the effect graph. No segmentation, no re-timing, no
+ * joins, no normalising gain.
+ *
+ * `neutral` is true when the voice changes nothing, in which case the samples are the
+ * file exactly and the WAV is the file's audio rather than a re-encode of a filter
+ * chain that was never needed.
+ */
+/**
+ * Diagnostics for a voice that never went near the synthesizer.
+ *
+ * Everything a render measures about its own assembly is zero here, and says so
+ * rather than pretending: no phones were planned, no units were joined, nothing was
+ * re-timed. `timedFromPlan: false` because nothing was timed at all.
+ */
+function soundFileDiagnostics(
+  model: VoiceModelConfig,
+  seconds: number,
+  bufferSampleRate: number,
+): SynthesisDiagnostics {
+  return {
+    method: model.synthesisMethod ?? 'cmu-arctic',
+    speaker: model.baseVoiceId ?? null,
+    words: 0,
+    phones: 0,
+    segments: 0,
+    exactUnits: 0,
+    backoffUnits: 0,
+    fallbackPhones: 0,
+    missingPairs: [],
+    guessedWords: [],
+    rejectedTokens: [],
+    dictionary: { entries: 0, source: 'file', rejectedTokens: 0, annotatedLines: 0, hints: 0 },
+    sampleRate: bufferSampleRate,
+    durationSeconds: seconds,
+    recordedCoverage: 1,
+    timedFromPlan: false,
+    plannedSeconds: 0,
+    grainHalves: 0,
+    truncatedHalves: 0,
+    cappedHalves: 0,
+  };
+}
+
+export async function renderVoiceSoundFile(
+  model: VoiceModelConfig,
+): Promise<SynthesisResult & { neutral: boolean }> {
+  const buffer = await resolveBufferForModel(model);
+  const config = dspConfigFor(model);
+  const neutral = dspConfigChangesNothing(config);
+  const recording = `${recordingFor(model).name}, with this voice's settings applied to the file.`;
+
+  if (neutral) {
+    const single = buffer.getChannelData(0);
+    const samples = Float32Array.from(single);
+    // Prefer the file's own bytes. Writing the decoded samples back out is a
+    // re-encode: it lands within one 16-bit step, but it is still not the file.
+    const original = loadedSampleBytes(recordingFor(model).url);
+    const wavBlob = original
+      ? new Blob([original], { type: 'audio/wav' })
+      : encodeWavBlob(samples, buffer.sampleRate);
+    return {
+      samples,
+      sampleRate: buffer.sampleRate,
+      duration: buffer.duration,
+      wordTimings: [],
+      diagnostics: soundFileDiagnostics(model, buffer.duration, buffer.sampleRate),
+      wavBlob,
+      audioUrl: URL.createObjectURL(wavBlob),
+      neutral: true,
+    };
+  }
+
+  const { wavBlob, wavUrl, duration } = await renderTransformedWav(buffer, config);
+  const samples = audioBufferToMonoSamples(await wavBlob.arrayBuffer());
+  return {
+    samples,
+    sampleRate: buffer.sampleRate,
+    duration,
+    wordTimings: [],
+    diagnostics: soundFileDiagnostics(model, buffer.duration, buffer.sampleRate),
+    wavBlob,
+    audioUrl: wavUrl,
+    neutral: false,
+  };
+}
+
+/** Read a 16-bit mono/stereo WAV back into mono float samples (first channel). */
+function audioBufferToMonoSamples(wav: ArrayBuffer): Float32Array {
+  const view = new DataView(wav);
+  let offset = 12;
+  let dataOffset = 0;
+  let dataLength = 0;
+  let channels = 1;
+  while (offset < view.byteLength - 8) {
+    const id = String.fromCharCode(
+      view.getUint8(offset),
+      view.getUint8(offset + 1),
+      view.getUint8(offset + 2),
+      view.getUint8(offset + 3),
+    );
+    const size = view.getUint32(offset + 4, true);
+    if (id === 'fmt ') channels = view.getUint16(offset + 10, true);
+    if (id === 'data') {
+      dataOffset = offset + 8;
+      dataLength = size;
+      break;
+    }
+    offset += 8 + size + (size & 1);
+  }
+  const frames = dataLength / 2 / channels;
+  const samples = new Float32Array(frames);
+  for (let i = 0; i < frames; i += 1) {
+    samples[i] = view.getInt16(dataOffset + i * channels * 2, true) / 32768;
+  }
+  return samples;
+}
+
+/** A minimal 16-bit PCM WAV, for voices that are the file itself. */
+function encodeWavBlob(samples: Float32Array, sampleRate: number): Blob {
+  const bytes = new ArrayBuffer(44 + samples.length * 2);
+  const view = new DataView(bytes);
+  const write = (at: number, text: string) => {
+    for (let i = 0; i < text.length; i += 1) view.setUint8(at + i, text.charCodeAt(i));
+  };
+  write(0, 'RIFF');
+  view.setUint32(4, 36 + samples.length * 2, true);
+  write(8, 'WAVE');
+  write(12, 'fmt ');
+  view.setUint32(16, 16, true);
+  view.setUint16(20, 1, true);
+  view.setUint16(22, 1, true);
+  view.setUint32(24, sampleRate, true);
+  view.setUint32(28, sampleRate * 2, true);
+  view.setUint16(32, 2, true);
+  view.setUint16(34, 16, true);
+  write(36, 'data');
+  view.setUint32(40, samples.length * 2, true);
+  for (let i = 0; i < samples.length; i += 1) {
+    const clamped = Math.max(-1, Math.min(1, samples[i]));
+    view.setInt16(44 + i * 2, Math.round(clamped * 32767), true);
+  }
+  return new Blob([bytes], { type: 'audio/wav' });
+}
+
+/**
+ * Does this text say exactly what the recording says?
+ *
+ * Comparison ignores case and punctuation, because "the same sentence" does not
+ * depend on how it was typed. When it matches, there is nothing to generate: the
+ * audio for that sentence already exists, in the file the voice is built from.
+ */
+export function textMatchesRecording(model: VoiceModelConfig, text: string): boolean {
+  const normalise = (value: string) =>
+    value
+      .toLowerCase()
+      .replace(/[^a-z0-9\s]/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+  const spoken = normalise(text);
+  return spoken.length > 0 && spoken === normalise(recordingFor(model).transcript);
+}
+
 /** The recording a profile is built from: its id, sentence and duration. */
 export function recordingFor(
   model: VoiceModelConfig,
@@ -1090,6 +1259,34 @@ export async function auditionSourceRecording(
     callbacks?.onError?.(asError);
     callbacks?.onEnd?.();
   }
+}
+
+/**
+ * Produce what a studio should play, export and save for this voice and this text.
+ *
+ * There are two answers and only two:
+ *
+ *   sound  — the voice is the recording, so the audio is the recording file with the
+ *            voice's settings on it. Used whenever the text is the sentence the file
+ *            already says, and whenever the voice could not render that text anyway.
+ *   speech — the voice changes words (an accent, the rhythm engine), or the text is
+ *            something the recording never said, so the words have to be built.
+ *
+ * The studio asks this instead of assuming, which is what let a voice labelled "the
+ * recording" be silently rebuilt for a year of comparisons.
+ */
+export async function produceVoiceTake(
+  model: VoiceModelConfig,
+  text: string,
+): Promise<{ kind: 'sound' | 'speech'; result: SynthesisResult; neutral?: boolean }> {
+  const needsWords = voiceNeedsGeneration(model) || !textMatchesRecording(model, text);
+  if (!needsWords) {
+    const sound = await renderVoiceSoundFile(model);
+    const { neutral, ...result } = sound;
+    return { kind: 'sound', result, neutral };
+  }
+  const result = await renderSpeech(text, model);
+  return { kind: 'speech', result };
 }
 
 /** Render the source-recording audition to a WAV, for comparison with speech. */

@@ -95,6 +95,9 @@ export function getSharedAudioContext(): AudioContext {
 /**
  * Fetch and decode a human voice sample into an AudioBuffer
  */
+/** The bytes of each sample, kept so an untouched voice can export the file itself. */
+const sampleBytesCache = new Map<string, ArrayBuffer>();
+
 export async function loadHumanVoiceBuffer(sampleUrl: string): Promise<AudioBuffer> {
   const cached = audioBufferCache.get(sampleUrl);
   if (cached) return cached;
@@ -106,9 +109,20 @@ export async function loadHumanVoiceBuffer(sampleUrl: string): Promise<AudioBuff
   }
 
   const arrayBuffer = await response.arrayBuffer();
-  const decoded = await ctx.decodeAudioData(arrayBuffer);
+  sampleBytesCache.set(sampleUrl, arrayBuffer);
+  const decoded = await ctx.decodeAudioData(arrayBuffer.slice(0));
   audioBufferCache.set(sampleUrl, decoded);
   return decoded;
+}
+
+/**
+ * The sample's own file bytes, or null if it has not been loaded yet.
+ *
+ * Used by the sound-file export: when a voice changes nothing, what should be
+ * downloadable is the licensed file, not this application's re-encoding of it.
+ */
+export function loadedSampleBytes(sampleUrl: string): ArrayBuffer | null {
+  return sampleBytesCache.get(sampleUrl) ?? null;
 }
 
 /**
