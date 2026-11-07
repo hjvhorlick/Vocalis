@@ -10,6 +10,7 @@ import {
   installedVoiceDir as resolveInstalledVoiceDir,
   isProtectedVoiceId,
   progressFilePath,
+  progressLogPath,
 } from './src/utils/voiceLibraryPaths';
 import { pythonInstallHint, resolvePythonExecutable } from './src/utils/pythonRuntime';
 
@@ -133,8 +134,11 @@ async function startServer() {
   // cmu-arctic) and are refused by name at every entry point here, so no request
   // can modify, replace or delete them.
 
-  const VOICE_ROOT = path.join(process.cwd(), 'public', 'optional-voices');
-  const PROGRESS_ROOT = path.join(process.cwd(), 'var', 'voice-progress');
+  // Anchored to this file, not to process.cwd(): starting the server from another
+  // directory must not install voices into a tree the browser never sees.
+  const ROOT = __dirname;
+  const VOICE_ROOT = path.join(ROOT, 'public', 'optional-voices');
+  const PROGRESS_ROOT = path.join(ROOT, 'var', 'voice-progress');
   /** Resolve an installed voice's directory, or null if the id is not allowed. */
   const installedVoiceDir = (id: string): string | null => resolveInstalledVoiceDir(VOICE_ROOT, id);
 
@@ -179,10 +183,28 @@ async function startServer() {
     if (!file) return res.status(400).json({ error: 'Invalid voice id' });
     if (!fs.existsSync(file)) return res.json({ stage: 'idle' });
     try {
-      return res.json(JSON.parse(fs.readFileSync(file, 'utf-8')));
+      const progress = JSON.parse(fs.readFileSync(file, 'utf-8')) as {
+        stage?: string;
+        message?: string;
+      };
+      if (progress.stage !== 'failed') return res.json(progress);
+      const logFile = path.join(PROGRESS_ROOT, `${req.params.id}.log`);
+      let log = '';
+      try {
+        log = fs.readFileSync(logFile, 'utf-8').trim().split('\n').slice(-6).join('\n');
+      } catch {
+        log = '';
+      }
+      return res.json({ ...progress, log });
     } catch {
       return res.json({ stage: 'idle' });
     }
+  });
+
+  app.get('/api/voices/:id/log', (req: Request, res: Response) => {
+    const file = progressLogPath(PROGRESS_ROOT, req.params.id);
+    if (!file || !fs.existsSync(file)) return res.status(404).json({ error: 'No log for that voice.' });
+    res.type('text/plain').send(fs.readFileSync(file, 'utf-8').slice(-20000));
   });
 
   app.post('/api/voices/:id/install', (req: Request, res: Response) => {
@@ -213,7 +235,7 @@ async function startServer() {
       'scripts/install_voice.py',
       '--id', id,
       '--kind', recipe.kind,
-      '--url', recipe.url,
+      '--url', recipe.kind === 'arctic-tree' ? recipe.treeUrl : recipe.url,
       '--out-root', VOICE_ROOT,
       '--progress', progressFile,
       '--display-name', candidate.displayName,
@@ -226,16 +248,60 @@ async function startServer() {
       '--licence', candidate.licence.name,
     ];
     if (recipe.kind === 'arctic-archive') args.push('--speaker', recipe.speaker);
+    else if (recipe.kind === 'arctic-tree') args.push('--speaker', recipe.speaker, '--tree-url', recipe.treeUrl);
     else args.push('--dic', recipe.dicPath, '--wav', recipe.wavPath);
 
+    const logFile = path.join(PROGRESS_ROOT, `${id}.log`);
+    let logHandle: number | null = null;
+    try {
+      logHandle = fs.openSync(logFile, 'w');
+    } catch {
+      logHandle = null;
+    }
     const child = spawn(python, args, {
-      cwd: process.cwd(),
+      cwd: ROOT,
       detached: true,
-      stdio: 'ignore',
+      stdio: logHandle === null ? 'ignore' : ['ignore', logHandle, logHandle],
       windowsHide: true,
     });
+    if (logHandle !== null) fs.closeSync(logHandle);
+
+    // If python dies without writing a stage of its own, say so with its last
+    // words instead of leaving the browser polling "starting" forever.
+    child.on('exit', (code) => {
+      const current = (() => {
+        try {
+          return JSON.parse(fs.readFileSync(progressFile, 'utf-8')) as { stage?: string };
+        } catch {
+          return {};
+        }
+      })();
+      if (current.stage === 'done' || current.stage === 'failed') return;
+      const tail = (() => {
+        try {
+          return fs
+            .readFileSync(logFile, 'utf-8')
+            .trim()
+            .split('\n')
+            .slice(-4)
+            .join(' ')
+            .slice(0, 400);
+        } catch {
+          return '';
+        }
+      })();
+      fs.writeFileSync(
+        progressFile,
+        JSON.stringify({
+          at: new Date().toISOString(),
+          stage: 'failed',
+          message: `The installer exited (code ${code ?? 'unknown'}) without finishing.${tail ? ` ${tail}` : ''}`,
+          percent: 0,
+        }),
+      );
+    });
     child.unref();
-    res.json({ started: true, id, progressUrl: `/api/voices/${id}/progress` });
+    res.json({ started: true, id, progressUrl: `/api/voices/${id}/progress`, logUrl: `/api/voices/${id}/log` });
   });
 
   app.delete('/api/voices/:id', (req: Request, res: Response) => {

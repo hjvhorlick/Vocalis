@@ -43,6 +43,9 @@ export interface InstallProgress {
   percent?: number;
   received?: number;
   total?: number;
+  /** The installer's own last lines, present only after a failure. */
+  log?: string;
+  at?: string;
 }
 
 /**

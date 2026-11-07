@@ -49,3 +49,9 @@ export function progressFilePath(root: string, id: string): string | null {
   if (!isSafeVoiceId(id)) return null;
   return join(resolve(root), `${id}.json`);
 }
+
+/** Where the server keeps the installer's own output, next to its progress. */
+export function progressLogPath(root: string, id: string): string | null {
+  if (!isSafeVoiceId(id)) return null;
+  return join(resolve(root), `${id}.log`);
+}

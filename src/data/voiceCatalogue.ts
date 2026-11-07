@@ -49,6 +49,17 @@ export type InstallRecipe =
       speaker: string;
     }
   | {
+      /**
+       * The published per-speaker tree (wav/ + lab/ one file at a time), for the
+       * speakers whose labels FestVox never packed into a tarball. Verified by
+       * hand: http://festvox.org/cmu_arctic/cmu_arctic/cmu_us_clb_arctic/lab/
+       * holds one Festival-format .lab per utterance.
+       */
+      kind: 'arctic-tree';
+      treeUrl: string;
+      speaker: string;
+    }
+  | {
       kind: 'festival-est';
       url: string;
       archive: 'tar.gz' | 'tar.bz2';
@@ -159,9 +170,9 @@ export const VOICE_CATALOGUE: VoiceCandidate[] = [
     gender: "Male",
     sourceProject: "CMU ARCTIC 0.95",
     sourceUrl: "http://festvox.org/cmu_arctic/",
-    downloadUrl: "http://festvox.org/cmu_arctic/cmu_arctic/packed/cmu_us_awb_arctic-0.95-release.tar.bz2",
-    downloadLabel: "123M",
-    originalFormat: "CMU ARCTIC 0.95 release build: 16 kHz mono WAV per utterance plus phone labels in lab/ (tar.bz2)",
+    downloadUrl: "http://festvox.org/cmu_arctic/cmu_arctic/cmu_us_awb_arctic/",
+    downloadLabel: "~1100 files",
+    originalFormat: "Published CMU ARCTIC tree: 16 kHz mono WAV per utterance in wav/ and one Festival label file per utterance in lab/",
     licence: {
       name: "CMU ARCTIC 0.95 (Carnegie Mellon University, Copyright (c) 2003)",
       url: "http://festvox.org/cmu_arctic/",
@@ -171,10 +182,10 @@ export const VOICE_CATALOGUE: VoiceCandidate[] = [
       attribution: "Carnegie Mellon University, John Kominek and Alan W. Black, CMU ARCTIC speaker <ID>, Copyright (c) 2003",
     },
     compatibility: "A",
-    compatibilityNote: "One of the seven speakers whose phone labels FestVox publishes: the labels sit in the lab/ directory of the published tree, and this is the full 0.95 release build, cut with scripts/build_cmu_voicepack.py — the builder used for BDL and SLT. Not yet proved end to end here: run `npm run voices -- inspect arctic-awb --from <archive>` and look at the label count before installing.",
+    compatibilityNote: "One of the seven speakers whose phone labels FestVox publishes, in the lab/ directory of the published tree: one Festival-format .lab per utterance (checked by hand). The installer fetches the labelled utterances directly from that tree — those wav and lab files, nothing re-recorded or converted — and cuts them with scripts/build_cmu_voicepack.py, the builder used for BDL and SLT. Not yet proved end to end here, so install it and judge by ear.",
     install: {
-      kind: "arctic-archive",
-      url: "http://festvox.org/cmu_arctic/cmu_arctic/packed/cmu_us_awb_arctic-0.95-release.tar.bz2",
+      kind: "arctic-tree",
+      treeUrl: "http://festvox.org/cmu_arctic/cmu_arctic/cmu_us_awb_arctic/",
       speaker: "awb",
     },
     notes: "Scottish-accented English male",
@@ -211,9 +222,9 @@ export const VOICE_CATALOGUE: VoiceCandidate[] = [
     gender: "Female",
     sourceProject: "CMU ARCTIC 0.95",
     sourceUrl: "http://festvox.org/cmu_arctic/",
-    downloadUrl: "http://festvox.org/cmu_arctic/cmu_arctic/packed/cmu_us_clb_arctic-0.95-release.tar.bz2",
-    downloadLabel: "124M",
-    originalFormat: "CMU ARCTIC 0.95 release build: 16 kHz mono WAV per utterance plus phone labels in lab/ (tar.bz2)",
+    downloadUrl: "http://festvox.org/cmu_arctic/cmu_arctic/cmu_us_clb_arctic/",
+    downloadLabel: "~1100 files",
+    originalFormat: "Published CMU ARCTIC tree: 16 kHz mono WAV per utterance in wav/ and one Festival label file per utterance in lab/",
     licence: {
       name: "CMU ARCTIC 0.95 (Carnegie Mellon University, Copyright (c) 2003)",
       url: "http://festvox.org/cmu_arctic/",
@@ -223,10 +234,10 @@ export const VOICE_CATALOGUE: VoiceCandidate[] = [
       attribution: "Carnegie Mellon University, John Kominek and Alan W. Black, CMU ARCTIC speaker <ID>, Copyright (c) 2003",
     },
     compatibility: "A",
-    compatibilityNote: "One of the seven speakers whose phone labels FestVox publishes: the labels sit in the lab/ directory of the published tree, and this is the full 0.95 release build, cut with scripts/build_cmu_voicepack.py — the builder used for BDL and SLT. Not yet proved end to end here: run `npm run voices -- inspect arctic-clb --from <archive>` and look at the label count before installing.",
+    compatibilityNote: "One of the seven speakers whose phone labels FestVox publishes, in the lab/ directory of the published tree: one Festival-format .lab per utterance (checked by hand). The installer fetches the labelled utterances directly from that tree — those wav and lab files, nothing re-recorded or converted — and cuts them with scripts/build_cmu_voicepack.py, the builder used for BDL and SLT. Not yet proved end to end here, so install it and judge by ear.",
     install: {
-      kind: "arctic-archive",
-      url: "http://festvox.org/cmu_arctic/cmu_arctic/packed/cmu_us_clb_arctic-0.95-release.tar.bz2",
+      kind: "arctic-tree",
+      treeUrl: "http://festvox.org/cmu_arctic/cmu_arctic/cmu_us_clb_arctic/",
       speaker: "clb",
     },
     notes: "clear US English female",
@@ -311,9 +322,9 @@ export const VOICE_CATALOGUE: VoiceCandidate[] = [
     gender: "Male",
     sourceProject: "CMU ARCTIC 0.95",
     sourceUrl: "http://festvox.org/cmu_arctic/",
-    downloadUrl: "http://festvox.org/cmu_arctic/cmu_arctic/packed/cmu_us_jmk_arctic-0.95-release.tar.bz2",
-    downloadLabel: "87M",
-    originalFormat: "CMU ARCTIC 0.95 release build: 16 kHz mono WAV per utterance plus phone labels in lab/ (tar.bz2)",
+    downloadUrl: "http://festvox.org/cmu_arctic/cmu_arctic/cmu_us_jmk_arctic/",
+    downloadLabel: "~1100 files",
+    originalFormat: "Published CMU ARCTIC tree: 16 kHz mono WAV per utterance in wav/ and one Festival label file per utterance in lab/",
     licence: {
       name: "CMU ARCTIC 0.95 (Carnegie Mellon University, Copyright (c) 2003)",
       url: "http://festvox.org/cmu_arctic/",
@@ -323,10 +334,10 @@ export const VOICE_CATALOGUE: VoiceCandidate[] = [
       attribution: "Carnegie Mellon University, John Kominek and Alan W. Black, CMU ARCTIC speaker <ID>, Copyright (c) 2003",
     },
     compatibility: "A",
-    compatibilityNote: "One of the seven speakers whose phone labels FestVox publishes: the labels sit in the lab/ directory of the published tree, and this is the full 0.95 release build, cut with scripts/build_cmu_voicepack.py — the builder used for BDL and SLT. Not yet proved end to end here: run `npm run voices -- inspect arctic-jmk --from <archive>` and look at the label count before installing.",
+    compatibilityNote: "One of the seven speakers whose phone labels FestVox publishes, in the lab/ directory of the published tree: one Festival-format .lab per utterance (checked by hand). The installer fetches the labelled utterances directly from that tree — those wav and lab files, nothing re-recorded or converted — and cuts them with scripts/build_cmu_voicepack.py, the builder used for BDL and SLT. Not yet proved end to end here, so install it and judge by ear.",
     install: {
-      kind: "arctic-archive",
-      url: "http://festvox.org/cmu_arctic/cmu_arctic/packed/cmu_us_jmk_arctic-0.95-release.tar.bz2",
+      kind: "arctic-tree",
+      treeUrl: "http://festvox.org/cmu_arctic/cmu_arctic/cmu_us_jmk_arctic/",
       speaker: "jmk",
     },
     notes: "Canadian English male",
@@ -339,9 +350,9 @@ export const VOICE_CATALOGUE: VoiceCandidate[] = [
     gender: "Male",
     sourceProject: "CMU ARCTIC 0.95",
     sourceUrl: "http://festvox.org/cmu_arctic/",
-    downloadUrl: "http://festvox.org/cmu_arctic/cmu_arctic/packed/cmu_us_ksp_arctic-0.95-release.tar.bz2",
-    downloadLabel: "114M",
-    originalFormat: "CMU ARCTIC 0.95 release build: 16 kHz mono WAV per utterance plus phone labels in lab/ (tar.bz2)",
+    downloadUrl: "http://festvox.org/cmu_arctic/cmu_arctic/cmu_us_ksp_arctic/",
+    downloadLabel: "~1100 files",
+    originalFormat: "Published CMU ARCTIC tree: 16 kHz mono WAV per utterance in wav/ and one Festival label file per utterance in lab/",
     licence: {
       name: "CMU ARCTIC 0.95 (Carnegie Mellon University, Copyright (c) 2003)",
       url: "http://festvox.org/cmu_arctic/",
@@ -351,10 +362,10 @@ export const VOICE_CATALOGUE: VoiceCandidate[] = [
       attribution: "Carnegie Mellon University, John Kominek and Alan W. Black, CMU ARCTIC speaker <ID>, Copyright (c) 2003",
     },
     compatibility: "A",
-    compatibilityNote: "One of the seven speakers whose phone labels FestVox publishes: the labels sit in the lab/ directory of the published tree, and this is the full 0.95 release build, cut with scripts/build_cmu_voicepack.py — the builder used for BDL and SLT. Not yet proved end to end here: run `npm run voices -- inspect arctic-ksp --from <archive>` and look at the label count before installing.",
+    compatibilityNote: "One of the seven speakers whose phone labels FestVox publishes, in the lab/ directory of the published tree: one Festival-format .lab per utterance (checked by hand). The installer fetches the labelled utterances directly from that tree — those wav and lab files, nothing re-recorded or converted — and cuts them with scripts/build_cmu_voicepack.py, the builder used for BDL and SLT. Not yet proved end to end here, so install it and judge by ear.",
     install: {
-      kind: "arctic-archive",
-      url: "http://festvox.org/cmu_arctic/cmu_arctic/packed/cmu_us_ksp_arctic-0.95-release.tar.bz2",
+      kind: "arctic-tree",
+      treeUrl: "http://festvox.org/cmu_arctic/cmu_arctic/cmu_us_ksp_arctic/",
       speaker: "ksp",
     },
     notes: "Indian-accented US English male",
@@ -415,9 +426,9 @@ export const VOICE_CATALOGUE: VoiceCandidate[] = [
     gender: "Male",
     sourceProject: "CMU ARCTIC 0.95",
     sourceUrl: "http://festvox.org/cmu_arctic/",
-    downloadUrl: "http://festvox.org/cmu_arctic/cmu_arctic/packed/cmu_us_rms_arctic-0.95-release.tar.bz2",
-    downloadLabel: "111M",
-    originalFormat: "CMU ARCTIC 0.95 release build: 16 kHz mono WAV per utterance plus phone labels in lab/ (tar.bz2)",
+    downloadUrl: "http://festvox.org/cmu_arctic/cmu_arctic/cmu_us_rms_arctic/",
+    downloadLabel: "~1100 files",
+    originalFormat: "Published CMU ARCTIC tree: 16 kHz mono WAV per utterance in wav/ and one Festival label file per utterance in lab/",
     licence: {
       name: "CMU ARCTIC 0.95 (Carnegie Mellon University, Copyright (c) 2003)",
       url: "http://festvox.org/cmu_arctic/",
@@ -427,10 +438,10 @@ export const VOICE_CATALOGUE: VoiceCandidate[] = [
       attribution: "Carnegie Mellon University, John Kominek and Alan W. Black, CMU ARCTIC speaker <ID>, Copyright (c) 2003",
     },
     compatibility: "A",
-    compatibilityNote: "One of the seven speakers whose phone labels FestVox publishes: the labels sit in the lab/ directory of the published tree, and this is the full 0.95 release build, cut with scripts/build_cmu_voicepack.py — the builder used for BDL and SLT. Not yet proved end to end here: run `npm run voices -- inspect arctic-rms --from <archive>` and look at the label count before installing.",
+    compatibilityNote: "One of the seven speakers whose phone labels FestVox publishes, in the lab/ directory of the published tree: one Festival-format .lab per utterance (checked by hand). The installer fetches the labelled utterances directly from that tree — those wav and lab files, nothing re-recorded or converted — and cuts them with scripts/build_cmu_voicepack.py, the builder used for BDL and SLT. Not yet proved end to end here, so install it and judge by ear.",
     install: {
-      kind: "arctic-archive",
-      url: "http://festvox.org/cmu_arctic/cmu_arctic/packed/cmu_us_rms_arctic-0.95-release.tar.bz2",
+      kind: "arctic-tree",
+      treeUrl: "http://festvox.org/cmu_arctic/cmu_arctic/cmu_us_rms_arctic/",
       speaker: "rms",
     },
     notes: "US English male, read speech",

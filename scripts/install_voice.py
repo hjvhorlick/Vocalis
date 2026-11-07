@@ -26,6 +26,7 @@ just a percentage.
 from __future__ import annotations
 
 import argparse
+import concurrent.futures
 import json
 import os
 import re
@@ -263,6 +264,128 @@ def install_arctic(args: argparse.Namespace, work: Path, pack: Path, progress: P
     return output
 
 
+def fetch_text(url: str) -> str:
+    request = urllib.request.Request(url, headers={"User-Agent": "Vocalis voice library"})
+    with urllib.request.urlopen(request, timeout=120) as response:
+        return response.read().decode("utf-8", errors="replace")
+
+
+def fetch_file(url: str, target: Path) -> None:
+    request = urllib.request.Request(url, headers={"User-Agent": "Vocalis voice library"})
+    with urllib.request.urlopen(request, timeout=120) as response:
+        target.write_bytes(response.read())
+
+
+def html_names(url: str) -> list[str]:
+    """The file names listed by an Apache-style directory index."""
+    try:
+        html = fetch_text(url)
+    except Exception as error:  # noqa: BLE001 - reported to the user in context
+        raise InstallError(f"Could not read the directory listing at {url} ({error}).") from error
+    names = []
+    for match in re.finditer(r'href="([^"?#]+)"', html):
+        name = urllib.parse.unquote(match.group(1)).rsplit("/", 1)[-1]
+        if name and "." in name and not name.startswith("."):
+            names.append(name)
+    return sorted(set(names))
+
+
+def install_arctic_tree(args: argparse.Namespace, work: Path, pack: Path, progress: Path) -> str:
+    """Fetch the published per-speaker tree, one labelled utterance at a time.
+
+    FestVox never packed the labels of these speakers into a tarball: the wav/ and
+    lab/ directories are only published as a browsable tree. Downloading them
+    individually is slower than one archive, but it is the difference between a voice
+    that installs from the publisher's own data and a voice that cannot be installed
+    at all.
+    """
+    base = args.tree_url.rstrip("/") + "/"
+    speaker_dir = work / "unpacked" / f"cmu_us_{args.speaker}_arctic"
+    (speaker_dir / "wav").mkdir(parents=True, exist_ok=True)
+    (speaker_dir / "lab").mkdir(parents=True, exist_ok=True)
+
+    write_progress(progress, stage="download", message="Reading the published file list…", percent=0)
+    labels = [name for name in html_names(f"{base}lab/") if name.endswith(".lab")]
+    waveforms = {name for name in html_names(f"{base}wav/") if name.endswith(".wav")}
+    if not labels:
+        raise InstallError(f"{base}lab/ lists no .lab files, so there are no phone labels to cut.")
+    if not waveforms:
+        raise InstallError(f"{base}wav/ lists no .wav files, so there is no audio to cut.")
+    paired = [name for name in labels if name[:-4] + ".wav" in waveforms]
+    if not paired:
+        raise InstallError(
+            f"The published tree has {len(labels)} label files and {len(waveforms)} waveforms "
+            "but no utterance has both, so nothing can be cut."
+        )
+
+    try:
+        fetch_file(f"{base}COPYING", speaker_dir / "COPYING")
+    except Exception:  # noqa: BLE001 - the licence text is already in the catalogue
+        pass
+
+    total = len(paired) * 2
+    done = 0
+    last_report = 0.0
+    failures: list[str] = []
+
+    def grab(url: str, target: Path) -> None:
+        nonlocal done, last_report
+        try:
+            fetch_file(url, target)
+        except Exception as error:  # noqa: BLE001 - one bad file must not lose the voice
+            failures.append(f"{url}: {error}")
+        done += 1
+        now = time.time()
+        if now - last_report > 0.5:
+            last_report = now
+            write_progress(
+                progress,
+                stage="download",
+                message=f"Fetching {done // 2} of {len(paired)} labelled utterances "
+                f"({len(failures)} failed)…",
+                percent=min(95, int(done * 95 / total)),
+                received=done,
+                total=total,
+            )
+
+    jobs = []
+    for name in paired:
+        jobs.append((f"{base}lab/{name}", speaker_dir / "lab" / name))
+        jobs.append((f"{base}wav/{name[:-4]}.wav", speaker_dir / "wav" / (name[:-4] + ".wav")))
+
+    # Four at a time: enough to hide the latency of a thousand small requests without
+    # hammering a university web server.
+    with concurrent.futures.ThreadPoolExecutor(max_workers=4) as pool:
+        list(pool.map(lambda job: grab(*job), jobs))
+
+    if len(failures) == len(jobs):
+        raise InstallError(
+            "Every file failed to download — check the network and that the published "
+            f"tree is still at {base}. First failure: {failures[0]}"
+        )
+
+    write_progress(
+        progress,
+        stage="extract",
+        message=f"Downloaded {len(paired) * 2 - len(failures)} files. Nothing to unpack for a tree; preparing.",
+        percent=96,
+    )
+    output = run_importer(
+        [
+            str(SCRIPT_DIR / "build_cmu_voicepack.py"),
+            "--source", str(speaker_dir),
+            "--output", str(pack),
+            "--speaker-id", args.id,
+            "--display-name", args.display_name or args.id,
+            "--accent", args.accent or "English",
+            "--gender", args.gender or "Unknown",
+        ],
+        progress,
+        "convert",
+    )
+    return output
+
+
 def install_festival_est(args: argparse.Namespace, work: Path, pack: Path, progress: Path) -> str:
     archive = work / "source" / "archive.tar.gz"
     archive.parent.mkdir(parents=True, exist_ok=True)
@@ -326,8 +449,9 @@ def install_festival_est(args: argparse.Namespace, work: Path, pack: Path, progr
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--id", required=True)
-    parser.add_argument("--kind", required=True, choices=["arctic-archive", "festival-est"])
-    parser.add_argument("--url", required=True)
+    parser.add_argument("--kind", required=True, choices=["arctic-archive", "arctic-tree", "festival-est"])
+    parser.add_argument("--url", default="", help="Archive URL (archive kinds).")
+    parser.add_argument("--tree-url", default="", help="Published tree URL (arctic-tree).")
     parser.add_argument("--speaker", default="")
     parser.add_argument("--dic", default="auto")
     parser.add_argument("--wav", default="wav")
@@ -352,6 +476,23 @@ def main() -> int:
     try:
         voice_id = sanitise_id(args.id)
         out_root = args.out_root.resolve()
+
+        if args.inspect and args.kind == "arctic-tree":
+            base = (args.tree_url or args.url).rstrip("/")
+            write_progress(progress, stage="download", message="Reading the published file list…", percent=0)
+            labels = [n for n in html_names(f"{base}/lab/") if n.endswith(".lab")]
+            waveforms = [n for n in html_names(f"{base}/wav/") if n.endswith(".wav")]
+            report = "\n".join(
+                [
+                    f"tree: {base}",
+                    f"{len(waveforms)} waveforms, {len(labels)} label files listed",
+                    f"first waveform: {waveforms[0] if waveforms else 'none'}",
+                    f"first labels:   {labels[0] if labels else 'none'}",
+                ]
+            )
+            write_progress(progress, stage="done", percent=100, message="Inspection complete.")
+            print(report)
+            return 0
 
         if args.inspect:
             with tempfile.TemporaryDirectory(prefix=f"vocalis-inspect-{voice_id}-") as temporary:
@@ -379,6 +520,12 @@ def main() -> int:
                 if not args.speaker:
                     raise InstallError("An ARCTIC install needs --speaker.")
                 log = install_arctic(args, work, pack, progress)
+            elif args.kind == "arctic-tree":
+                if not args.speaker:
+                    raise InstallError("An ARCTIC install needs --speaker.")
+                if not args.tree_url:
+                    raise InstallError("An arctic-tree install needs --tree-url.")
+                log = install_arctic_tree(args, work, pack, progress)
             else:
                 log = install_festival_est(args, work, pack, progress)
 

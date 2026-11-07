@@ -192,7 +192,12 @@ function installerArgs(voice: VoiceCandidate, archiveOverride?: string): string[
     resolve(ROOT, 'scripts', 'install_voice.py'),
     '--id', voice.id,
     '--kind', recipe.kind,
-    '--url', archiveOverride ? pathToFileURL(expandHome(archiveOverride)).href : recipe.url,
+    '--url',
+    archiveOverride
+      ? pathToFileURL(expandHome(archiveOverride)).href
+      : recipe.kind === 'arctic-tree'
+        ? recipe.treeUrl
+        : recipe.url,
     '--out-root', VOICE_ROOT,
     '--progress', resolve(PROGRESS_ROOT, `${voice.id}.json`),
     '--display-name', voice.displayName,
@@ -206,6 +211,8 @@ function installerArgs(voice: VoiceCandidate, archiveOverride?: string): string[
   ];
   if (recipe.kind === 'arctic-archive') {
     args.push('--speaker', recipe.speaker);
+  } else if (recipe.kind === 'arctic-tree') {
+    args.push('--speaker', recipe.speaker, '--tree-url', recipe.treeUrl);
   } else {
     args.push('--dic', recipe.dicPath, '--wav', recipe.wavPath);
   }
@@ -253,7 +260,7 @@ function runInstaller(voice: VoiceCandidate, archiveOverride?: string): Promise<
   rmSync(progressFile, { force: true });
 
   console.log(`\n▸ ${voice.displayName}  (${voice.id})`);
-  console.log(`  ${archiveOverride ? expandHome(archiveOverride) : recipe.url}`);
+  console.log(`  ${archiveOverride ? expandHome(archiveOverride) : recipe.kind === 'arctic-tree' ? recipe.treeUrl : recipe.url}`);
   console.log(`  licence: ${voice.licence.name}`);
 
   return new Promise((resolvePromise) => {
@@ -424,6 +431,12 @@ function urls(args: string[]): number {
     const recipe = voice.install!;
     console.log(`# ${voice.id} — ${voice.displayName} (${voice.language}, ${voice.accent}, ${voice.gender})`);
     console.log(`# licence: ${voice.licence.name}`);
+    if (recipe.kind === 'arctic-tree') {
+      // Nothing to curl: the labels live in a browsable tree, not a tarball.
+      console.log(`# published tree: ${recipe.treeUrl}`);
+      console.log(`npm run voices -- install ${voice.id}\n`);
+      continue;
+    }
     console.log(`curl -L -o ${voice.id}.archive "${recipe.url}"`);
     console.log(`npm run voices -- install ${voice.id} --from ${voice.id}.archive\n`);
   }

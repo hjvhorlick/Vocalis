@@ -22,7 +22,7 @@
  * Run with: npm run test:voices
  */
 import { createHash } from 'node:crypto';
-import { execFileSync } from 'node:child_process';
+import { execFileSync, spawn } from 'node:child_process';
 import {
   cpSync,
   existsSync,
@@ -158,7 +158,12 @@ check(
 );
 check(
   'every installable voice states a download url',
-  INSTALLABLE_VOICES.every((voice) => voice.install && /^https?:\/\//.test(voice.install.url)),
+  INSTALLABLE_VOICES.every((voice) => {
+    const recipe = voice.install;
+    if (!recipe) return false;
+    const url = recipe.kind === 'arctic-tree' ? recipe.treeUrl : recipe.url;
+    return /^https?:\/\//.test(url);
+  }),
 );
 
 const summary = catalogueSummary();
@@ -189,7 +194,10 @@ check('the KAL voice is installable', findVoiceCandidate('cmu-kal')?.install?.ki
   const withLabels = ['awb', 'clb', 'jmk', 'ksp', 'rms'];
   check(
     'the five speakers with published labels point at the labelled release build',
-    withLabels.every((speaker) => /-0\.95-release\.tar\.bz2$/.test(findVoiceCandidate(`arctic-${speaker}`)?.install?.url ?? '')),
+    withLabels.every((speaker) => {
+      const recipe = findVoiceCandidate(`arctic-${speaker}`)?.install;
+      return recipe?.kind === 'arctic-tree' && /^http:\/\/festvox\.org\/cmu_arctic\/cmu_arctic\/cmu_us_\w+_arctic\/$/.test(recipe.treeUrl);
+    }),
   );
   check(
     'and say they are not proved yet',
@@ -258,6 +266,23 @@ function installerOutcome(args: string[]): { code: number; output: string } {
     return { code: failure.status ?? 1, output: failure.stderr ?? '' };
   }
 }
+function installerOutcomeAsync(args: string[]): Promise<{ code: number; output: string }> {
+  return new Promise((resolvePromise) => {
+    const child = spawn('python3', [join(ROOT, 'scripts', 'install_voice.py'), ...args], {
+      cwd: ROOT,
+    });
+    let output = '';
+    let errors = '';
+    child.stdout?.on('data', (chunk: Buffer) => {
+      output += chunk.toString();
+    });
+    child.stderr?.on('data', (chunk: Buffer) => {
+      errors += chunk.toString();
+    });
+    child.on('close', (code) => resolvePromise({ code: code ?? 1, output: `${output}${errors}` }));
+  });
+}
+
 const workDir = mkdtempSync(join(tmpdir(), 'vocalis-library-test-'));
 const protectedInstall = installerOutcome([
   '--id', 'bdl', '--kind', 'festival-est', '--url', 'file:///nonexistent.tar.gz',
@@ -580,6 +605,83 @@ with tarfile.open(sys.argv[1],'w:bz2') as t:
   );
 }
 
+// Some ARCTIC speakers only exist as a browsable tree: wav/ and lab/ one file at
+// a time, never a tarball. This serves such a tree from a local HTTP server and
+// installs from it, because that is the only way these voices can be installed at
+// all — and the download is real HTTP, not a file:// shortcut.
+{
+  const { createServer } = await import('node:http');
+  const { readFileSync: readFile, existsSync: exists } = await import('node:fs');
+  const treeRoot = join(workDir, 'published-tree', 'cmu_us_tree_arctic');
+  const labelsOnly = buildArcticSpeaker(join(workDir, 'published-tree'), { speaker: 'tree', labelDir: 'lab' });
+  rmSync(labelsOnly.speakerDir, { recursive: true, force: true });
+  mkdirSync(join(treeRoot, 'wav'), { recursive: true });
+  mkdirSync(join(treeRoot, 'lab'), { recursive: true });
+  writeFileSync(join(treeRoot, 'COPYING'), 'Fixture tree for the installer test.');
+  for (const utterance of ['arctic_a0001', 'arctic_a0002']) {
+    const source = buildArcticSpeaker(join(workDir, 'tree-source'), { speaker: 'tree', labelDir: 'lab' });
+    cpSync(join(source.wavDir, `${utterance}.wav`), join(treeRoot, 'wav', `${utterance}.wav`));
+    cpSync(join(source.labelDir!, `${utterance}.lab`), join(treeRoot, 'lab', `${utterance}.lab`));
+    break;
+  }
+  const source = buildArcticSpeaker(join(workDir, 'tree-source-2'), { speaker: 'tree', labelDir: 'lab' });
+  for (const utterance of ['arctic_a0001', 'arctic_a0002']) {
+    cpSync(join(source.wavDir, `${utterance}.wav`), join(treeRoot, 'wav', `${utterance}.wav`));
+    cpSync(join(source.labelDir!, `${utterance}.lab`), join(treeRoot, 'lab', `${utterance}.lab`));
+  }
+
+  const server = createServer((req, res) => {
+    const urlPath = decodeURIComponent((req.url ?? '/').split('?')[0]);
+    const target = join(treeRoot, urlPath.replace('/cmu_us_tree_arctic/', ''));
+    if (urlPath.endsWith('/')) {
+      const entries = readdirSync(target).filter((name) => !name.startsWith('.'));
+      res.writeHead(200, { 'content-type': 'text/html' });
+      res.end(`<html><body>${entries.map((name) => `<a href="${name}">${name}</a>`).join('\n')}</body></html>`);
+      return;
+    }
+    if (!exists(target)) {
+      res.writeHead(404);
+      res.end('not found');
+      return;
+    }
+    res.writeHead(200);
+    res.end(readFile(target));
+  });
+  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+  const address = server.address();
+  const port = typeof address === 'object' && address ? address.port : 0;
+  const treeUrl = `http://127.0.0.1:${port}/cmu_us_tree_arctic/`;
+
+  const treeRootOut = join(workDir, 'tree-voices');
+  const treeOutcome = await installerOutcomeAsync([
+    '--id', 'arctic-tree', '--kind', 'arctic-tree', '--tree-url', treeUrl,
+    '--speaker', 'tree', '--out-root', treeRootOut, '--progress', join(workDir, 'tree-progress.json'),
+    '--display-name', 'ARCTIC tree fixture', '--accent', 'US English', '--gender', 'Female',
+  ]);
+  check('a voice published only as a tree installs from it', treeOutcome.code === 0, treeOutcome.output.trim().split('\n').slice(-1)[0]);
+  const treeManifest = join(treeRootOut, 'arctic-tree', 'manifest.json');
+  check('and the pack is cut from the downloaded labels', existsSync(treeManifest));
+  if (existsSync(treeManifest)) {
+    const manifest = JSON.parse(readFileSync(treeManifest, 'utf8'));
+    check('with the units those labels describe', Object.keys(manifest.units).length >= 200, `${Object.keys(manifest.units).length}`);
+  }
+
+  // A tree with waveforms but no labels is the LJM case again: refuse, explain.
+  rmSync(join(treeRoot, 'lab'), { recursive: true, force: true });
+  mkdirSync(join(treeRoot, 'lab'), { recursive: true });
+  const emptyTreeOutcome = await installerOutcomeAsync([
+    '--id', 'arctic-tree-empty', '--kind', 'arctic-tree', '--tree-url', treeUrl,
+    '--speaker', 'tree', '--out-root', join(workDir, 'tree-voices-empty'),
+    '--progress', join(workDir, 'tree-empty-progress.json'),
+    '--display-name', 'ARCTIC empty tree', '--accent', 'US English', '--gender', 'Female',
+  ]);
+  check('a tree with no labels is refused', emptyTreeOutcome.code !== 0);
+  check('and says the listing had none', /no \.lab files/i.test(emptyTreeOutcome.output), emptyTreeOutcome.output.trim().split('\n')[0] ?? '');
+  check('and installs nothing', !existsSync(join(workDir, 'tree-voices-empty', 'arctic-tree-empty')));
+
+  server.close();
+}
+
 // Labels that do not match the waveforms are a mismatch, not a zero-unit voice.
 {
   // Right number of files, wrong names: nothing lines up, and the pack would be empty.
@@ -630,8 +732,11 @@ try {
 } catch (error) {
   urlsOut = (error as { stdout?: string }).stdout ?? '';
 }
-check('`voices urls` prints a real archive URL', /festvox\.org\/cmu_arctic\/cmu_arctic\/packed\/cmu_us_awb_arctic-0\.95-release\.tar\.bz2/.test(urlsOut));
-check('and the matching install command', /--from arctic-awb\.archive/.test(urlsOut));
+check('`voices urls` prints a real archive URL', /festvox\.org\/cmu_arctic\/cmu_arctic\/cmu_us_awb_arctic\//.test(urlsOut));
+check(
+  'and the matching install command for each kind of source',
+  /npm run voices -- install arctic-awb/.test(urlsOut) && /curl -L -o cmu-kal\.archive/.test(urlsOut),
+);
 
 const refusedInstall = (() => {
   try {
@@ -656,7 +761,7 @@ console.log('\nthe inspect command');
   const speaker = buildArcticSpeaker(join(workDir, 'cli-inspect'), { speaker: 'insp', labels: false });
   const archive = packArctic(speaker.speakerDir, join(workDir, 'cli-inspect.tar.bz2'));
   const libraryBefore = readdirSync(join(ROOT, 'public', 'optional-voices')).sort().join(',');
-  const inspected = cli(['inspect', 'arctic-rms', '--from', archive]);
+  const inspected = cli(['inspect', 'cmu-kal', '--from', archive]);
   check('`voices inspect` reports on an archive', inspected.code === 0, inspected.out.trim().split('\n').slice(-1)[0]);
   check(
     'with its waveforms and its missing labels',
@@ -672,7 +777,7 @@ console.log('\nthe inspect command');
 
   const missingArchive = (() => {
     try {
-      return { code: 0, text: cli(['inspect', 'arctic-rms', '--from', join(workDir, 'not-there.tar.bz2')]).out };
+      return { code: 0, text: cli(['inspect', 'cmu-kal', '--from', join(workDir, 'not-there.tar.bz2')]).out };
     } catch (error) {
       const failure = error as { status?: number; stdout?: string; stderr?: string };
       return { code: failure.status ?? 1, text: `${failure.stdout ?? ''}${failure.stderr ?? ''}` };

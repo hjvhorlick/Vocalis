@@ -105,6 +105,7 @@ export const RecordedVoiceLibrary: React.FC<RecordedVoiceLibraryProps> = ({
   const [progress, setProgress] = useState<Record<string, InstallProgress>>({});
   const [busyId, setBusyId] = useState<string | null>(null);
   const [auditioningId, setAuditioningId] = useState<string | null>(null);
+  const [notice, setNotice] = useState<Record<string, string>>({});
   const [infoId, setInfoId] = useState<string | null>(null);
   const pollTimer = useRef<number | null>(null);
 
@@ -188,6 +189,17 @@ export const RecordedVoiceLibrary: React.FC<RecordedVoiceLibraryProps> = ({
     [refresh],
   );
 
+  const say = useCallback((id: string, message: string | null) => {
+    setNotice((current) => {
+      if (message === null) {
+        const next = { ...current };
+        delete next[id];
+        return next;
+      }
+      return { ...current, [id]: message };
+    });
+  }, []);
+
   const handleAudition = useCallback(
     (row: LibraryRow) => {
       if (auditioningId === row.id) {
@@ -195,13 +207,28 @@ export const RecordedVoiceLibrary: React.FC<RecordedVoiceLibraryProps> = ({
         setAuditioningId(null);
         return;
       }
+      // Auditioning plays the recordings on this machine. When they are not here
+      // yet, say that plainly — a button that does nothing looks broken.
+      if (!row.installed) {
+        say(
+          row.id,
+          row.install
+            ? 'Not on this machine yet. Install it first — auditioning plays its own recordings, not a sample.'
+            : `This voice cannot be installed: ${row.compatibilityNote}`,
+        );
+        return;
+      }
+      say(row.id, null);
       setAuditioningId(row.id);
       void speakRealWords(row.samplePhrase, modelForLibraryVoice(row), {
         onEnd: () => setAuditioningId(null),
-        onError: () => setAuditioningId(null),
+        onError: (error) => {
+          setAuditioningId(null);
+          say(row.id, `That voice could not be played: ${error instanceof Error ? error.message : String(error)}`);
+        },
       });
     },
-    [auditioningId],
+    [auditioningId, say],
   );
 
   const installedCount = state?.installed.length ?? 0;
@@ -412,6 +439,21 @@ export const RecordedVoiceLibrary: React.FC<RecordedVoiceLibraryProps> = ({
                 </div>
               )}
 
+              {install?.stage === 'failed' && (
+                <div className="mt-3 rounded-xl border border-rose-500/30 bg-rose-500/10 p-2.5 text-[11px] leading-relaxed text-rose-200">
+                  <p className="font-semibold">Install failed</p>
+                  <p className="mt-0.5 break-words">{install.message ?? 'The installer stopped without saying why.'}</p>
+                  {install.log && (
+                    <details className="mt-1.5">
+                      <summary className="cursor-pointer text-rose-300/80">Installer output</summary>
+                      <pre className="mt-1 max-h-40 overflow-auto whitespace-pre-wrap break-words text-[10px] text-rose-200/80">
+                        {install.log}
+                      </pre>
+                    </details>
+                  )}
+                </div>
+              )}
+
               <div className="mt-3 flex flex-wrap gap-1.5">
                 {!row.installed && row.install && (
                   <button
@@ -420,7 +462,20 @@ export const RecordedVoiceLibrary: React.FC<RecordedVoiceLibraryProps> = ({
                     className="flex items-center gap-1.5 rounded-lg border border-slate-700 bg-slate-800 px-2.5 py-1.5 text-[11px] font-semibold text-slate-200 hover:border-indigo-500 hover:text-white disabled:opacity-50"
                   >
                     <Download className="h-3.5 w-3.5" />
-                    {installing ? 'Installing…' : 'Install'}
+                    {installing ? 'Installing…' : install?.stage === 'failed' ? 'Try again' : 'Install'}
+                  </button>
+                )}
+                {/* Every card carries an Audition control that answers when
+                    pressed. A missing button reads as a broken page; a dead one
+                    reads as a broken app. */}
+                {!row.installed && (
+                  <button
+                    type="button"
+                    onClick={() => handleAudition(row)}
+                    className="flex items-center gap-1.5 rounded-lg border border-slate-700 bg-slate-900 px-2.5 py-1.5 text-[11px] font-semibold text-slate-300 hover:border-slate-500 hover:text-white"
+                  >
+                    <Play className="h-3.5 w-3.5" />
+                    Audition
                   </button>
                 )}
                 {row.installed && (
@@ -461,6 +516,12 @@ export const RecordedVoiceLibrary: React.FC<RecordedVoiceLibraryProps> = ({
                   <ChevronDown className={`h-3 w-3 transition-transform ${infoId === row.id ? 'rotate-180' : ''}`} />
                 </button>
               </div>
+
+              {notice[row.id] && (
+                <p className="mt-2 rounded-lg border border-slate-700/70 bg-slate-950/60 px-2.5 py-2 text-[11px] leading-relaxed text-slate-300">
+                  {notice[row.id]}
+                </p>
+              )}
 
               {infoId === row.id && (
                 <div className="mt-3 space-y-2 rounded-xl border border-slate-800 bg-slate-950/60 p-3 text-[11px] leading-relaxed text-slate-400">
