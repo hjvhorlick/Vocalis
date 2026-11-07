@@ -62,8 +62,8 @@ export const DialogueStudio: React.FC<DialogueStudioProps> = ({ models }) => {
     models.find(
       (m) => m.id !== models[0]?.id && (m.baseVoiceId ?? '') !== (models[0]?.baseVoiceId ?? ''),
     ) || models[1];
-  const [modelAId, setModelAId] = useState<string>(models[0]?.id || 'studio-neutral');
-  const [modelBId, setModelBId] = useState<string>(defaultPartner?.id || 'titan-marcus');
+  const [modelAId, setModelAId] = useState<string>(models[0]?.id || 'cmu-arctic-slt');
+  const [modelBId, setModelBId] = useState<string>(defaultPartner?.id || 'cmu-arctic-bdl');
 
   const modelA = models.find((m) => m.id === modelAId) || models[0];
   const modelB = models.find((m) => m.id === modelBId) || models[1] || models[0];

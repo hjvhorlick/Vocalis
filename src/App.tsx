@@ -73,19 +73,38 @@ export function App() {
     setActiveModel(toSave);
   };
 
+  /**
+   * Put the voice back to the recording.
+   *
+   * Every field the effects screen can move is set to the value that changes nothing:
+   * pitch, pace and volume to 1, the character and the accent to neutral, the three
+   * resonance bands to 0 dB, and the timing to the recorded one. The old version
+   * cleared four of them and left resonance and accent where they were, so "Reset"
+   * quietly kept a filter the person had already decided they did not want.
+   *
+   * A custom voice keeps its own identity (name, colour, speaker) and goes back to the
+   * recording it was built from; a predefined voice is the recording already.
+   */
   const handleResetActiveVoice = () => {
-    const originalPreset = PRESET_VOICE_MODELS.find((p) => p.id === activeModel.id);
-    if (originalPreset) {
-      setActiveModel({ ...originalPreset });
-    } else {
-      setActiveModel((prev) => ({
-        ...prev,
-        pitch: 1.0,
-        rate: 1.0,
-        volume: 1.0,
-        toneStyle: 'natural',
-      }));
-    }
+    const originalPreset = PRESET_VOICE_MODELS.find(
+      (p) => p.id === activeModel.id || p.baseVoiceId === activeModel.baseVoiceId,
+    );
+    const speaker = activeModel.baseVoiceId ?? originalPreset?.baseVoiceId ?? 'slt';
+    const recorded = PRESET_VOICE_MODELS.find((p) => p.baseVoiceId === speaker) ?? PRESET_VOICE_MODELS[0];
+    setActiveModel((prev) => ({
+      ...prev,
+      ...(prev.id === recorded.id ? {} : { baseSampleId: recorded.baseSampleId, baseVoiceId: recorded.baseVoiceId }),
+      synthesisMethod: 'cmu-arctic',
+      pitch: 1.0,
+      rate: 1.0,
+      volume: 1.0,
+      toneStyle: 'natural',
+      accent: 'US',
+      throatWarmth: 0,
+      oralClarity: 0,
+      airPresence: 0,
+      referenceRaw: true,
+    }));
   };
 
   const handleDeleteCustomModel = (id: string) => {
@@ -145,7 +164,13 @@ export function App() {
       rate: 1.0,
       volume: 1.0,
       toneStyle: 'natural',
-      samplePhrase: 'Hello! I am your custom voice model speaking real intelligible words.',
+      samplePhrase: 'Author of the danger trail, Philip Steels, etc.',
+      // A new voice starts as the recording, with every adjustment at the value that
+      // changes nothing, so the first thing anyone hears from it is the original.
+      referenceRaw: true,
+      throatWarmth: 0,
+      oralClarity: 0,
+      airPresence: 0,
       avatarColor: '#3b82f6',
       isCustom: true,
     };

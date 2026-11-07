@@ -358,9 +358,10 @@ export const SpeechStudio: React.FC<SpeechStudioProps> = ({
     return pieces;
   }, [lastResult, script]);
 
-  // Absent or true is the recorded voice as imported; only an explicit false turns
-  // the Vocalis adjustments on. See VoiceModelConfig.referenceRaw.
-  const adjustments = activeModel.referenceRaw === false;
+  // Absent or true keeps the recorded timing; only an explicit false switches the
+  // rhythm engine on. See VoiceModelConfig.referenceRaw. This gates timing only -
+  // the effects apply in both.
+  const rhythmEngine = activeModel.referenceRaw === false;
 
   return (
     <div className="space-y-6 max-w-5xl mx-auto">
@@ -498,11 +499,10 @@ export const SpeechStudio: React.FC<SpeechStudioProps> = ({
           </p>
         )}
 
-        {/* Which voice the application speaks. The recorded one is the default:
-            the units at the lengths they were recorded at, with nothing applied. */}
+        {/* Which timing the render uses. The recording's own is the default. */}
         <div className="w-full pt-3 border-t border-slate-800/80 space-y-2">
           <span className="block text-[11px] font-bold uppercase tracking-wider text-slate-400">
-            Voice source
+            Timing
           </span>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
             <button
@@ -511,20 +511,20 @@ export const SpeechStudio: React.FC<SpeechStudioProps> = ({
                 if (onUpdateActiveModel) onUpdateActiveModel({ ...activeModel, referenceRaw: true });
               }}
               className={`text-left rounded-xl border px-3 py-2.5 transition-colors cursor-pointer ${
-                adjustments
+                rhythmEngine
                   ? 'border-slate-800 bg-slate-950/60 hover:border-slate-700'
-                  : 'border-amber-500/60 bg-amber-500/10'
+                  : 'border-emerald-500/60 bg-emerald-500/10'
               }`}
-              title="The licensed recordings, exactly as imported"
+              title="Every sound keeps the length it was recorded at"
             >
-              <span className={`block text-[12px] font-semibold ${adjustments ? 'text-slate-300' : 'text-amber-300'}`}>
-                Recorded voice, as imported
-                {!adjustments && <span className="ml-2 text-[10px] font-mono">DEFAULT</span>}
+              <span className={`block text-[12px] font-semibold ${rhythmEngine ? 'text-slate-300' : 'text-emerald-300'}`}>
+                Recorded timing
+                {!rhythmEngine && <span className="ml-2 text-[10px] font-mono">DEFAULT</span>}
               </span>
               <span className="block text-[10px] text-slate-500 leading-relaxed mt-0.5">
-                The licensed CMU ARCTIC units at the lengths they were recorded at, joined by
-                crossfade. Nothing is applied &mdash; no duration model, no re-timing, no pitch,
-                pace, character or resonance. Every control below is bypassed.
+                Every sound keeps the length it was recorded at and the units reach the output
+                verbatim, so the quality is the recording&rsquo;s own. Speaks the same words about
+                1.5&times; slower than a person reads them.
               </span>
             </button>
             <button
@@ -533,30 +533,28 @@ export const SpeechStudio: React.FC<SpeechStudioProps> = ({
                 if (onUpdateActiveModel) onUpdateActiveModel({ ...activeModel, referenceRaw: false });
               }}
               className={`text-left rounded-xl border px-3 py-2.5 transition-colors cursor-pointer ${
-                adjustments
+                rhythmEngine
                   ? 'border-cyan-500/60 bg-cyan-500/10'
                   : 'border-slate-800 bg-slate-950/60 hover:border-slate-700'
               }`}
-              title="Switch the Vocalis adjustments on"
+              title="The duration model and pitch-synchronous re-timing"
             >
-              <span className={`block text-[12px] font-semibold ${adjustments ? 'text-cyan-300' : 'text-slate-300'}`}>
-                Vocalis adjustments
-                {adjustments && <span className="ml-2 text-[10px] font-mono">ON</span>}
+              <span className={`block text-[12px] font-semibold ${rhythmEngine ? 'text-cyan-300' : 'text-slate-300'}`}>
+                Vocalis rhythm engine
+                {rhythmEngine && <span className="ml-2 text-[10px] font-mono">ON</span>}
               </span>
               <span className="block text-[10px] text-slate-500 leading-relaxed mt-0.5">
-                The duration model, re-timing of each sound on the voice cycle, pitch, pace,
-                character and resonance. Speaks the same words about 1.5&times; faster than the
-                recorded voice, closer to the human reading, but the voice is processed.
+                A duration model decides how long each sound should be and re-times it on the voice
+                cycle. Closer to how the human read the sentence, and measurably rougher: 2.0
+                against a human 0.9 on one of the four sentences that can be measured.
               </span>
             </button>
           </div>
-          {adjustments ? null : (
-            <p className="text-[10px] text-amber-400/90">
-              Adjustments are off, so pitch, pace, character and resonance do nothing to this
-              render. That is deliberate: a control that moves and changes nothing is worse than no
-              control. Switch to &ldquo;Vocalis adjustments&rdquo; to use them.
-            </p>
-          )}
+          <p className="text-[10px] text-slate-500 leading-relaxed">
+            Timing is the only switch here. Pitch, pace, volume, delivery character, the three
+            resonance bands and the accent live on the effects panel above and each one applies on
+            its own, in either timing &mdash; at their defaults they change nothing at all.
+          </p>
         </div>
 
         {/* Quick Pitch & Speed Sliders */}
@@ -572,15 +570,14 @@ export const SpeechStudio: React.FC<SpeechStudioProps> = ({
               max="1.7"
               step="0.05"
               value={activeModel.pitch}
-              disabled={!adjustments}
               onChange={(e) => {
                 const pitch = parseFloat(e.target.value);
                 if (onUpdateActiveModel) {
                   onUpdateActiveModel({ ...activeModel, pitch });
                 }
               }}
-              className="w-full accent-cyan-500 h-1 bg-slate-950 rounded cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed"
-              title={adjustments ? 'Pitch height' : 'Bypassed while the recorded voice is selected'}
+              className="w-full accent-cyan-500 h-1 bg-slate-950 rounded cursor-pointer"
+              title="Pitch height — 1.00x leaves the recording untouched"
             />
             <div className="flex justify-between text-[9px] text-slate-500">
               <span>Deep Bass</span>
@@ -599,15 +596,14 @@ export const SpeechStudio: React.FC<SpeechStudioProps> = ({
               max="1.5"
               step="0.05"
               value={activeModel.rate}
-              disabled={!adjustments}
               onChange={(e) => {
                 const rate = parseFloat(e.target.value);
                 if (onUpdateActiveModel) {
                   onUpdateActiveModel({ ...activeModel, rate });
                 }
               }}
-              className="w-full accent-indigo-500 h-1 bg-slate-950 rounded cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed"
-              title={adjustments ? 'Speaking pace' : 'Bypassed while the recorded voice is selected'}
+              className="w-full accent-indigo-500 h-1 bg-slate-950 rounded cursor-pointer"
+              title="Speaking pace — 1.00x leaves the recording untouched"
             />
             <div className="flex justify-between text-[9px] text-slate-500">
               <span>Deliberate</span>
@@ -643,9 +639,9 @@ export const SpeechStudio: React.FC<SpeechStudioProps> = ({
             {wordCount} word{wordCount === 1 ? '' : 's'} &bull;{' '}
             {activeModel.synthesisMethod === 'formant'
               ? 'experimental formant path'
-              : adjustments
-                ? 'recorded CMU ARCTIC units, Vocalis adjustments on'
-                : 'recorded CMU ARCTIC units, as imported, nothing applied'}
+              : rhythmEngine
+                ? 'recorded CMU ARCTIC units, rhythm engine on'
+                : 'recorded CMU ARCTIC units, recorded timing'}
           </span>
         </div>
 

@@ -88,9 +88,7 @@ export const PredefinedVoiceList: React.FC<PredefinedVoiceListProps> = ({
           <span className="text-[11px] text-slate-400 font-medium mr-1">Filter:</span>
           {[
             { id: 'ALL', label: 'All Voices' },
-            { id: 'US', label: '🇺🇸 North America' },
-            { id: 'UK', label: '🇬🇧 British' },
-            { id: 'Global', label: '🌐 Global / Sci-Fi' },
+            { id: 'US', label: '🎙️ The Recordings' },
             { id: 'Custom', label: '✨ Custom Crafted' },
           ].map((f) => (
             <button

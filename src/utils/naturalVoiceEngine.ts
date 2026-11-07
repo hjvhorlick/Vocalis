@@ -68,23 +68,29 @@ export interface VoiceModelConfig {
   /** 'cmu-arctic' is the product; 'formant' is the preserved experiment. */
   synthesisMethod?: 'cmu-arctic' | 'formant';
   /**
-   * Hear the source material instead of the product.
+   * Keep the recorded timing.
    *
-   * True assembles the recorded units at the lengths they were recorded at, joins
-   * them by crossfade, and applies nothing else: no duration plan, no pitch-synchronous
-   * re-timing, no pitch, tempo, character or resonance. It is a reference for
-   * listening to what the engine starts from and for judging what the adjustments
-   * are worth, and the app labels it as that wherever it can be switched on. It is
-   * never the default, because a voice that only plays units at recorded length
-   * cannot speak a sentence a person wrote - that is the flat 134-143 ms per phone
-   * that reads as a drag, and it is what `docs/APPLICATION_AUDIT.md` finding A1 is
-   * about. A labelled reference beside the product is honest; the product quietly
-   * becoming one is not.
+   * Absent or `true` — the default, and what every predefined voice ships with —
+   * assembles the recorded units at the lengths they were recorded at and joins
+   * them by crossfade. No duration plan, no pitch-synchronous re-timing, no
+   * phase-aligned joins: the unit audio reaches the output verbatim, which is why
+   * it sounds like the recording it came from.
+   *
+   * An explicit `false` switches the Vocalis rhythm engine on. `planDurations`
+   * decides how long each phone should be and `joinRetimed` rebuilds every half
+   * phone from grains one voice cycle wide to hit those lengths. It speaks the
+   * same words about 1.5× faster, closer to how the human read them, and it costs
+   * the crispness of the recording: roughness above the human range on two of the
+   * four sentences this repository can measure (docs/DURATION_MODEL.md §4).
+   *
+   * This flag does not gate the effects, and never should. Pitch, pace, volume,
+   * delivery character, the three resonance bands and the accent apply on top of
+   * either timing, each one only when it is moved off neutral, so a single
+   * adjustment can be heard against the recording on its own. That is what the
+   * effects panel exists for, and what the render suite checks one control at a
+   * time.
    */
   referenceRaw?: boolean;
-  // ^ Absent or true means the recorded voice as imported: the units at the lengths
-  //   they were recorded at, crossfaded, with nothing applied. This is the shipped
-  //   default for every preset. Only an explicit `false` switches the adjustments on.
   throatWarmth?: number; // low-band resonance, -10 to +10 dB
   oralClarity?: number; // mid-band resonance, -10 to +10 dB
   airPresence?: number; // high-band resonance, -10 to +10 dB
@@ -94,29 +100,39 @@ export { ATTRIBUTION_DETAILS, NATURAL_HUMAN_SAMPLES };
 export type { HumanVoiceSample };
 
 /**
- * The shipped identities.
+ * The predefined voices are the recordings, and there are two of them because this
+ * repository has two licensed speakers: CMU ARCTIC SLT (female) and BDL (male).
  *
- * Each one is a delivery preset over the real CMU ARCTIC recordings: a speaker
- * (BDL or SLT), a synthesis method, a pitch/rate/volume starting point and a
- * resonance character. They are not separate human beings and do not claim to
- * be. `synthesisMethod` and `baseVoiceId` are stated explicitly on every preset
- * so nothing is inferred from a gender label behind the scenes.
+ * Neither is a character and neither carries an adjustment. Pitch 1.00, pace 1.00,
+ * full volume, the natural delivery, no resonance shift, American English as
+ * recorded, recorded timing kept. They are the only predefined voices here because
+ * the person this application is for listened to nine delivery presets built on
+ * these same two recordings and judged every one of them worse than the recording:
+ * "the original voice stays like it was imported... it became worse with the vocalis
+ * settings", and then, after hearing the original files beside the processed ones,
+ * "all the original voices was 100 percent clear. no crackle no whining... but once
+ * it get adjusted by the application the quality drops and the mechanical sound
+ * happen."
+ *
+ * So the voices are the originals, and everything the application can do to one is
+ * on the effects panel beside this list, applied to whichever recording is selected,
+ * one control at a time, each of them checked in tests/renderSpeech.test.ts to reach
+ * the audio on its own. The nine presets that used to be here were bundles of those
+ * same controls; they are in the git history at 51e84f6.
+ *
+ * `samplePhrase` is the exact transcript of the recording named by `baseSampleId`, so
+ * "hear the original" beside "hear it adjusted" is the same sentence both times.
  */
 export const PRESET_VOICE_MODELS: VoiceModelConfig[] = [
   {
-    // First in the list because the app opens with `models[0]`: what a listener
-    // hears before touching anything should be the recording with nothing done
-    // to it, so that every other preset is a change they chose. Its phrase is
-    // the sentence `cmu_slt_arctic_a0001.wav` contains, so the source audition
-    // is an immediate A/B of the same words.
-    id: 'studio-neutral',
-    name: 'Studio Neutral (SLT)',
-    archetype: 'The recording, unprocessed',
+    id: 'cmu-arctic-slt',
+    name: 'SLT — the recording',
+    archetype: 'Original voice, nothing applied',
     description:
-      'Pitch 1.00, pace 1.00, no delivery style, no resonance shift: the joined recordings and nothing between them and the listener. Judge the voice from this one — every other preset adds processing you can hear.',
+      'CMU ARCTIC SLT, female, American English, as recorded. Pitch 1.00, pace 1.00, full volume, natural delivery, no resonance shift, recorded timing kept: the licensed units joined for your text with nothing between them and the listener. Every adjustment is off until you move it.',
     gender: 'Female',
     accent: 'US',
-    flag: '🎚️',
+    flag: '🎙️',
     pitch: 1,
     rate: 1,
     volume: 1,
@@ -128,186 +144,34 @@ export const PRESET_VOICE_MODELS: VoiceModelConfig[] = [
     oralClarity: 0,
     airPresence: 0,
     referenceRaw: true,
-    samplePhrase: 'Author of the danger trail, Philip Ross.',
+    samplePhrase: 'Author of the danger trail, Philip Steels, etc.',
     avatarColor: '#22c55e',
   },
   {
-    id: 'narrator-aria',
-    name: 'Aria (Storyteller)',
-    archetype: 'Warm Audiobook & Documentary Narrator',
-    description: 'Melodic storytelling voice with smooth cadence and comforting acoustic warmth.',
-    gender: 'Female',
+    id: 'cmu-arctic-bdl',
+    name: 'BDL — the recording',
+    archetype: 'Original voice, nothing applied',
+    description:
+      'CMU ARCTIC BDL, male, American English, as recorded. Pitch 1.00, pace 1.00, full volume, natural delivery, no resonance shift, recorded timing kept. The same sentence as SLT, so the two speakers can be compared on identical words.',
+    gender: 'Male',
     accent: 'US',
     flag: '🎙️',
-    pitch: 1.0,
-    rate: 0.95,
-    volume: 1.0,
+    pitch: 1,
+    rate: 1,
+    volume: 1,
     toneStyle: 'natural',
     synthesisMethod: 'cmu-arctic',
-    baseSampleId: 'cmu-slt-1',
-    baseVoiceId: 'slt',
-    throatWarmth: 3,
-    oralClarity: 2,
-    airPresence: 1,
-    referenceRaw: true,
-    samplePhrase: 'Author of the danger trail, Philip Steels, etc.',
-    avatarColor: '#8b5cf6',
-  },
-  {
-    id: 'titan-marcus',
-    name: 'Marcus (Deep Cinema)',
-    archetype: 'Deep Trailer & Authority Baritone',
-    description: 'Resonant, authoritative low register with powerful chest resonance.',
-    gender: 'Male',
-    accent: 'US',
-    flag: '🎬',
-    pitch: 0.72,
-    rate: 0.9,
-    volume: 1.0,
-    toneStyle: 'deep',
-    synthesisMethod: 'cmu-arctic',
     baseSampleId: 'cmu-bdl-1',
     baseVoiceId: 'bdl',
-    throatWarmth: 7,
-    oralClarity: -1,
-    airPresence: -2,
+    throatWarmth: 0,
+    oralClarity: 0,
+    airPresence: 0,
     referenceRaw: true,
     samplePhrase: 'Author of the danger trail, Philip Steels, etc.',
-    avatarColor: '#f97316',
-  },
-  {
-    id: 'oliver-british',
-    name: 'Oliver (Distinguished Baritone)',
-    archetype: 'Crisp Scholarly & Drama Voice',
-    description: 'Distinguished, articulate presence with focused throat resonance. Non-rhotic delivery approximated from a US recording.',
-    gender: 'Male',
-    accent: 'UK',
-    flag: '🎩',
-    pitch: 0.88,
-    rate: 0.96,
-    volume: 1.0,
-    toneStyle: 'natural',
-    synthesisMethod: 'cmu-arctic',
-    baseSampleId: 'cmu-bdl-2',
-    baseVoiceId: 'bdl',
-    throatWarmth: 4,
-    oralClarity: 2,
-    airPresence: 1,
-    referenceRaw: true,
-    samplePhrase: 'For the twentieth time that evening the two men shook hands.',
-    avatarColor: '#0284c7',
-  },
-  {
-    id: 'charlotte-uk',
-    name: 'Charlotte (Period Classic)',
-    archetype: 'Refined Literature & Graceful Reader',
-    description: 'Graceful, crystal-clear articulation with heightened oral resonance. Non-rhotic delivery approximated from a US recording.',
-    gender: 'Female',
-    accent: 'UK',
-    flag: '📖',
-    pitch: 1.1,
-    rate: 0.96,
-    volume: 1.0,
-    toneStyle: 'natural',
-    synthesisMethod: 'cmu-arctic',
-    baseSampleId: 'cmu-slt-2',
-    baseVoiceId: 'slt',
-    throatWarmth: 1,
-    oralClarity: 4,
-    airPresence: 3,
-    referenceRaw: true,
-    samplePhrase: 'For the twentieth time that evening the two men shook hands.',
-    avatarColor: '#ec4899',
-  },
-  {
-    id: 'jax-podcast',
-    name: 'Jax (High-Energy Host)',
-    archetype: 'Upbeat Tech & Media Presenter',
-    description: 'Brisk, punchy delivery with elevated pitch and crisp speech clarity.',
-    gender: 'Male',
-    accent: 'US',
-    flag: '⚡',
-    pitch: 1.12,
-    rate: 1.15,
-    volume: 1.0,
-    toneStyle: 'energetic',
-    synthesisMethod: 'cmu-arctic',
-    baseSampleId: 'cmu-bdl-1',
-    baseVoiceId: 'bdl',
-    throatWarmth: -1,
-    oralClarity: 5,
-    airPresence: 4,
-    referenceRaw: true,
-    samplePhrase: 'Author of the danger trail, Philip Steels, etc.',
-    avatarColor: '#3b82f6',
-  },
-  {
-    id: 'willow-calm',
-    name: 'Willow (Mindfulness & Soft)',
-    archetype: 'Gentle Meditation & Soft Presence',
-    description: 'Soft, delicate contour shaped with air-presence filtering. This is a softened speaking voice, not a true whisper recording.',
-    gender: 'Female',
-    accent: 'US',
-    flag: '🌿',
-    pitch: 0.94,
-    rate: 0.85,
-    volume: 0.9,
-    toneStyle: 'whisper',
-    synthesisMethod: 'cmu-arctic',
-    baseSampleId: 'cmu-slt-1',
-    baseVoiceId: 'slt',
-    throatWarmth: -4,
-    oralClarity: 1,
-    airPresence: 8,
-    referenceRaw: true,
-    samplePhrase: 'Author of the danger trail, Philip Steels, etc.',
-    avatarColor: '#84cc16',
-  },
-  {
-    id: 'radio-sterling',
-    name: 'Sterling (1930s Broadcast Radio)',
-    archetype: 'Vintage Transmitter Announcer',
-    description: 'Classic broadcast character with analogue bandpass filtering and gentle saturation.',
-    gender: 'Male',
-    accent: 'US',
-    flag: '📻',
-    pitch: 1.08,
-    rate: 1.2,
-    volume: 1.0,
-    toneStyle: 'radio',
-    synthesisMethod: 'cmu-arctic',
-    baseSampleId: 'cmu-bdl-1',
-    baseVoiceId: 'bdl',
-    throatWarmth: -3,
-    oralClarity: 6,
-    airPresence: -6,
-    referenceRaw: true,
-    samplePhrase: 'Author of the danger trail, Philip Steels, etc.',
-    avatarColor: '#eab308',
-  },
-  {
-    id: 'unit-7-droid',
-    name: 'Unit-7 (Cyber Droid)',
-    archetype: 'Metallic Sci-Fi Assistant',
-    description: 'Deliberately synthetic character: ring-modulated resonance over a recorded voice.',
-    gender: 'Neutral',
-    accent: 'Global',
-    flag: '🤖',
-    pitch: 0.88,
-    rate: 1.05,
-    volume: 1.0,
-    toneStyle: 'robot',
-    synthesisMethod: 'cmu-arctic',
-    baseSampleId: 'cmu-bdl-1',
-    baseVoiceId: 'bdl',
-    throatWarmth: 2,
-    oralClarity: -3,
-    airPresence: 4,
-    referenceRaw: true,
-    samplePhrase: 'Author of the danger trail, Philip Steels, etc.',
-    avatarColor: '#06b6d4',
+    avatarColor: '#38bdf8',
   },
 ];
+
 
 // ---------------------------------------------------------------------------
 // Engine readiness

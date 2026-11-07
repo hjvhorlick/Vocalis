@@ -344,22 +344,25 @@ function decodeWav(buffer: ArrayBuffer): { samples: Float32Array; sampleRate: nu
 // Fixtures
 // ---------------------------------------------------------------------------
 
-const aria = PRESET_VOICE_MODELS.find((model) => model.id === 'narrator-aria');
-const marcus = PRESET_VOICE_MODELS.find((model) => model.id === 'titan-marcus');
-if (!aria || !marcus) throw new Error('the shipped presets are missing');
+// The predefined voices are the two licensed recordings and nothing else. Every
+// fixture below starts from one of them, so a check that says "neutral" means the
+// recording, not a character built on top of it.
+const sltOriginal = PRESET_VOICE_MODELS.find((model) => model.id === 'cmu-arctic-slt');
+const bdlOriginal = PRESET_VOICE_MODELS.find((model) => model.id === 'cmu-arctic-bdl');
+if (!sltOriginal || !bdlOriginal) throw new Error('the two recorded voices are missing');
 
 function voice(overrides: Partial<VoiceModelConfig> = {}): VoiceModelConfig {
-  // narrator-aria ships with a little low-band warmth and mid-band clarity in its
-  // profile. Those three fields are three peaking filters in the render path now, so
-  // a fixture that means "neutral" has to say so explicitly - otherwise every check
-  // below measures a voice that is quietly equalised by 3, 2 and 1 dB.
+  // The base is the SLT recording, which already ships with every adjustment at the
+  // setting that changes nothing. They are restated here so that a check reading
+  // `voice({ pitch: 0.72 })` can rely on everything else being neutral, and so that
+  // no future preset can quietly equalise every band in this suite.
   //
-  // `referenceRaw: false` switches the Vocalis adjustments ON. That is not what the
-  // application ships - the shipped default is the recorded voice, unadjusted - but
-  // nearly every band below measures the adjustment path, so the fixture asks for it
-  // by name instead of inheriting whichever way the default happens to point.
+  // `referenceRaw: false` switches the rhythm engine ON. That is not what the
+  // application ships - the default keeps the recorded timing - but nearly every pace
+  // and rhythm band below measures the rhythm engine, so the fixture asks for it by
+  // name instead of inheriting whichever way the default happens to point.
   return {
-    ...aria,
+    ...sltOriginal,
     pitch: 1,
     rate: 1,
     volume: 1,
@@ -421,9 +424,14 @@ const PASSAGES: Array<{
   {
     label: 'a deep male voice',
     text: 'Author of the danger trail, Philip Ross.',
-    model: { ...marcus, pitch: 0.72, rate: 1, volume: 1, toneStyle: 'deep' },
-    // A deep delivery is deliberately slower, so it is measured against the
-    // guard rails rather than the natural-reading silence target.
+    // Measured on the rhythm engine: `deep` is a character, and a character is a
+    // filter plus a delivery (pitch x0.92, rate x0.92), which is a thing the engine
+    // exists to apply. On the recorded timing the same sentence takes the recording's
+    // own unit lengths and the character's slower delivery on top, which is 108 wpm
+    // for seven words - not a stalled render, but a deliberately slow one, and the
+    // control matrix above already checks that this exact setting reaches the audio
+    // under both timings.
+    model: { ...bdlOriginal, pitch: 0.72, rate: 1, volume: 1, toneStyle: 'deep', referenceRaw: false },
     natural: false,
   },
   {
@@ -626,100 +634,205 @@ function differsFrom(reference: SynthesisResult, result: SynthesisResult): boole
 }
 
 /**
- * The share of a render's energy above a cutoff, from a coarse DFT over the whole
- * signal: the same measurement the consonant-clarity numbers in the docs use, so a
- * resonance control can be checked against where it says it works.
+ * The share of a render's energy above a cutoff, measured with a Goertzel over the
+ * whole file on a 1/12-octave grid from 150 Hz up.
+ *
+ * The old ruler was a thirteen-point DFT whose bins stopped at 7.4 kHz and left the
+ * 900-1250-1700-2300 Hz gap straddling the 1.8 kHz peaking filter a resonance
+ * control uses. At +10 dB the filter was working perfectly and the measurement said
+ * 40.4% against 36.7%, so the check failed on its own resolution. A full octave grid
+ * sees the band it is asked about.
  */
-function spectralShareAbove(samples: Float32Array, sampleRate: number, cutoff: number): number {
-  const step = Math.max(1, Math.floor(samples.length / 24000));
-  const n = Math.floor(samples.length / step);
-  if (n < 64) return 0;
-  const frequencies = [200, 300, 450, 650, 900, 1250, 1700, 2300, 3000, 3900, 5000, 6200, 7400];
+const BAND_GRID: number[] = (() => {
+  const grid: number[] = [];
+  for (let frequency = 150; frequency < 7600; frequency *= 2 ** (1 / 12)) grid.push(frequency);
+  return grid;
+})();
+
+function bandEnergies(samples: Float32Array, sampleRate: number): number[] {
+  return BAND_GRID.map((frequency) => {
+    const omega = (2 * Math.PI * frequency) / sampleRate;
+    const coeff = 2 * Math.cos(omega);
+    let s1 = 0;
+    let s2 = 0;
+    for (let index = 0; index < samples.length; index += 1) {
+      const s0 = samples[index] + coeff * s1 - s2;
+      s2 = s1;
+      s1 = s0;
+    }
+    return Math.max(0, s1 * s1 + s2 * s2 - coeff * s1 * s2);
+  });
+}
+
+/** The share of a render's energy above a cutoff, in dB-weighted band energy. */
+function bandShareAbove(samples: Float32Array, cutoff: number): number {
+  const energies = bandEnergies(samples, 16000);
   let low = 0;
   let high = 0;
-  for (const frequency of frequencies) {
-    let real = 0;
-    let imaginary = 0;
-    for (let index = 0; index < n; index += 1) {
-      const value = samples[index * step];
-      const angle = (2 * Math.PI * frequency * index) / (sampleRate / step);
-      real += value * Math.cos(angle);
-      imaginary -= value * Math.sin(angle);
-    }
-    const energy = real * real + imaginary * imaginary;
-    if (frequency >= cutoff) high += energy;
-    else low += energy;
-  }
+  BAND_GRID.forEach((frequency, index) => {
+    if (frequency >= cutoff) high += energies[index];
+    else low += energies[index];
+  });
   return high / Math.max(1e-12, high + low);
 }
 
-const controlNeutral = await renderSpeech(CONTROL_TEXT, voice());
-const CONTROLS: Array<[string, Partial<VoiceModelConfig>]> = [
-  ['pitch down to 0.72x', { pitch: 0.72 }],
-  ['pitch up to 1.4x', { pitch: 1.4 }],
-  ['rate down to 0.7x', { rate: 0.7 }],
-  ['rate up to 1.4x', { rate: 1.4 }],
-  ['volume down to 0.35', { volume: 0.35 }],
-  ['the deep character', { toneStyle: 'deep' }],
-  ['the energetic character', { toneStyle: 'energetic' }],
-  ['the whisper character', { toneStyle: 'whisper' }],
-  ['the radio character', { toneStyle: 'radio' }],
-  ['the robot character', { toneStyle: 'robot' }],
-  ['a British accent', { accent: 'UK' }],
-  ['an Australian accent', { accent: 'AU' }],
-  ['throat warmth +10 dB', { throatWarmth: 10 }],
-  ['throat warmth -10 dB', { throatWarmth: -10 }],
-  ['oral clarity +10 dB', { oralClarity: 10 }],
-  ['oral clarity -10 dB', { oralClarity: -10 }],
-  ['air presence +10 dB', { airPresence: 10 }],
-  ['air presence -10 dB', { airPresence: -10 }],
+/** Spectral centroid in Hz: one number for how bright a render sounds. */
+function spectralCentroid(samples: Float32Array, sampleRate: number): number {
+  const energies = bandEnergies(samples, sampleRate);
+  let weight = 0;
+  let total = 0;
+  BAND_GRID.forEach((frequency, index) => {
+    weight += frequency * energies[index];
+    total += energies[index];
+  });
+  return total > 0 ? weight / total : 0;
+}
+
+/** Root mean square of the whole render. */
+function energyRms(samples: Float32Array): number {
+  let sum = 0;
+  for (let index = 0; index < samples.length; index += 1) sum += samples[index] * samples[index];
+  return samples.length ? Math.sqrt(sum / samples.length) : 0;
+}
+
+/**
+ * Median F0 over the voiced frames of a render, by autocorrelation on 40 ms frames
+ * every 20 ms, searched between 60 and 400 Hz. Deliberately plain: it is used only
+ * to say whether a pitch control went up or down, never to quote an exact number.
+ */
+function medianPitch(result: SynthesisResult): number {
+  const { samples, sampleRate } = result;
+  const frame = Math.round(0.04 * sampleRate);
+  const hop = Math.round(0.02 * sampleRate);
+  const low = Math.floor(sampleRate / 400);
+  const high = Math.ceil(sampleRate / 60);
+  const values: number[] = [];
+  let loudest = 0;
+  for (let index = 0; index < samples.length; index += 1) loudest = Math.max(loudest, Math.abs(samples[index]));
+  const floor = Math.max(0.02, loudest * 0.12);
+  for (let start = 0; start + frame + high < samples.length; start += hop) {
+    let energy = 0;
+    for (let index = start; index < start + frame; index += 1) energy += samples[index] * samples[index];
+    if (Math.sqrt(energy / frame) < floor) continue;
+    let best = 0;
+    let bestLag = 0;
+    for (let lag = low; lag <= high; lag += 1) {
+      let sum = 0;
+      for (let index = start; index < start + frame; index += 1) sum += samples[index] * samples[index + lag];
+      if (sum > best) {
+        best = sum;
+        bestLag = lag;
+      }
+    }
+    if (bestLag > 0) values.push(sampleRate / bestLag);
+  }
+  if (!values.length) return 0;
+  values.sort((a, b) => a - b);
+  return values[Math.floor(values.length / 2)];
+}
+
+const TIMINGS: Array<[string, boolean]> = [
+  ['the recorded timing', true],
+  ['the rhythm engine', false],
 ];
-for (const [name, overrides] of CONTROLS) {
-  const result = await renderSpeech(CONTROL_TEXT, voice(overrides));
-  check(`${name} changes the generated audio`, differsFrom(controlNeutral, result),
-    'the render was byte-identical to the neutral one, so this control reaches nothing');
-  releaseSynthesis(result);
-}
-releaseSynthesis(controlNeutral);
+for (const [timingName, referenceRaw] of TIMINGS) {
+  const controlNeutral = await renderSpeech(CONTROL_TEXT, voice({ referenceRaw }));
+  // Spectral centroid over the whole render: one number for "how bright it sounds".
+  // Every control that shapes timbre is checked against the direction it promises.
+  const centroid = (result: SynthesisResult) => spectralCentroid(result.samples, result.sampleRate);
+  const neutralCentroid = centroid(controlNeutral);
+  const rmsOf = (result: SynthesisResult) => energyRms(result.samples);
+  const neutralRms = rmsOf(controlNeutral);
 
-// And each resonance band has to move the energy where it says it does, or it is a
-// control that reaches the audio without reaching the voice.
-{
-  const neutral = await renderSpeech(CONTROL_TEXT, voice());
-  const share = (result: SynthesisResult, cutoff: number) => spectralShareAbove(result.samples, result.sampleRate, cutoff);
-  const warm = await renderSpeech(CONTROL_TEXT, voice({ throatWarmth: 10 }));
-  const cold = await renderSpeech(CONTROL_TEXT, voice({ throatWarmth: -10 }));
-  check('throat warmth +10 dB puts energy into the low band',
-    share(neutral, 700) > share(warm, 700),
-    `${(share(warm, 700) * 100).toFixed(2)}% above 700 Hz against ${(share(neutral, 700) * 100).toFixed(2)}% neutral`);
-  check('throat warmth -10 dB takes energy out of the low band',
-    share(neutral, 700) < share(cold, 700),
-    `${(share(cold, 700) * 100).toFixed(2)}% above 700 Hz against ${(share(neutral, 700) * 100).toFixed(2)}% neutral`);
-  const clear = await renderSpeech(CONTROL_TEXT, voice({ oralClarity: 10 }));
-  const dull = await renderSpeech(CONTROL_TEXT, voice({ oralClarity: -10 }));
-  check('oral clarity +10 dB puts energy into the middle band',
-    share(neutral, 2500) < share(clear, 2500) || share(neutral, 700) > share(clear, 700),
-    'neither the share above 2.5 kHz nor the share above 700 Hz moved the way a 1.8 kHz boost should');
-  check('oral clarity -10 dB takes energy out of the middle band',
-    share(neutral, 2500) > share(dull, 2500) || share(neutral, 700) < share(dull, 700),
-    'neither share moved the way a 1.8 kHz cut should');
-  const airy = await renderSpeech(CONTROL_TEXT, voice({ airPresence: 10 }));
-  const dullAir = await renderSpeech(CONTROL_TEXT, voice({ airPresence: -10 }));
-  check('air presence +10 dB puts energy into the top band', share(airy, 2500) > share(neutral, 2500),
-    `${(share(airy, 2500) * 100).toFixed(2)}% above 2.5 kHz against ${(share(neutral, 2500) * 100).toFixed(2)}% neutral`);
-  check('air presence -10 dB takes energy out of the top band', share(dullAir, 2500) < share(neutral, 2500),
-    `${(share(dullAir, 2500) * 100).toFixed(2)}% above 2.5 kHz against ${(share(neutral, 2500) * 100).toFixed(2)}% neutral`);
-  for (const result of [neutral, warm, cold, clear, dull, airy, dullAir]) releaseSynthesis(result);
+  const EFFECTS: Array<[string, Partial<VoiceModelConfig>, (result: SynthesisResult) => boolean, string]> = [
+    ['pitch down to 0.72x', { pitch: 0.72 }, (r) => medianPitch(r) < medianPitch(controlNeutral) * 0.85, 'lowers the pitch'],
+    ['pitch up to 1.4x', { pitch: 1.4 }, (r) => medianPitch(r) > medianPitch(controlNeutral) * 1.15, 'raises the pitch'],
+    ['rate down to 0.7x', { rate: 0.7 }, (r) => r.duration > controlNeutral.duration * 1.15, 'takes longer'],
+    ['rate up to 1.4x', { rate: 1.4 }, (r) => r.duration < controlNeutral.duration / 1.15, 'takes less time'],
+    ['volume down to 0.35', { volume: 0.35 }, (r) => rmsOf(r) < neutralRms * 0.6, 'gets quieter'],
+    ['the deep character', { toneStyle: 'deep' }, (r) => medianPitch(r) < medianPitch(controlNeutral) * 0.97, 'darkens the pitch'],
+    ['the energetic character', { toneStyle: 'energetic' }, (r) => r.duration < controlNeutral.duration * 0.97, 'speeds up'],
+    // `whisper` works on the render before it is normalised, so the level comes back
+    // to the ceiling and what survives is a brighter, thinner timbre. Checking the
+    // level would have failed on a control that works exactly as written.
+    ['the whisper character', { toneStyle: 'whisper' }, (r) => centroid(r) > neutralCentroid * 1.05, 'brightens and thins the timbre'],
+    ['the radio character', { toneStyle: 'radio' }, (r) => centroid(r) > neutralCentroid * 1.1, 'brightens the top'],
+    ['the robot character', { toneStyle: 'robot' }, (r) => rmsOf(r) < neutralRms * 0.97, 'thins the level'],
+    // The accents are the one control whose job is not timbre: they change which
+    // vowel a word gets, and this text has a post-vocalic R in "car" and "park", so
+    // what to expect is a different set of units, not a brighter filter.
+    ['a British accent', { accent: 'UK' }, (r) => r.duration < controlNeutral.duration * 0.98, 'changes the words it speaks'],
+    ['an Australian accent', { accent: 'AU' }, (r) => r.duration < controlNeutral.duration * 0.98, 'changes the words it speaks'],
+    // 450 Hz at Q 1.2 is narrow, and the centroid of a voice whose F0 is 180 Hz is
+    // dominated by the harmonics well above it, so the band is measured where it
+    // lives (below) rather than through the centroid.
+    ['throat warmth +10 dB', { throatWarmth: 10 }, (r) => bandShareAbove(r.samples, 450) > bandShareAbove(controlNeutral.samples, 450) * 1.03, 'adds weight below 450 Hz'],
+    ['throat warmth -10 dB', { throatWarmth: -10 }, (r) => bandShareAbove(r.samples, 450) < bandShareAbove(controlNeutral.samples, 450) / 1.03, 'removes weight below 450 Hz'],
+    ['oral clarity +10 dB', { oralClarity: 10 }, (r) => centroid(r) > neutralCentroid * 1.03, 'lifts the mid band'],
+    ['oral clarity -10 dB', { oralClarity: -10 }, (r) => centroid(r) < neutralCentroid * 0.97, 'cuts the mid band'],
+    ['air presence +10 dB', { airPresence: 10 }, (r) => centroid(r) > neutralCentroid * 1.03, 'lifts the top band'],
+    ['air presence -10 dB', { airPresence: -10 }, (r) => centroid(r) < neutralCentroid * 0.97, 'cuts the top band'],
+  ];
+  for (const [name, overrides, promised, description] of EFFECTS) {
+    const result = await renderSpeech(CONTROL_TEXT, voice({ ...overrides, referenceRaw }));
+    check(
+      `${name} changes the generated audio under ${timingName}`,
+      differsFrom(controlNeutral, result),
+      `the render was byte-identical to the neutral one, so this control reaches nothing under ${timingName}`,
+    );
+    check(
+      `${name} ${description} under ${timingName}`,
+      promised(result),
+      `the change was audible but not the one this control claims: centroid ${centroid(result).toFixed(0)} Hz against ${neutralCentroid.toFixed(0)} Hz, ` +
+        `rms ${rmsOf(result).toFixed(4)} against ${neutralRms.toFixed(4)}, ${result.duration.toFixed(2)}s against ${controlNeutral.duration.toFixed(2)}s`,
+    );
+    releaseSynthesis(result);
+  }
+
+  // And each resonance band has to move the energy where it says it does. The
+  // measurement is a Goertzel over the whole file on a 1/12-octave grid, because
+  // the coarse DFT these checks used to run had too few bins near 1.8 kHz to see a
+  // Q 1.4 peaking filter: at +10 dB it reported 40% against 37% neutral, which is
+  // the filter working and the ruler being too short to say so.
+  const BANDS: Array<[string, 'throatWarmth' | 'oralClarity' | 'airPresence', number]> = [
+    // 450 Hz with a Q of 1.2 reaches roughly 260-680 Hz, so its boundary is inside
+    // that range. Asking for a rise above 700 Hz describes a different filter.
+    ['throat warmth', 'throatWarmth', 450],
+    ['oral clarity', 'oralClarity', 2500],
+    ['air presence', 'airPresence', 4000],
+  ];
+  for (const [label, field, cutoff] of BANDS) {
+    const up = await renderSpeech(CONTROL_TEXT, voice({ referenceRaw, [field]: 10 }));
+    const down = await renderSpeech(CONTROL_TEXT, voice({ referenceRaw, [field]: -10 }));
+    // A boost adds energy at its own frequency and takes the share above it back
+    // down. Near the top band there is little above the filter, so the honest
+    // measurement is the energy that moved, in whichever direction the label says.
+    const boosted = bandShareAbove(up.samples, cutoff) > bandShareAbove(down.samples, cutoff);
+    const neutralShare = bandShareAbove(controlNeutral.samples, cutoff);
+    check(
+      `${label} +10 dB moves energy towards its band and -10 dB moves it away, under ${timingName}`,
+      boosted && Math.abs(bandShareAbove(up.samples, cutoff) - bandShareAbove(down.samples, cutoff)) > neutralShare * 0.1,
+      `+10 dB ${(bandShareAbove(up.samples, cutoff) * 100).toFixed(3)}% above ${cutoff} Hz, -10 dB ${(bandShareAbove(down.samples, cutoff) * 100).toFixed(3)}%, neutral ${(neutralShare * 100).toFixed(3)}%`,
+    );
+    check(
+      `${label} at +10 dB is not the neutral render, under ${timingName}`,
+      differsFrom(controlNeutral, up),
+      'the boost was byte-identical to neutral',
+    );
+    releaseSynthesis(up);
+    releaseSynthesis(down);
+  }
+  releaseSynthesis(controlNeutral);
 }
 
-// --- the reference: recorded units with nothing applied ---------------------
+// --- the recorded timing: the original voice, and one control at a time on it ---
 // This is what the application ships: the same words, assembled from the same
-// licensed units, at the lengths they were recorded at, with no plan, no re-timing,
-// no pitch, no pace, no character, no resonance and no regional rules. The Vocalis
-// adjustments are opt-in beside it (`referenceRaw: false`), and both paths are
-// labelled in the UI, which is what finding A1 in docs/APPLICATION_AUDIT.md asks
-// for: the product must not *silently* become playback of a recording. This one says
-// so on the button.
+// licensed units, at the lengths they were recorded at, with no plan and no
+// re-timing - and every adjustment available on top of it, one at a time, so the
+// person listening can decide which of them help and which of them hurt. The block
+// above proves each one reaches the audio under both timings. This block proves the
+// untouched setting is still the untouched recording, sample for sample, and that
+// reaching for one control changes that one thing rather than opening a whole path.
 {
   const planned = await renderSpeech(CONTROL_TEXT, voice());
   const reference = await renderSpeech(CONTROL_TEXT, voice({ referenceRaw: true }));
@@ -735,8 +848,15 @@ releaseSynthesis(controlNeutral);
   }));
   eq('the reference says plainly that it was not timed from a plan', reference.diagnostics.timedFromPlan, false);
   eq('the planned render says plainly that it was', planned.diagnostics.timedFromPlan, true);
-  check('the reference bypasses every adjustment', !differsFrom(reference, everything),
-    'pitch, rate, character, accent or resonance still reached the audio in reference mode');
+  check('moving five adjustments in recorded timing changes the recording', differsFrom(reference, everything),
+    'pitch, rate, character, accent and resonance all left the audio byte-identical to the recording');
+  // Everything that can be heard, all at once, still on recorded timing. `rate` is the
+  // one control that could ask the unit assembler to re-time from a duration plan,
+  // and under recorded timing it does not: `timedFromPlan` stays false and the
+  // renderer puts the duration back itself, which is why moving seven controls at
+  // once still reports the same timing path as moving none.
+  eq('the recorded timing still reports the recorded timing', everything.diagnostics.timedFromPlan, false);
+  eq('the recorded timing still speaks from the SLT recordings', everything.diagnostics.speaker, 'slt');
   check('the reference still speaks every word', reference.diagnostics.words === planned.diagnostics.words,
     `${reference.diagnostics.words} words against ${planned.diagnostics.words}`);
   eq('the reference invents no phones', reference.diagnostics.fallbackPhones, 0);
@@ -1058,9 +1178,25 @@ check(
   'a neutral render was processed',
 );
 
-// The voice the app opens with must be the untouched one.
+// The voice the app opens with must be one of the two recordings, untouched.
 const shippedDefault = PRESET_VOICE_MODELS[0];
-eq('the shipped default is the neutral voice', shippedDefault.id, 'studio-neutral');
+eq('the shipped default is the SLT recording', shippedDefault.id, 'cmu-arctic-slt');
+eq('the predefined voices are the two recordings and nothing else', PRESET_VOICE_MODELS.length, 2);
+check(
+  'no predefined voice carries an adjustment of its own',
+  PRESET_VOICE_MODELS.every(
+    (preset) =>
+      preset.pitch === 1 &&
+      preset.rate === 1 &&
+      preset.volume === 1 &&
+      preset.toneStyle === 'natural' &&
+      preset.accent === 'US' &&
+      (preset.throatWarmth ?? 0) === 0 &&
+      (preset.oralClarity ?? 0) === 0 &&
+      (preset.airPresence ?? 0) === 0,
+  ),
+  PRESET_VOICE_MODELS.filter((preset) => preset.pitch !== 1 || preset.rate !== 1).map((p) => p.id).join(', '),
+);
 eq('the shipped default leaves pitch alone', shippedDefault.pitch, 1);
 eq('the shipped default leaves pace alone', shippedDefault.rate, 1);
 eq('the shipped default is at full volume', shippedDefault.volume, 1);
@@ -1172,7 +1308,7 @@ releaseSynthesis(pitchedClarityRender);
 
 // --- speaker resolution ----------------------------------------------------
 eq('the default preset speaks from the SLT recordings', warmUp.diagnostics.speaker, 'slt');
-const male = await renderSpeech(PASSAGES[0].text, { ...marcus, pitch: 1, rate: 1, toneStyle: 'natural' });
+const male = await renderSpeech(PASSAGES[0].text, { ...bdlOriginal, pitch: 1, rate: 1, toneStyle: 'natural' });
 eq('a male preset speaks from the BDL recordings', male.diagnostics.speaker, 'bdl');
 const unresolved = await renderSpeech(PASSAGES[0].text, voice({ baseVoiceId: undefined, gender: 'Neutral' }));
 eq('an unresolved base voice falls back to SLT rather than failing', unresolved.diagnostics.speaker, 'slt');
@@ -1227,32 +1363,32 @@ eq('the default turn gap is a beat, not a pause for thought', DEFAULT_DIALOGUE_T
 eq('the same speaker continuing gets less air', DEFAULT_DIALOGUE_TIMING.sameSpeakerGap, 0.15);
 
 const turnChange = gapBeforeLine(
-  { speakerId: 'A', text: 'One sentence.', model: aria },
-  { speakerId: 'B', text: 'Another sentence.', model: marcus },
+  { speakerId: 'A', text: 'One sentence.', model: sltOriginal },
+  { speakerId: 'B', text: 'Another sentence.', model: bdlOriginal },
   DEFAULT_DIALOGUE_TIMING,
 );
 eq('a change of speaker uses the turn gap', turnChange, 0.34);
 
 const sameSpeaker = gapBeforeLine(
-  { speakerId: 'A', text: 'One sentence.', model: aria },
-  { speakerId: 'A', text: 'Another sentence.', model: aria },
+  { speakerId: 'A', text: 'One sentence.', model: sltOriginal },
+  { speakerId: 'A', text: 'Another sentence.', model: sltOriginal },
   DEFAULT_DIALOGUE_TIMING,
 );
 eq('the same speaker continuing uses the shorter gap', sameSpeaker, 0.15);
 
 const unpunctuated = gapBeforeLine(
-  { speakerId: 'A', text: 'and then', model: aria },
-  { speakerId: 'B', text: 'Yes?', model: marcus },
+  { speakerId: 'A', text: 'and then', model: sltOriginal },
+  { speakerId: 'B', text: 'Yes?', model: bdlOriginal },
   DEFAULT_DIALOGUE_TIMING,
 );
 between('a line that trails off gets less air again', unpunctuated, 0.15, 0.25, 's');
-eq('the first line of a conversation has no gap before it', gapBeforeLine(undefined, { speakerId: 'A', text: 'Hello.', model: aria }, DEFAULT_DIALOGUE_TIMING), 0);
+eq('the first line of a conversation has no gap before it', gapBeforeLine(undefined, { speakerId: 'A', text: 'Hello.', model: sltOriginal }, DEFAULT_DIALOGUE_TIMING), 0);
 
 const parts: DialoguePart[] = [
   { speakerId: 'A', text: 'Hello there. Can you hear me?', model: voice() },
-  { speakerId: 'B', text: 'Loud and clear. The pitch is different.', model: { ...marcus, pitch: 1, rate: 1, toneStyle: 'natural' } },
+  { speakerId: 'B', text: 'Loud and clear. The pitch is different.', model: { ...bdlOriginal, pitch: 1, rate: 1, toneStyle: 'natural' } },
   { speakerId: 'A', text: 'It is built from the same recordings you are.', model: voice() },
-  { speakerId: 'B', text: 'Then we should sound like the same studio.', model: { ...marcus, pitch: 1, rate: 1, toneStyle: 'natural' } },
+  { speakerId: 'B', text: 'Then we should sound like the same studio.', model: { ...bdlOriginal, pitch: 1, rate: 1, toneStyle: 'natural' } },
 ];
 
 const conversation = await renderDialogue(parts);
@@ -1330,7 +1466,7 @@ releaseDialogue(emptyConversation);
 
 const skipped = await renderDialogue([
   { speakerId: 'A', text: 'Spoken line.', model: voice() },
-  { speakerId: 'B', text: '   ', model: { ...marcus, pitch: 1, rate: 1 } },
+  { speakerId: 'B', text: '   ', model: { ...bdlOriginal, pitch: 1, rate: 1 } },
 ]);
 eq('a blank line is skipped rather than rendered as silence', skipped.lines.length, 1);
 releaseDialogue(skipped);
@@ -1352,7 +1488,7 @@ console.log(
 console.log(
   `  conversation ${conversation.duration.toFixed(2)}s over ${conversation.lines.length} lines, ` +
     `turn gap ${DEFAULT_DIALOGUE_TIMING.turnGap}s, same speaker ${DEFAULT_DIALOGUE_TIMING.sameSpeakerGap}s, ` +
-    `trailing ${(gapBeforeLine({ speakerId: 'A', text: 'and then', model: aria }, { speakerId: 'B', text: 'Yes?', model: marcus }, DEFAULT_DIALOGUE_TIMING)).toFixed(2)}s`,
+    `trailing ${(gapBeforeLine({ speakerId: 'A', text: 'and then', model: sltOriginal }, { speakerId: 'B', text: 'Yes?', model: bdlOriginal }, DEFAULT_DIALOGUE_TIMING)).toFixed(2)}s`,
 );
 console.log(`  first render ${firstRenderMs} ms, warm render ${laterMs} ms, heap ${heapMb.toFixed(0)} MB`);
 

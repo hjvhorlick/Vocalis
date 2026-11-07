@@ -655,7 +655,11 @@ export async function synthesizeText(text: string, model: VoiceModelConfig): Pro
   const method: SynthesisMethod = model.synthesisMethod ?? 'cmu-arctic';
   // A reference render speaks the recordings as they are, so it also reads the
   // text as they would: no regional rules over a US corpus.
-  const utterance = await analyzeText(text, model.referenceRaw === false ? model.accent : 'US');
+  // The accent is always the profile's own, in both timings: it is one of the
+  // adjustments a listener can test on the recording, so it is not something the
+  // recorded-timing path gets to overrule. 'US' is what both recordings are, so it
+  // is a no-op unless it is moved.
+  const utterance = await analyzeText(text, model.accent);
   const segments = segmentUtterance(utterance);
   const prosody = buildWordProsody(utterance, segments);
 
@@ -764,18 +768,17 @@ export async function synthesizeText(text: string, model: VoiceModelConfig): Pro
     throw new Error(`Rendered audio exceeds ${MAX_SYNTHESIS_SECONDS} seconds. Split the text into shorter passages.`);
   }
 
-  // When the units were re-timed on their own pitch marks, the pitch and the
-  // tempo are already in the audio: doing either again here would do it twice.
-  // The recorded voice is the default and it is the recorded units and nothing
-  // else: no pitch, no tempo, no character, no resonance. Everything a listener can
-  // switch on is off unless they switch it on, so what comes out is what the corpus
-  // contains.
-  const processed =
-    model.referenceRaw === false
-      ? method === 'cmu-arctic'
-        ? applyResonance(processCmuVoice(raw, model, timedFromPlan), model)
-        : applyResonance(raw, model)
-      : raw;
+  // The effects are the same in both timings, and each one only runs when it has
+  // been moved off neutral: processCmuVoice resamples only if the pitch is not 1.00,
+  // time-scales only if the pace is not 1.00 and the units were not already re-timed
+  // by the rhythm engine, and adds a delivery character only if one is selected;
+  // applyResonance is a pass-through below 0.01 dB. So an untouched profile leaves
+  // the recorded units bit-exact, and moving one control changes that one thing -
+  // which is the only way to hear whether an adjustment helps or damages the voice.
+  const processed = applyResonance(
+    method === 'cmu-arctic' ? processCmuVoice(raw, model, timedFromPlan) : raw,
+    model,
+  );
   const scale = raw.length ? processed.length / raw.length : 1;
   const samples = normaliseSamples(processed, model.volume);
   const duration = samples.length / SAMPLE_RATE;
