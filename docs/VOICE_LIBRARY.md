@@ -183,6 +183,41 @@ machine.
 (units, bytes, date, source URL). `GET /api/voices` reports the total on disk, which
 the library header shows. Nothing in that directory is committed — see `.gitignore`.
 
+## 6b. The terminal commands
+
+The browser cannot download an archive, and neither can a server in a sandbox with
+no route to festvox.org. A terminal can, so the library has a command-line face that
+uses the same catalogue, the same installer and the same guards:
+
+| Command | What it does |
+|---|---|
+| `npm run voices -- list` | every investigated voice, with class, size and install state |
+| `npm run voices -- list --ready` | only the ones that can be installed now |
+| `npm run voices -- install arctic-awb` | download, unpack, convert, validate, install |
+| `npm run voices -- install --class A` | all 17 ready voices, one at a time |
+| `npm run voices -- install cmu-kal --from ~/Downloads/kal.tar.gz` | install from an archive you already have |
+| `npm run voices -- remove arctic-awb` | delete that voice and its metadata |
+| `npm run voices -- status` | what is installed, and how much disk it uses |
+| `npm run voices -- urls --class A` | the `curl` commands, for fetching by hand |
+
+`install` prints the download URL, the licence, and each stage as it happens; it
+refuses `slt`/`bdl` with the reason, skips anything already installed, and returns a
+non-zero exit code on any failure, so it can be used in a script. `--from` is what
+makes the command useful on a machine that cannot reach festvox.org: fetch the
+archive however you like (browser, `curl`, a mirror), then install it locally.
+
+If you would rather do it entirely by hand:
+
+```sh
+curl -L -o awb.tar.bz2 http://festvox.org/cmu_arctic/packed/cmu_us_awb_arctic.tar.bz2
+mkdir -p /tmp/awb && tar xjf awb.tar.bz2 -C /tmp/awb
+python3 scripts/build_cmu_voicepack.py \
+  --source /tmp/awb/cmu_us_awb_arctic --output public/optional-voices/arctic-awb \
+  --speaker-id arctic-awb --display-name "CMU ARCTIC AWB" --accent "Scottish English" --gender Male
+printf '{"units": null, "bytes": %s}\n' "$(stat -c%s public/optional-voices/arctic-awb/diphones.bin)" \
+  > public/optional-voices/arctic-awb/installed.json
+```
+
 ## 7. Licences, in plain terms
 
 | Group | Commercial | Redistribute a pack? | Notes |
@@ -199,7 +234,7 @@ they cannot drift from the data.
 
 ## 8. Testing
 
-`npm run test:voices` — **67 checks**, all passing, no network access:
+`npm run test:voices` — **79 checks**, all passing, no network access:
 
 * catalogue: unique ids, ≥80 candidates, no protected id offered, every entry has a
   source URL, licence, attribution, class and a reason; nothing class D installable;
@@ -217,6 +252,12 @@ they cannot drift from the data.
   the base voices still speak from their own units afterwards
 * browsing: filters (search, language, accent, gender, status, class), all three
   sorts, and the neutral model (`pitch 1`, `rate 1`, no tone shaping)
+* the ARCTIC recipe: an archive built in the ARCTIC layout (wav/ + lab/ + COPYING)
+  goes through `install_voice.py --kind arctic-archive`, is cut by
+  `build_cmu_voicepack.py`, validates, and reports `done` — the same path the 16
+  speakers use, exercised on a fixture because the real host is unreachable here
+* the terminal command: `list --ready`, `urls --class A` and `install slt` (refused,
+  with the reason) run as subprocesses and are checked on their output and exit code
 
 Required checks and where they stand:
 
@@ -238,11 +279,11 @@ Required checks and where they stand:
 
 ## 9. What is not done, honestly
 
-* **The 16 ARCTIC archives could not be downloaded from the build environment**
-  (`festvox.org` is unreachable here; only GitHub is). Each one is a documented
-  recipe against the published URL, using the builder that made the base packs, but
-  the download itself has not been executed on this machine. The KAL install, which
-  is the same code path end to end, was.
+* **The 16 ARCTIC archives were not downloaded from the build environment**
+  (`festvox.org` is unreachable here; only GitHub is). Their conversion path is now
+  proved on a fixture archive in the real layout, and the download itself is a
+  terminal command away: `npm run voices -- install --class A`. The KAL install was
+  run for real, end to end, including the download.
 * **RAB is class B** until it is run against the real archive.
 * **No installers for classes C and D**, for the reasons above.
 * **Installing needs the Node server.** A static `dist` build served by

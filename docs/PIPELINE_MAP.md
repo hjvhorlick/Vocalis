@@ -166,7 +166,8 @@ replaces this graph with the shared transformation module.
 | `utils/voiceLibraryPaths.ts` | 62 | **New.** The id and path guard shared by the server and the tests. |
 | `utils/voiceLibrary.ts` | 232 | **New.** Library client: state, install/remove calls, filters, sorting and the neutral profile an installed voice speaks through. |
 | `components/RecordedVoiceLibrary.tsx` | 452 | **New.** The library UI. |
-| `scripts/install_voice.py` | 330 | **New.** Download → convert → validate → atomic install, with progress for the UI. |
+| `scripts/voice_library.ts` | 355 | **New.** The library from a terminal: `npm run voices -- list / install / remove / urls`. Resolves ids through the catalogue and runs the same installer as the server. |
+| `scripts/install_voice.py` | 345 | **New.** Download → convert → validate → atomic install, with progress for the UI. |
 | `scripts/import_festival_diphone.py` | 245 | **New.** Festival EST diphone database → Vocalis pack, audio copied unchanged. |
 | `utils/voiceTransform.ts` | 676 | **New.** The voice transformation stage: band-limited pitch resampling, five-band timbre correction, correlation-aligned pace change, tone character, resonance sliders under a 3 dB colour budget. Original code; see `PHASE3_VOICE_TRANSFORM.md` for the measurements. |
 | `utils/naturalHumanAudio.ts` | 121 | **Retained, corrected.** Shared context and decode helpers unchanged; licence wording and speaker provenance fixed; each sample names its recorded speaker's pack. |

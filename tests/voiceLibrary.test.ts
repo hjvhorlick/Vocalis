@@ -338,6 +338,131 @@ const baseBefore = sha256(basePackPath);
 rmSync(join(installRoot, 'fixture-two'), { recursive: true, force: true });
 check('the protected base pack is untouched by library removals', sha256(basePackPath) === baseBefore);
 
+// The other install recipe: a CMU ARCTIC distribution. The real archives are on
+// festvox.org, which this environment cannot reach, so the *conversion* is proved
+// here against an archive built in the same layout (wav/ + lab/ + COPYING) from
+// generated audio. If the layout is wrong, this fails — which is the point.
+{
+  const speakerDir = join(workDir, 'arctic', 'cmu_us_fix_arctic');
+  mkdirSync(join(speakerDir, 'wav'), { recursive: true });
+  mkdirSync(join(speakerDir, 'lab'), { recursive: true });
+  writeFileSync(join(speakerDir, 'COPYING'), 'Fixture speaker for the installer test.');
+  const phones = ['aa', 'ae', 'ah', 'b', 'd', 'k', 'p', 's', 't', 'z', 'n', 'm', 'l', 'r', 'ih', 'eh'];
+  // Every ordered pair of these phones appears in the sequence, so the fixture
+  // contains hundreds of distinct diphones instead of a short repeating cycle.
+  const sequence: string[] = [];
+  for (const left of phones) for (const right of phones) sequence.push(left, right);
+  const sampleRate = 16000;
+  const phoneSamples = Math.round(0.08 * sampleRate);
+  for (const utterance of ['a0001', 'a0002']) {
+    const labels: string[] = [];
+    const totalPhones = sequence.length;
+    const samples = Buffer.alloc(phoneSamples * totalPhones * 2);
+    for (let index = 0; index < phoneSamples * totalPhones; index += 1) {
+      const t = index / sampleRate;
+      const value = Math.sin(2 * Math.PI * 130 * t) * 0.35 + Math.sin(2 * Math.PI * 260 * t) * 0.08;
+      samples.writeInt16LE(Math.round(value * 32767), index * 2);
+    }
+    // CMU ARCTIC labels are "start end phone", one line per phone.
+    for (let phoneIndex = 0; phoneIndex < totalPhones; phoneIndex += 1) {
+      const start = (phoneIndex * phoneSamples) / sampleRate;
+      const end = ((phoneIndex + 1) * phoneSamples) / sampleRate;
+      labels.push(`${start.toFixed(6)} ${end.toFixed(6)} ${sequence[phoneIndex]}`);
+    }
+    const header = Buffer.alloc(44);
+    header.write('RIFF', 0);
+    header.writeUInt32LE(36 + samples.length, 4);
+    header.write('WAVE', 8);
+    header.write('fmt ', 12);
+    header.writeUInt32LE(16, 16);
+    header.writeUInt16LE(1, 20);
+    header.writeUInt16LE(1, 22);
+    header.writeUInt32LE(sampleRate, 24);
+    header.writeUInt32LE(sampleRate * 2, 28);
+    header.writeUInt16LE(2, 32);
+    header.writeUInt16LE(16, 34);
+    header.write('data', 36);
+    header.writeUInt32LE(samples.length, 40);
+    writeFileSync(join(speakerDir, 'wav', `arctic_${utterance}.wav`), Buffer.concat([header, samples]));
+    writeFileSync(join(speakerDir, 'lab', `arctic_${utterance}.lab`), `${labels.join('\n')}\n`);
+  }
+  const archivePath = join(workDir, 'arctic-fixture.tar.bz2');
+  execFileSync('python3', [
+    '-c',
+    `import tarfile,sys
+with tarfile.open(sys.argv[1],'w:bz2') as t:
+    t.add(sys.argv[2], arcname='cmu_us_fix_arctic')
+`,
+    archivePath,
+    speakerDir,
+  ]);
+  const arcticRoot = join(workDir, 'arctic-voices');
+  const arcticProgress = join(workDir, 'arctic-progress.json');
+  const outcome = installerOutcome([
+    '--id', 'arctic-fix', '--kind', 'arctic-archive', '--url', `file://${archivePath}`,
+    '--speaker', 'fix', '--out-root', arcticRoot, '--progress', arcticProgress,
+    '--display-name', 'ARCTIC fixture', '--accent', 'US English', '--gender', 'Male',
+  ]);
+  check('the ARCTIC install recipe runs', outcome.code === 0, outcome.output.trim().split('\n').slice(-1)[0]);
+  const arcticPack = join(arcticRoot, 'arctic-fix', 'manifest.json');
+  check('and produces a pack', existsSync(arcticPack));
+  if (existsSync(arcticPack)) {
+    const manifest = JSON.parse(readFileSync(arcticPack, 'utf8'));
+    check('with units cut from the labels', Object.keys(manifest.units).length >= 200, `${Object.keys(manifest.units).length}`);
+    check('and the speaker id it was given', manifest.speakerId === 'arctic-fix', String(manifest.speakerId));
+  }
+  const progressText = existsSync(arcticProgress) ? readFileSync(arcticProgress, 'utf8') : '';
+  check('the progress file reports success for the UI', /"stage":\s*"done"/.test(progressText), progressText.slice(-120));
+}
+
+// ---------------------------------------------------------------------------
+// 3b. The terminal command
+// ---------------------------------------------------------------------------
+
+console.log('\nterminal command');
+
+function cli(args: string[]): { code: number; out: string } {
+  const result = execFileSync('npx', ['tsx', join(ROOT, 'scripts', 'voice_library.ts'), ...args], {
+    cwd: ROOT,
+    encoding: 'utf8',
+    stdio: 'pipe',
+  });
+  return { code: 0, out: result };
+}
+
+let listOut = '';
+try {
+  listOut = cli(['list', '--ready']).out;
+} catch (error) {
+  listOut = (error as { stdout?: string }).stdout ?? '';
+}
+check('`voices list` shows the installable ids', /arctic-awb/.test(listOut) && /cmu-kal/.test(listOut));
+check('and says which are installed', /installed|ready/.test(listOut));
+check('and hides the excluded ones behind --ready', !/mbrola-us1/.test(listOut));
+
+let urlsOut = '';
+try {
+  urlsOut = cli(['urls', '--class', 'A']).out;
+} catch (error) {
+  urlsOut = (error as { stdout?: string }).stdout ?? '';
+}
+check('`voices urls` prints a real archive URL', /festvox\.org\/cmu_arctic\/packed\/cmu_us_awb_arctic\.tar\.bz2/.test(urlsOut));
+check('and the matching install command', /--from arctic-awb\.archive/.test(urlsOut));
+
+const refusedInstall = (() => {
+  try {
+    execFileSync('npx', ['tsx', join(ROOT, 'scripts', 'voice_library.ts'), 'install', 'slt'], {
+      cwd: ROOT, encoding: 'utf8', stdio: 'pipe',
+    });
+    return { code: 0, text: '' };
+  } catch (error) {
+    const failure = error as { status?: number; stderr?: string };
+    return { code: failure.status ?? 1, text: failure.stderr ?? '' };
+  }
+})();
+check('`voices install slt` is refused', refusedInstall.code !== 0);
+check('with the reason', /protected base voice/.test(refusedInstall.text), refusedInstall.text.trim().split('\n').slice(-1)[0]);
+
 // ---------------------------------------------------------------------------
 // 4. An installed voice speaks typed text
 // ---------------------------------------------------------------------------

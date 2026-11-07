@@ -54,8 +54,10 @@ npm run lint                # type-check src
 npm run test:engine         # 212 checks: text analysis against the real bundled dictionary
 npm run test:render         # 555 checks: rendered audio, timings, silence, pace, determinism, export,
                             #   and the transformation itself measured on known signals
-npm run test:voices         # 67 checks: the recorded voice library — catalogue, guards, conversion,
-                            #   install/remove, and an optional voice actually speaking
+npm run test:voices         # 79 checks: the recorded voice library — catalogue, guards, conversion,
+                            #   install/remove, the terminal command, and a voice actually speaking
+npm run voices -- list      # the library from a terminal: list / install / remove / urls
+                            #   e.g. npm run voices -- install arctic-awb
 npm run verify:base-voice   # frozen fingerprints, pack integrity, engine presence, no foreign code or TTS
 npm run audit               # type-check plus the contract check
 ```

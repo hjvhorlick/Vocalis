@@ -91,8 +91,25 @@ def download(url: str, target: Path, progress: Path, label: str) -> None:
                         total=total,
                     )
     size = target.stat().st_size
-    if size < MIN_ARCHIVE_BYTES:
-        raise InstallError(f"The download was only {size} bytes — the server sent a page, not an archive.")
+    # Sniff the container instead of trusting the URL or the size: an error page,
+    # a login wall or a redirect to HTML all fail here, before anything is unpacked.
+    with target.open("rb") as handle:
+        magic = handle.read(4)
+    if not (
+        magic[:2] == b"\x1f\x8b"          # gzip
+        or magic[:3] == b"BZh"            # bzip2
+        or (len(magic) >= 4 and magic[0:2] in (b"PK",))  # zip
+    ):
+        with target.open("rb") as handle:
+            header = handle.read(512)
+        if not (len(header) >= 262 and header[257:262] == b"ustar"):  # plain tar
+            preview = header[:60].decode("utf-8", "replace").replace("\n", " ").strip()
+            raise InstallError(
+                f"The download is not an archive ({size} bytes, starts with {preview!r}). "
+                "The server probably sent a page instead of the file."
+            )
+    if size < 4096:
+        raise InstallError(f"The download is only {size} bytes — too small to be a voice archive.")
     write_progress(progress, stage="download", message=f"Downloaded {size / 1048576:.1f} MB.", percent=100)
 
 
