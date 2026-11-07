@@ -323,29 +323,34 @@ it made the voice worse than the recording it started from. That is a fair thing
 was no way to check it inside the application: every render went through the plan, the re-timing,
 the pitch work and the tone character at once, so nothing isolated the recording. There is now.
 
-### `referenceRaw`: the corpus with nothing applied
+### `referenceRaw`: which timing, not which effects
 
-`VoiceModelConfig.referenceRaw` (`naturalVoiceEngine.ts:84`) makes a render take every adjustment
-out of the chain:
+`VoiceModelConfig.referenceRaw` (`naturalVoiceEngine.ts:84`) selects the **timing** only. It used
+to gate the whole adjustment chain, which meant that the moment anyone touched a slider the
+recording disappeared and they were listening to a different engine. That is the opposite of what
+the effects screen is for, so it was split:
 
-| Stage | Reference mode |
-| --- | --- |
-| `analyzeText(text, accent)` | forced to `'US'`, so no regional rule touches the text |
-| `planDurations` | not called — `renderCmuDiphones` builds no plan (`cmuDiphoneSynthesizer.ts:780`) |
-| `joinRetimed` / `synthesiseUnit` / `joinInPhase` | not called — the units are crossfaded at the lengths they were recorded at |
-| `processCmuVoice` (pitch resample, WSOLA, `applyStyle`) | skipped whole (`phonemeSynthesizer.ts:772`) |
-| `applyResonance` | skipped, so no profile EQ survives into it |
-| `normaliseSamples` | still applied — one gain over the whole file, so it can be compared at the same loudness |
+| Stage | `referenceRaw: true` (default) | `referenceRaw: false` |
+| --- | --- | --- |
+| `planDurations` | not called | called |
+| `joinRetimed` / `synthesiseUnit` / `joinInPhase` | not called — units keep their recorded lengths | called |
+| `processCmuVoice` (pitch, WSAL, `applyStyle`) | **runs**, and is a pass-through at pitch 1 / rate 1 / `natural` | runs |
+| `applyResonance` (three peaking filters) | **runs**, and is a pass-through at 0 dB | runs |
+| `analyzeText` | the accent the profile asks for | the accent the profile asks for |
+| `normaliseSamples` | one gain over the whole file | same |
 
-**Since 2026-11-07 this is what the application ships.** The person it is for heard the adjusted
-voice beside the recording and chose the recording, so `referenceRaw` is absent-or-true by
-default, all nine presets state `true`, and the duration model described in this document is
-opt-in behind a labelled two-way switch — "Recorded voice, as imported" against "Vocalis
-adjustments" — in Speech Studio and the Voice Manipulator. While the recorded voice is selected
-the pitch and pace sliders are disabled and both components name the controls that are bypassed,
-so nothing looks like it works when it does not. Every band in the render suite still measures the
-adjustment path, because the fixture asks for it by name; nothing here was retired, it was made
-optional. See `APPLICATION_AUDIT.md`, "The shipped default is the recorded voice".
+So every control on the effects panel works under both timings, one at a time, on top of the
+recording — which is exactly what was asked for: listen to the original, move one thing, decide.
+And at every neutral setting the two paths still produce the recording bit for bit, which the
+suite checks (`a neutral voice leaves the recording bit-exact`), because the pitch stage returns
+early when neither factor moved (`cmuDiphoneSynthesizer.ts:1123`) and the filters return their
+input unchanged below 0.01 dB.
+
+**Since 2026-11-07 the recorded timing is what the application ships.** Both studios default to
+`slt`/`bdl` with everything neutral, `referenceRaw: true`, and a labelled switch — "Recorded" against
+"Rhythm engine" — for anyone who wants the duration model described in this document. The old
+behaviour, where the pitch and pace sliders were disabled while the recorded voice was selected, is
+gone: they work in both timings now, because they no longer decide which engine you get.
 
 It is the recording, and that is checked rather than claimed. The suite takes the first joint of
 a sentence, reads that unit's samples out of `diphones.bin`, and searches the reference render for

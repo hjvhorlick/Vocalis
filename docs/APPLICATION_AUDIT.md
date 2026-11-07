@@ -109,8 +109,9 @@ of being trusted from its label.
 | A3 (partly) | The comparison is available in the product itself: `model.referenceRaw` renders the recorded units at their recorded lengths with no plan, no re-timing, no pitch, pace, character, resonance or regional rules. Speech Studio and the Voice Manipulator both expose it as a labelled two-way switch, it is in both render cache keys, and the controls it bypasses are disabled and named as bypassed rather than left to look like they work. The suite locates one recorded unit inside such a render and matches its interior against the pack bytes: residual **0.0000 %** of the unit's energy at a single output gain of **1.2001**. |
 
 `accent: 'Global'` is still a no-op and stays one: it is not a slider, it is a region-filter
-label in the voice list ("🌐 Global / Sci-Fi") used by one preset, `unit-7-droid`. It is recorded
-here so nobody wires a control to it and expects sound.
+label in the voice list ("✨ Custom Crafted") that no synthesis rule reads. It is recorded here so
+nobody wires a control to it and expects sound, and it is deliberately absent from the accent
+selector, which offers only the three values that do something.
 
 ---
 
@@ -121,33 +122,89 @@ the recording: *"the original voice stays like it was imported… it became wors
 settings."* That is a product decision and it is theirs to make, so it is implemented rather than
 argued with.
 
-- `VoiceModelConfig.referenceRaw` is **absent-or-true by default**, and all nine presets state
+- `VoiceModelConfig.referenceRaw` is **absent-or-true by default**, and both predefined voices state
   `referenceRaw: true` explicitly. A profile saved before this change, which has no such field,
-  gets the recorded voice too — absence means unadjusted, not "whatever the last release did".
-- With it, `planDurations` is not called, `joinRetimed` and the whole PSOLA realiser are not
-  called, `processCmuVoice` is skipped, `applyResonance` is skipped, and `analyzeText` is forced
-  to `'US'` so no regional rule touches the text. What remains is the dictionary-driven phone
-  stream, the recorded units at their recorded lengths, crossfade joins, and one whole-file
-  normalising gain.
-- The adjustments are **opt-in and labelled**: a two-way switch, "Recorded voice, as imported"
-  against "Vocalis adjustments", in Speech Studio and in the Voice Manipulator. While the recorded
-  voice is selected, the pitch and pace sliders are `disabled` and both components state in words
-  which controls are bypassed. A control that moves and does nothing is the defect recorded as D11;
-  a control that is visibly switched off is not.
+  gets the recorded timing too — absence means the recording, not "whatever the last release did".
+- With it, `planDurations` is not called, `joinRetimed` and the whole PSOLA realiser are not called,
+  and the units keep the lengths they were recorded at: crossfade joins plus one whole-file
+  normalising gain. `processCmuVoice` and `applyResonance` *do* run, and are exact pass-throughs at
+  their neutral settings, so the effects panel works on top of the recording — see the section
+  below, which supersedes the original wording here.
+- The adjustments are **additive and labelled**: every one of them is applied to the recording, one
+  at a time, and a Timing switch separates the recorded lengths from the duration model. A control
+  that moves and does nothing is the defect recorded as D11, so none of them is switched off — they
+  are measured to reach the audio under both timings, which is 812 checks as of this writing.
 - This does not weaken A1, which forbids the product *quietly* becoming playback of a recording.
   Nothing plays a corpus file — the units are still selected per typed sentence — and the mode is
   named on the button, in `BASE_VOICE_CONTRACT.md` §2, and in the commit.
-- The suite is unchanged in scope: 748 checks. The fixture `voice()` now asks for the adjustment
-  path by name (`referenceRaw: false`), so every pace, rhythm, duration-model and PSOLA band still
-  measures the adjustments and still has to pass; six new checks pin the shipped default to the
-  recorded voice, including "every preset ships unadjusted" and "a profile that predates the
-  switch still gets the recorded voice".
+- The suite is unchanged in scope. The fixture `voice()` asks for the adjustment path by name
+  (`referenceRaw: false`), so every pace, rhythm, duration-model and PSOLA band still measures the
+  adjustments and still has to pass; the shipped-default checks pin the default to the recorded
+  voice, including "every preset ships as the recorded voice" and "a profile that predates the
+  switch still gets the recorded voice". 812 checks as of the next section.
 
 What the default costs, measured on the four sentences this repository has human readings of: the
 recorded voice runs 1.5–1.7× the human duration (4.94 s against a human 3.35 s on slt a0001),
 because at recorded lengths a reduced vowel in a function word lasts as long as a stressed
 nucleus. That is the drag `DURATION_MODEL.md` was written to remove, and it is now the shipped
 sound by choice, with the numbers on the record and the fix one switch away.
+
+---
+
+## The predefined voices are the recordings, and every adjustment is testable (2026-11-07)
+
+*"I want the base original voices to be the only voices that are pre defined… and then when they
+are selected the application's effects and transitions screen must contain all available
+adjustments. I want to test them on the original and see which ones work and which ones do not."*
+
+That is the specification, and this is what implements it.
+
+**Predefined voices.** `PRESET_VOICE_MODELS` (`naturalVoiceEngine.ts:105`) is exactly two entries:
+`cmu-arctic-slt` and `cmu-arctic-bdl`, the two licensed ARCTIC speakers. Both are neutral in every
+field, both `referenceRaw: true`, both carrying the real transcript of the sample they play. The
+nine character presets that were there (studio-neutral, narrator-aria, titan-marcus, oliver-british,
+charlotte-uk, jax-podcast, willow-calm, radio-sterling, unit-7-droid) are deleted; they remain
+recoverable from commit `51e84f6` and the suite now asserts that the list has two entries and that
+no predefined voice carries a preset adjustment. The reason is simple: a character preset shipped
+an equaliser and a pitch shift on top of the recording, so selecting one meant starting from
+something already changed, and the person listening said the change was worse than the recording.
+
+**One effects panel, every adjustment.** `VoiceManipulator.tsx` is the effects screen, and its panel
+is generated from a single table, `SOLO_TESTS`. Each entry carries the overrides, what to listen
+for, and an honest note on what the control is. The panel's two buttons play the same sentence:
+**Original** sets every field to the value that changes nothing, **With this one change** applies
+exactly that entry and nothing else. Because the fields are reset before the change, the comparison
+is the recording against the recording plus one control — not against whatever the sliders
+happened to say.
+
+**Under the hood, this is why it is possible.** `referenceRaw` no longer gates the effects; it
+gates the *timing*. `phonemeSynthesizer.ts` runs one uniform stage,
+`applyResonance(processCmuVoice(raw, …))`, and both of those return their input unchanged at their
+neutral settings — `processCmuVoice` by an explicit early return
+(`cmuDiphoneSynthesizer.ts:1123`), the filters by a `|gain| < 0.01 dB` guard. So:
+
+| Setting | Result |
+| --- | --- |
+| everything neutral, recorded timing | the recording, bit-exact (0.0000 % interior residual) |
+| one control moved, recorded timing | that one control, on top of the recording |
+| one control moved, rhythm engine | that one control, on top of the re-timed render |
+
+**Checked, not claimed.** The render suite measures all eighteen controls under *both* timings and
+asserts the direction each one promises, not merely that the samples moved: pitch up raises the
+median F0, rate down lengthens the render, `deep` lowers the pitch, `radio` raises the spectral
+centroid, each resonance boost moves energy in the band it is named for, and the accents change
+which units a rule-bearing word gets. A control that is audible but does not do what its label says
+is a failure, because that is the failure the person using this reported.
+
+**Dead controls are named, not offered.** Two profile fields reach no synthesis rule: the `'Global'`
+accent (a filter label no rule reads) and per-voice "formant" modelling (the three bands are fixed
+EQ, not a vocal tract, finding D10). Neither has a control. The panel says so in words rather than
+leaving a slider that moves and changes nothing — finding D11.
+
+**Audible evidence.** `listen/index.html` (served on port 3001, git-ignored, regenerated by a
+scratch script) holds 32 pairs: 16 adjustments × 2 speakers, each an original and a one-change
+render of the same sentence, with duration, peak, RMS and the energy above 2.5 and 4.2 kHz printed
+under each pair. All 32 are measurably different from their original; the table is the receipt.
 
 ---
 

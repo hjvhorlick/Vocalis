@@ -53,14 +53,20 @@ technology *around* the base voice, and they are expected to keep improving.
 
 **Note on the shipped default (2026-11-07).** The default render is the recorded units at the
 lengths they were recorded at, crossfaded, with no adjustment applied
-(`VoiceModelConfig.referenceRaw`, absent or `true`; every preset states `true`). This was directed
+(`VoiceModelConfig.referenceRaw`, absent or `true`; both predefined voices state `true`, and they
+are the only two predefined voices — the nine character presets were removed on the same day,
+because a preset that shipped its own pitch shift and equaliser meant starting from something a
+listener had already judged worse than the recording). This was directed
 by the person the application is for, who listened to the adjusted voice beside the recording and
 judged the recording better. It is not a break of §2 and not a reversion to playback: the units
 are still chosen by the dictionary-driven phone stream for the text that was typed and assembled
 per utterance — nothing plays a corpus file — and the Vocalis adjustments (duration model,
-re-timing on the voice cycle, pitch, pace, character, resonance) are still in the tree, reachable
-from a labelled switch in Speech Studio and the Voice Manipulator, and still held to every
-measured band in `tests/renderSpeech.test.ts`. What §2 forbids is a *silent* move to the path of
+re-timing on the voice cycle, pitch, pace, character, resonance) are still in the tree and still
+held to every measured band in `tests/renderSpeech.test.ts`. `referenceRaw` gates the *timing*
+only: every adjustment applies on its own on top of the recording, which is what makes it possible
+to hear them one at a time and decide which of them help. The suite measures all eighteen under
+both timings, and asserts the direction each one promises rather than merely that the samples
+moved. What §2 forbids is a *silent* move to the path of
 least resistance; this one is on the button, in the audit, and in the commit message.
 
 ## 3. Original-code-only rule
