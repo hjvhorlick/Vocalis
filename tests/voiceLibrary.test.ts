@@ -920,6 +920,30 @@ check(
   check('and says so by name', /arctic-nothing/.test(verifyMissing.text), verifyMissing.text.trim().split('\n').slice(-1)[0]);
 }
 
+// The same samples as a file you can play, so "it works" can be checked with
+// your ears instead of a peak level.
+{
+  const target = join(workDir, 'verify-out.wav');
+  const rendered = (() => {
+    try {
+      return { code: 0, text: cli(['verify', 'cmu-kal', '--wav', target]).out };
+    } catch (error) {
+      const failure = error as { status?: number; stdout?: string; stderr?: string };
+      return { code: failure.status ?? 1, text: `${failure.stdout ?? ''}${failure.stderr ?? ''}` };
+    }
+  })();
+  check('`voices verify --wav` renders without mistaking the path for a voice id', rendered.code === 0, rendered.text.trim().split('\n').slice(-1)[0]);
+  check('and writes the audition sentence to a file', existsSync(target));
+  if (existsSync(target)) {
+    const wav = readFileSync(target);
+    check('as a real 16-bit PCM WAV', wav.subarray(0, 4).toString() === 'RIFF' && wav.readUInt16LE(34) === 16, `${wav.length} bytes`);
+    check('with about ten seconds of audio', wav.length > 16000 * 2 * 8, `${(wav.length / 32000).toFixed(1)} s`);
+    let peak = 0;
+    for (let index = 44; index + 1 < wav.length; index += 2) peak = Math.max(peak, Math.abs(wav.readInt16LE(index)));
+    check('that is not silence', peak > 5000, `peak ${peak}`);
+  }
+}
+
 const refusedInstall = (() => {
   try {
     execFileSync('npx', ['tsx', join(ROOT, 'scripts', 'voice_library.ts'), 'install', 'slt'], {

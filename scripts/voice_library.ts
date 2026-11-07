@@ -24,7 +24,7 @@
  * Original Vocalis code.
  */
 import { spawn } from 'node:child_process';
-import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -113,10 +113,12 @@ function printUsage(): void {
         waveforms, phone labels, text — without converting or installing anything.
         Use it first when an install fails.
 
-  verify [<id...>]
+  verify [<id...>] [--wav path.wav]
         Render a fixed sentence with every installed voice and print what came
         out: length, peak level, how many recorded units it used, how many
-        stand-ins. This is the answer to "is it actually working?".
+        stand-ins. This is the answer to "is it actually working?". With --wav
+        the same samples are written to a file you can play, one file per voice
+        when several are installed.
 
   urls [--class A|B]
         Print the curl commands for the archives, for people who would rather
@@ -190,7 +192,10 @@ function positionals(args: string[]): string[] {
   for (let index = 0; index < args.length; index += 1) {
     const arg = args[index];
     if (arg.startsWith('--')) {
-      if (arg === '--from' || arg === '--class' || arg === '--language') index += 1;
+      // Flags that carry a value: skip it so it is never mistaken for a voice id.
+      if (['--from', '--class', '--language', '--wav', '--out', '--url', '--kind', '--speaker'].includes(arg)) {
+        index += 1;
+      }
       continue;
     }
     out.push(arg);
@@ -331,6 +336,35 @@ function runInstaller(voice: VoiceCandidate, archiveOverride?: string): Promise<
  * listener would otherwise have to guess at: how long the audio is, how loud, how
  * many of its units were recorded ones, and whether any stand-in was used.
  */
+/**
+ * Write rendered samples as a plain 16-bit PCM WAV, the same format the export
+ * uses. Written here rather than through the browser encoder because `verify` runs
+ * in a terminal, where there is no AudioBuffer to convert.
+ */
+function writeWav(target: string, samples: Float32Array, sampleRate: number): void {
+  const data = Buffer.alloc(samples.length * 2);
+  for (let index = 0; index < samples.length; index += 1) {
+    const value = Math.max(-1, Math.min(1, samples[index]));
+    data.writeInt16LE(Math.round(value * 32767), index * 2);
+  }
+  const header = Buffer.alloc(44);
+  header.write('RIFF', 0);
+  header.writeUInt32LE(36 + data.length, 4);
+  header.write('WAVE', 8);
+  header.write('fmt ', 12);
+  header.writeUInt32LE(16, 16);
+  header.writeUInt16LE(1, 20);
+  header.writeUInt16LE(1, 22);
+  header.writeUInt32LE(sampleRate, 24);
+  header.writeUInt32LE(sampleRate * 2, 28);
+  header.writeUInt16LE(2, 32);
+  header.writeUInt16LE(16, 34);
+  header.write('data', 36);
+  header.writeUInt32LE(data.length, 40);
+  mkdirSync(dirname(resolve(target)), { recursive: true });
+  writeFileSync(target, Buffer.concat([header, data]));
+}
+
 async function verify(args: string[]): Promise<number> {
   const installed = VOICE_CATALOGUE.filter((voice) => installedInfo(voice.id));
   const wanted = positionals(args);
@@ -412,6 +446,15 @@ async function verify(args: string[]): Promise<number> {
       const standIns = spoken.diagnostics?.fallbackPhones ?? 0;
       const ok = peak > 0.05 && exact > 5;
       if (!ok) silent += 1;
+      // An option to keep the sentence as a file: the quickest way to know a voice
+      // is audible without opening a browser, and the same samples playback gets.
+      const wavTarget = valueOf(args, '--wav');
+      if (wavTarget) {
+        const stem = wavTarget.replace(/\.wav$/i, '');
+        const target = rows.length > 1 ? `${stem}-${voice.id}.wav` : wavTarget;
+        writeWav(target, spoken.samples, spoken.sampleRate || 16000);
+        console.log(`${''.padEnd(20)} ${''.padStart(8)} ${''.padStart(6)} ${''.padStart(11)} ${''.padStart(10)}  wrote ${target}`);
+      }
       console.log(
         `${voice.id.padEnd(20)} ${seconds.toFixed(2).padStart(8)} ${peak.toFixed(3).padStart(6)} ` +
           `${String(exact).padStart(11)} ${String(standIns).padStart(10)}  ${ok ? 'speaks' : 'NO SOUND'}`,

@@ -150,6 +150,18 @@ checked against the audio (speech starts at 0.64 s where the second `pau` label 
 at 0.6245 s). A zero stand-in count means every unit the sentence asked for was cut
 from that speaker's own recordings.
 
+The quickest check needs no browser at all — `--wav` writes exactly what playback
+would receive:
+
+```sh
+npm run voices -- verify --wav /tmp/vocalis-audition.wav
+```
+
+That renders the audition sentence with every installed voice and leaves one WAV per
+voice (10.9–11.8 s, peak 0.78, 77–81 recorded units, no stand-ins). It is a diphone
+voice, so it sounds like one: individual words are intelligible, the joins are
+audible. That is the nature of a 1,600-unit database, not a processing artifact.
+
 All six of these packs are committed, so this is what a clone already has. Open the
 **Recorded voice library**, press **Audition** on any card marked *installed* and it
 speaks; no install, no terminal. Browsers only allow sound after a click, which is
