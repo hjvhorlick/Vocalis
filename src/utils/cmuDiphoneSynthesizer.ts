@@ -50,6 +50,9 @@ const HALF_UNIT_CEILING_SECONDS = 0.06;
 const HALF_UNIT_FLOOR_SECONDS = 0.028;
 
 /** Raised-cosine fade between units, and the shorter fade inside an assembled pair. */
+/** Tempo changes smaller than this are left alone rather than stretched. */
+const STRETCH_PASS_THROUGH = 0.005;
+
 const FADE_SECONDS = 0.018;
 const HALF_UNIT_JOIN_SECONDS = 0.006;
 
@@ -623,13 +626,67 @@ export async function renderCmuDiphones(
 // Pitch, rate and character
 // ---------------------------------------------------------------------------
 
+/** Half-width of the interpolation window, in input samples. */
+const RESAMPLE_TAPS = 12;
+
+/**
+ * Change the pitch of a recording by reading it at a different rate.
+ *
+ * The read position falls between samples, so it has to be interpolated. A
+ * straight line between the two neighbours is what this used to do, and a line
+ * is a crude low-pass filter: pitched down to 0.72, a voice lost about a third
+ * of its energy above 2.5 kHz and came back dull. This interpolates with a
+ * windowed sinc instead, which reconstructs the band the recording actually
+ * contains, and band-limits the input to the output's own Nyquist whenever the
+ * factor shortens the signal, so pitching up cannot fold images back into the
+ * audible range.
+ *
+ * Written from the sampling theorem: an ideal interpolator is a sinc scaled by
+ * the cutoff, truncated to a window so it is finite, and renormalised by the sum
+ * of its own coefficients so the gain cannot drift at the edges.
+ */
 function resample(input: Float32Array, pitchFactor: number): Float32Array {
   const factor = Math.max(0.5, Math.min(2, pitchFactor));
+  if (Math.abs(factor - 1) < 1e-4) return Float32Array.from(input);
   const length = Math.max(1, Math.floor(input.length / factor));
+  const cutoff = Math.min(1, 1 / factor);
   const output = new Float32Array(length);
   for (let i = 0; i < length; i++) {
     const position = i * factor;
-    const left = Math.floor(position);
+    const centre = Math.floor(position);
+    const fraction = position - centre;
+    let sum = 0;
+    let weights = 0;
+    for (let tap = -RESAMPLE_TAPS + 1; tap <= RESAMPLE_TAPS; tap++) {
+      const sourceIndex = centre + tap;
+      if (sourceIndex < 0 || sourceIndex >= input.length) continue;
+      const distance = tap - fraction;
+      if (Math.abs(distance) >= RESAMPLE_TAPS) continue;
+      const argument = cutoff * distance;
+      const sinc = argument === 0 ? 1 : Math.sin(Math.PI * argument) / (Math.PI * argument);
+      // Hann window over the tap span, so truncating the sinc does not ring.
+      const window = 0.5 + 0.5 * Math.cos((Math.PI * distance) / RESAMPLE_TAPS);
+      const coefficient = cutoff * sinc * window;
+      sum += input[sourceIndex] * coefficient;
+      weights += coefficient;
+    }
+    output[i] = Math.abs(weights) > 1e-6 ? sum / weights : 0;
+  }
+  return output;
+}
+
+/**
+ * Resample to an exact length by linear interpolation.
+ *
+ * Only for signals shorter than one WSOLA window, where there is nothing to
+ * overlap-add. It is a compromise, and it is confined to chunks under 32 ms.
+ */
+function resampleToLength(input: Float32Array, outputLength: number): Float32Array {
+  const output = new Float32Array(outputLength);
+  if (!input.length) return output;
+  for (let i = 0; i < outputLength; i++) {
+    const position = (i * input.length) / outputLength;
+    const left = Math.min(input.length - 1, Math.floor(position));
     const right = Math.min(input.length - 1, left + 1);
     const fraction = position - left;
     output[i] = input[left] * (1 - fraction) + input[right] * fraction;
@@ -638,18 +695,15 @@ function resample(input: Float32Array, pitchFactor: number): Float32Array {
 }
 
 function wsolaStretch(input: Float32Array, targetLength: number): Float32Array {
-  const outputLength = Math.max(1, targetLength);
-  if (input.length < 512 || Math.abs(outputLength / input.length - 1) < 0.035) {
-    const direct = new Float32Array(outputLength);
-    for (let i = 0; i < outputLength; i++) {
-      const position = i * input.length / outputLength;
-      const left = Math.min(input.length - 1, Math.floor(position));
-      const right = Math.min(input.length - 1, left + 1);
-      const fraction = position - left;
-      direct[i] = input[left] * (1 - fraction) + input[right] * fraction;
-    }
-    return direct;
-  }
+  const outputLength = Math.max(1, Math.floor(targetLength));
+  // Time-scale modification is never free: it cuts the signal into windows and
+  // overlap-adds them, and every window boundary is a place a discontinuity can
+  // appear. Below half a percent the tempo change is inaudible, so the recording
+  // is handed back untouched rather than processed for nothing. This used to be
+  // a 3.5 % window that linearly resampled the whole signal — the worst of both:
+  // the artifacts of resampling without the honesty of a real tempo change.
+  if (Math.abs(outputLength / input.length - 1) < STRETCH_PASS_THROUGH) return Float32Array.from(input);
+  if (input.length < 512) return resampleToLength(input, outputLength);
 
   const windowSize = 640;
   const synthesisHop = 320;
@@ -736,15 +790,23 @@ function applyStyle(input: Float32Array, style: VoiceModelConfig['toneStyle']): 
 export function processCmuVoice(samples: Float32Array, model: VoiceModelConfig): Float32Array {
   const stylePitch = model.toneStyle === 'deep' ? 0.92 : model.toneStyle === 'energetic' ? 1.06 : 1;
   const pitchFactor = Math.max(0.25, Math.min(4, model.pitch * stylePitch));
-  const pitched = resample(samples, pitchFactor);
   const rateStyle = model.toneStyle === 'deep' ? 0.92 : model.toneStyle === 'energetic' ? 1.1 : 1;
+  const rateFactor = Math.max(0.55, model.rate * rateStyle);
+  // A neutral voice means "play the recording": no resampling, no stretching,
+  // nothing between the joined units and the listener. Stating that as a branch
+  // rather than relying on two processes happening to cancel out is what makes
+  // the default setting provably the untouched one.
+  if (Math.abs(pitchFactor - 1) < STRETCH_PASS_THROUGH && Math.abs(rateFactor - 1) < STRETCH_PASS_THROUGH) {
+    return applyStyle(samples, model.toneStyle);
+  }
+  const pitched = resample(samples, pitchFactor);
   // Resampling moves pitch and duration together, so a pitch control that also
   // slowed the reader down would not be a pitch control: at 0.72 the deep preset
   // spoke at 68 words a minute and a quarter of its render was silence. The
   // stretch target is measured from the ORIGINAL length, which puts the duration
   // back where the recording had it and leaves `rate` as the only thing that
   // changes how long the speaking takes.
-  const targetLength = Math.max(1, Math.floor(samples.length / Math.max(0.55, model.rate * rateStyle)));
+  const targetLength = Math.max(1, Math.floor(samples.length / rateFactor));
   const stretch = wsolaStretch(pitched, targetLength);
   return applyStyle(stretch, model.toneStyle);
 }

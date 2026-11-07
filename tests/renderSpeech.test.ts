@@ -23,6 +23,7 @@ import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import { processCmuVoice } from '../src/utils/cmuDiphoneSynthesizer';
 import {
   DEFAULT_DIALOGUE_TIMING,
   PRESET_VOICE_MODELS,
@@ -515,6 +516,126 @@ const robot = await renderSpeech(PASSAGES[0].text, voice({ toneStyle: 'robot' })
 check('the robot style still renders', robot.samples.length > 0);
 check('the robot style stays inside the ceiling', metricsOf(robot).peak <= CEILING + 1e-6);
 eq('the robot style reports its method', robot.diagnostics.method, 'cmu-arctic');
+
+// --- the transformation stage: what it must do, and what it must not -------
+
+/** Two seconds of a voiced-like signal: a fundamental, a bright partial, noise. */
+const testSignal = (() => {
+  const length = 16000 * 2;
+  const out = new Float32Array(length);
+  let state = 0x2545f491;
+  const noise = () => {
+    state = (state * 1103515245 + 12345) & 0x7fffffff;
+    return state / 0x3fffffff - 1;
+  };
+  for (let index = 0; index < length; index += 1) {
+    const t = index / 16000;
+    out[index] =
+      0.5 * Math.sin(2 * Math.PI * 110 * t) + 0.2 * Math.sin(2 * Math.PI * 4000 * t) + 0.05 * noise();
+  }
+  return out;
+})();
+
+/** Energy above a cutoff as a fraction of total energy: a clarity measure. */
+function highFrequencyRatio(samples: Float32Array, cutoff: number): number {
+  const k = 1 - Math.exp((-2 * Math.PI * cutoff) / 16000);
+  let low = 0;
+  let high = 0;
+  let total = 0;
+  for (let index = 0; index < samples.length; index += 1) {
+    low += k * (samples[index] - low);
+    const above = samples[index] - low;
+    high += above * above;
+    total += samples[index] * samples[index];
+  }
+  return Math.sqrt(high / Math.max(total, 1e-12));
+}
+
+const untouched = processCmuVoice(testSignal, voice({ pitch: 1, rate: 1, toneStyle: 'natural' }));
+eq('a neutral voice returns the same number of samples', untouched.length, testSignal.length);
+check(
+  'a neutral voice leaves the recording bit-exact',
+  untouched.every((value, index) => value === testSignal[index]),
+  'a neutral render was processed',
+);
+
+const nearlyNeutral = processCmuVoice(testSignal, voice({ pitch: 1, rate: 1.004 }));
+eq('a tempo change under half a percent is left alone', nearlyNeutral.length, testSignal.length);
+check(
+  'a tempo change under half a percent changes no sample',
+  nearlyNeutral.every((value, index) => value === testSignal[index]),
+  'a sub-threshold tempo change was stretched',
+);
+
+const stretched = processCmuVoice(testSignal, voice({ pitch: 1, rate: 1.4 }));
+between(
+  'a real tempo change shortens the signal by its rate',
+  stretched.length / testSignal.length,
+  (1 / 1.4) * 0.97,
+  (1 / 1.4) * 1.03,
+);
+check('a real tempo change is not a pass-through', stretched.length !== testSignal.length);
+check(
+  'a stretched signal stays inside the sample range',
+  stretched.every((value) => Number.isFinite(value) && Math.abs(value) <= 1.5),
+  'stretching produced an out-of-range sample',
+);
+
+/** The interpolation this replaced, kept here only to prove the new one is better. */
+function linearResample(samples: Float32Array, factor: number): Float32Array {
+  const length = Math.max(1, Math.floor(samples.length / factor));
+  const out = new Float32Array(length);
+  for (let index = 0; index < length; index += 1) {
+    const position = index * factor;
+    const left = Math.floor(position);
+    const right = Math.min(samples.length - 1, left + 1);
+    const fraction = position - left;
+    out[index] = samples[left] * (1 - fraction) + samples[right] * fraction;
+  }
+  return out;
+}
+
+// Pitching by a factor AND setting rate to the same factor cancels the
+// compensating stretch, so only the resampler runs. That isolates it.
+const sourceClarity = highFrequencyRatio(testSignal, 2500);
+for (const factor of [0.72, 1.4]) {
+  const resampled = processCmuVoice(testSignal, voice({ pitch: factor, rate: factor }));
+  eq(`pitch ${factor} with rate ${factor} changes only the sample count`, resampled.length, Math.floor(testSignal.length / factor));
+  const kept = highFrequencyRatio(resampled, 2500) / sourceClarity;
+  const linearKept = highFrequencyRatio(linearResample(testSignal, factor), 2500) / sourceClarity;
+  check(
+    `the resampler keeps the bright partial at pitch ${factor} (${(kept * 100).toFixed(0)}% of the source)`,
+    kept >= (factor < 1 ? 0.85 : 0.95),
+    `${(kept * 100).toFixed(1)}% retained`,
+  );
+  check(
+    `band-limited interpolation beats a straight line at pitch ${factor} (${(kept * 100).toFixed(0)}% vs ${(linearKept * 100).toFixed(0)}%)`,
+    kept > linearKept,
+    'linear interpolation kept more high-frequency energy',
+  );
+}
+
+const naturalClarityRender = await renderSpeech(PASSAGES[0].text, voice());
+const pitchedClarityRender = await renderSpeech(PASSAGES[0].text, voice({ pitch: 0.72 }));
+const naturalClarity = highFrequencyRatio(naturalClarityRender.samples, 2500);
+const pitchedClarity = highFrequencyRatio(pitchedClarityRender.samples, 2500);
+// End to end, a pitch change still costs some brightness: the resampler keeps
+// about 89 % of it and the WSOLA that puts the duration back takes some more.
+// The floor here is what the round trip achieves today, and it is the number
+// Phase 3's pitch-synchronous modification has to beat — not a target to relax.
+between(
+  'a pitched-down render keeps most of its brightness end to end',
+  pitchedClarity / naturalClarity,
+  0.7,
+  1.4,
+);
+console.log(
+  `  clarity above 2.5 kHz: neutral ${(naturalClarity * 100).toFixed(1)}%, pitch 0.72 ` +
+    `${(pitchedClarity * 100).toFixed(1)}% (${((pitchedClarity / naturalClarity) * 100).toFixed(0)}% retained)`,
+);
+checkRender('pitched-down render', pitchedClarityRender, PASSAGES[0].text, { coverage: 0.9, natural: false });
+releaseSynthesis(naturalClarityRender);
+releaseSynthesis(pitchedClarityRender);
 
 // --- speaker resolution ----------------------------------------------------
 eq('the default preset speaks from the SLT recordings', warmUp.diagnostics.speaker, 'slt');
