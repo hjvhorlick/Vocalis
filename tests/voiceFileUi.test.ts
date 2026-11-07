@@ -14,7 +14,7 @@ import { fileURLToPath } from 'node:url';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 
-import { VoiceSettingRow, VoiceToneRow } from '../src/components/VoiceSettingRow';
+import { VoiceSettingRow, VoiceSwitchRow, VoiceToneRow } from '../src/components/VoiceSettingRow';
 import { VoiceManipulator } from '../src/components/VoiceManipulator';
 import { ALL_OFF, NEUTRAL_KNOBS, effectiveModel, profileFrom } from '../src/components/VoiceFileCreator';
 import { transformRecordedVoice } from '../src/utils/voiceTransform';
@@ -172,10 +172,31 @@ const creatorRows = ['Pitch', 'Pace', 'Volume', 'Warmth', 'Clarity', 'Air'].map(
   ),
 );
 check(
-  'six numeric settings plus the tone row: seven switches for seven controls',
-  creatorRows.every((markup) => /role="switch"/.test(markup)) && /role="switch"/.test(toneOn),
-  `${creatorRows.length + 1} rows`,
+  'six numeric settings, the tone row and intonation: eight switches for eight controls',
+  creatorRows.every((markup) => /role="switch"/.test(markup)) &&
+    /role="switch"/.test(toneOn) &&
+    Object.keys(ALL_OFF).length === 8,
+  `${creatorRows.length + 1} slider rows and ${Object.keys(ALL_OFF).length} switches`,
 );
+
+// Intonation has no knob — only the stage to have on or off — and it still has to
+// look and read like every other switch.
+const intonationRow = (on: boolean) =>
+  renderToStaticMarkup(
+    createElement(VoiceSwitchRow, {
+      label: 'Intonation',
+      hint: 'The phrase contour.',
+      on,
+      onToggle: () => undefined,
+      onTest: () => undefined,
+    }),
+  );
+const intonationOn = intonationRow(true);
+const intonationOff = intonationRow(false);
+check('the intonation row has a switch', /role="switch"/.test(intonationOn));
+check('it reports itself on', /aria-checked="true"/.test(intonationOn) && /aria-checked="false"/.test(intonationOff));
+check('and says in words that it is bypassed', /Intonation is bypassed/.test(intonationOff));
+check('the row labels itself for assistive technology', /aria-label="Intonation on or off"/.test(intonationOn));
 
 console.log('\nthe workbench opens clean');
 
@@ -205,6 +226,16 @@ check('with every knob at the value that changes nothing', cleanProfile.settings
   const identical = rendered.length === recording.length && recording.every((value, index) => value === rendered[index]);
   check('a clean session renders the recording sample for sample', identical, `${rendered.length} samples`);
   check('because every stage is bypassed, not zeroed', Object.values(clean.bypass ?? {}).every((value) => value === true));
+  check('including the phrase contour', clean.bypass?.contour === true, 'the stage that re-pitches every unit');
+  const contourOnly = effectiveModel(base, { ...ALL_OFF, contour: true }, NEUTRAL_KNOBS, 'natural');
+  check(
+    'and switching only intonation on turns exactly that stage back on',
+    contourOnly.bypass?.contour === false && Object.entries(contourOnly.bypass ?? {}).filter(([key, value]) => key !== 'contour' && value === false).length === 0,
+  );
+  check(
+    'the exported profile records it like any other switch',
+    profileFrom({ ...ALL_OFF, contour: true }, NEUTRAL_KNOBS, 'natural').enabled.contour === true,
+  );
 
   // One switch at a time: only the one that is on may change anything.
   const pitchOnly = effectiveModel(base, { ...ALL_OFF, pitch: true }, { ...NEUTRAL_KNOBS, pitch: 1.4 }, 'natural');

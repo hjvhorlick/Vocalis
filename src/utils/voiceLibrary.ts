@@ -246,6 +246,9 @@ export function applyProfileToModel(
       throatWarmth: profile.enabled.throatWarmth === false,
       oralClarity: profile.enabled.oralClarity === false,
       airPresence: profile.enabled.airPresence === false,
+      // A file sealed before this switch existed had the contour applied, so an
+      // absent key must keep it on rather than silently changing how it sounds.
+      contour: profile.enabled.contour === false,
     },
   };
 }

@@ -66,7 +66,9 @@ export interface VoiceTransformSettings {
    * "run with a neutral value", which is the difference between a switch that does
    * something and one that only looks like it does.
    */
-  bypass?: Partial<Record<'pitch' | 'rate' | 'tone' | 'throatWarmth' | 'oralClarity' | 'airPresence', boolean>>;
+  bypass?: Partial<
+    Record<'pitch' | 'rate' | 'tone' | 'throatWarmth' | 'oralClarity' | 'airPresence' | 'contour', boolean>
+  >;
 }
 
 /**

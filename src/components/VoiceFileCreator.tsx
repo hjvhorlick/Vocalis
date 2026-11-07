@@ -3,6 +3,8 @@ import { ArrowDown, ArrowUp, Check, CircleAlert, Download, Loader2, Play, Square
 
 import type { VoiceModelConfig } from '../utils/naturalVoiceEngine';
 import { speakRealWords, stopSpeaking } from '../utils/naturalVoiceEngine';
+import { NATURAL_HUMAN_SAMPLES, loadHumanVoiceBuffer } from '../utils/naturalHumanAudio';
+import { playRenderedSpeech } from '../utils/audioDspEngine';
 import {
   AUDITION_PHRASE,
   buildLibraryRows,
@@ -13,7 +15,7 @@ import {
   type LibraryState,
 } from '../utils/voiceLibrary';
 import { VOCALIS_EXTENSION, slugifyVoiceName, type VocalisVoiceProfile } from '../utils/vocalisVoiceFile';
-import { VoiceSettingRow, VoiceToneRow } from './VoiceSettingRow';
+import { VoiceSettingRow, VoiceSwitchRow, VoiceToneRow } from './VoiceSettingRow';
 
 /**
  * The .vls Voice Creator: the whole voice-file job on one page.
@@ -101,7 +103,7 @@ const SETTINGS: SettingSpec[] = [
   },
 ];
 
-export type SwitchState = Record<SettingSpec['key'] | 'tone', boolean>;
+export type SwitchState = Record<SettingSpec['key'] | 'tone' | 'contour', boolean>;
 export type KnobState = Record<SettingSpec['key'], number>;
 
 /**
@@ -116,6 +118,9 @@ export const ALL_OFF: SwitchState = {
   rate: false,
   volume: false,
   tone: false,
+  // The phrase contour is a stage of its own — the one that re-pitches every unit
+  // onto one line. Off means the units are joined as they were cut.
+  contour: false,
   throatWarmth: false,
   oralClarity: false,
   airPresence: false,
@@ -157,6 +162,7 @@ export function effectiveModel(
       throatWarmth: !switches.throatWarmth,
       oralClarity: !switches.oralClarity,
       airPresence: !switches.airPresence,
+      contour: !switches.contour,
     },
   };
 }
@@ -177,13 +183,17 @@ function shortDescription(row: LibraryRow): string {
   return sentence.length > 120 ? `${sentence.slice(0, 117).trimEnd()}…` : sentence;
 }
 
-/** The model with one setting bypassed, everything else as it stands. */
-function bypassOne(model: VoiceModelConfig, key: SettingSpec['key']): VoiceModelConfig {
-  if (key === 'pitch') return { ...model, pitch: 1 };
-  if (key === 'rate') return { ...model, rate: 1 };
-  if (key === 'throatWarmth') return { ...model, throatWarmth: 0 };
-  if (key === 'oralClarity') return { ...model, oralClarity: 0 };
-  return { ...model, airPresence: 0 };
+/**
+ * The model with one stage switched off, everything else as it stands.
+ *
+ * The switch, not a neutral number: the old version set the knob to 1 or 0 and let
+ * the stage run, which is a different sound from not running it at all.
+ */
+function bypassOne(
+  model: VoiceModelConfig,
+  key: SettingSpec['key'] | 'tone' | 'contour',
+): VoiceModelConfig {
+  return { ...model, bypass: { ...(model.bypass ?? {}), [key]: true } };
 }
 
 const ORDER_KEY = 'vocalis_voice_file_order';
@@ -208,8 +218,8 @@ export const VoiceFileCreator: React.FC<VoiceFileCreatorProps> = ({ onOpenLibrar
   const [knobs, setKnobs] = useState<KnobState>(NEUTRAL_KNOBS);
   const [tone, setTone] = useState<string>('natural');
   const [fileName, setFileName] = useState('');
-  const [busy, setBusy] = useState<'preview' | 'export' | null>(null);
-  const [testingKey, setTestingKey] = useState<SettingSpec['key'] | 'tone' | null>(null);
+  const [busy, setBusy] = useState<'preview' | 'export' | 'source' | null>(null);
+  const [testingKey, setTestingKey] = useState<SettingSpec['key'] | 'tone' | 'contour' | null>(null);
   const [notice, setNotice] = useState<{ tone: 'ok' | 'error'; text: string } | null>(null);
 
   useEffect(() => {
@@ -308,12 +318,53 @@ export const VoiceFileCreator: React.FC<VoiceFileCreatorProps> = ({ onOpenLibrar
   }, [model, busy]);
 
   /**
+   * Play one sentence exactly as it was recorded.
+   *
+   * The preview below assembles a sentence out of cut units, so even with every
+   * setting off it is the synthesizer you are hearing, not a recording. This button
+   * is the control for that: one continuous CMU ARCTIC sentence, no units, no
+   * joins, no contour, no leveller. Comparing the two is the difference between
+   * "one of our stages is spoiling it" and "cutting speech into pieces is what you
+   * can hear", and no amount of switching can answer that from the preview alone.
+   */
+  const handleSourceRecording = useCallback(async () => {
+    if (busy === 'source') {
+      stopSpeaking();
+      setBusy(null);
+      return;
+    }
+    if (busy !== null) return;
+    setBusy('source');
+    setNotice(null);
+    try {
+      const pack = selected?.id?.includes('bdl') ? 'bdl' : 'slt';
+      const sample = NATURAL_HUMAN_SAMPLES.find((entry) => entry.voicePackId === pack) ?? NATURAL_HUMAN_SAMPLES[0];
+      const buffer = await loadHumanVoiceBuffer(sample.url);
+      const played = playRenderedSpeech(Float32Array.from(buffer.getChannelData(0)), buffer.sampleRate, {
+        onEnded: () => setBusy(null),
+        onError: (error) => {
+          setBusy(null);
+          setNotice({ tone: 'error', text: `That recording could not be played: ${error.message}` });
+        },
+      });
+      if (!played) throw new Error('the recording could not be played');
+      setNotice({
+        tone: 'ok',
+        text: `${sample.transcript} — played as recorded. Nothing in this app touched it.`,
+      });
+    } catch (error) {
+      setBusy(null);
+      setNotice({ tone: 'error', text: error instanceof Error ? error.message : String(error) });
+    }
+  }, [busy, selected]);
+
+  /**
    * Play the sentence twice: once with the settings as they stand, once with this
    * one feature bypassed. "Which setting is spoiling it?" is answerable by ear in
    * two listens, instead of by switching things off and re-exporting blind.
    */
   const handleTestSetting = useCallback(
-    async (key: SettingSpec['key'] | 'tone') => {
+    async (key: SettingSpec['key'] | 'tone' | 'contour') => {
       if (!model) return;
       if (testingKey === key) {
         stopSpeaking();
@@ -331,8 +382,13 @@ export const VoiceFileCreator: React.FC<VoiceFileCreatorProps> = ({ onOpenLibrar
       setNotice(null);
       try {
         await speak(model);
-        await speak(key === 'tone' ? { ...model, toneStyle: 'natural' } : bypassOne(model, key));
-        const label = key === 'tone' ? 'Tone' : SETTINGS.find((setting) => setting.key === key)?.label ?? key;
+        await speak(key === 'tone' ? bypassOne(model, 'tone') : bypassOne(model, key));
+        const label =
+          key === 'tone'
+            ? 'Tone'
+            : key === 'contour'
+              ? 'Intonation'
+              : SETTINGS.find((setting) => setting.key === key)?.label ?? key;
         setNotice({ tone: 'ok', text: `${label}: first as set, then bypassed. Listen for what changed.` });
       } catch (error) {
         setNotice({ tone: 'error', text: error instanceof Error ? error.message : String(error) });
@@ -533,6 +589,15 @@ export const VoiceFileCreator: React.FC<VoiceFileCreatorProps> = ({ onOpenLibrar
                   onTest={() => void handleTestSetting(setting.key)}
                 />
               ))}
+              <VoiceSwitchRow
+                label="Intonation"
+                hint="The phrase contour: every unit is re-pitched onto one falling line, with a rise at a question. It is the stage that puts a slightly different timbre on each join, so it is the first one to switch off when a voice sounds processed."
+                on={switches.contour}
+                testing={testingKey === 'contour'}
+                disabled={!selected}
+                onToggle={() => setSwitches((current) => ({ ...current, contour: !current.contour }))}
+                onTest={() => void handleTestSetting('contour')}
+              />
               <VoiceToneRow
                 on={switches.tone}
                 tone={tone}
@@ -554,9 +619,25 @@ export const VoiceFileCreator: React.FC<VoiceFileCreatorProps> = ({ onOpenLibrar
               {busy === 'preview'
                 ? 'Stop'
                 : activeSwitches === 0
-                  ? 'Preview the recording, untouched'
+                  ? 'Preview the assembled voice, nothing applied'
                   : `Preview with ${activeSwitches} setting${activeSwitches === 1 ? '' : 's'} applied`}
             </button>
+
+            {/* The control for the preview above: one sentence as it was recorded. */}
+            <button
+              onClick={() => void handleSourceRecording()}
+              disabled={busy !== null && busy !== 'source'}
+              className="mt-2 flex w-full items-center justify-center gap-2 rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-xs font-semibold text-slate-300 enabled:hover:border-slate-500 enabled:hover:text-white disabled:opacity-40"
+            >
+              {busy === 'source' ? <Square className="h-3.5 w-3.5" /> : <Play className="h-3.5 w-3.5" />}
+              {busy === 'source' ? 'Stop' : 'Hear a real recording — no assembly at all'}
+            </button>
+            <p className="mt-1.5 text-[11px] leading-snug text-slate-500">
+              One continuous CMU ARCTIC sentence, played sample for sample: no units cut, no joins, no
+              contour, no leveller. The preview above is assembled from cut units even with every switch
+              off, so this is what tells you whether a setting is spoiling the voice or whether you are
+              hearing the assembly.
+            </p>
           </div>
 
           <div className="rounded-2xl border border-emerald-500/25 bg-emerald-500/5 p-4">

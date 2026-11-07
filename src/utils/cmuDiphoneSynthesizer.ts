@@ -841,7 +841,13 @@ export async function renderCmuDiphones(
     segmentStarts.push({ chunkIndex: leadIndex, phoneCount: phones.length });
   }
 
-  const joined = crossfadeJoinWithOffsets(applyProsody(chunks, chunkProsody));
+  // The phrase contour is a switch of its own, and it is the one stage that
+  // touches every join: it re-pitches each unit onto one line, which is what makes
+  // cut-together speech rise and fall — and also what puts a slightly different
+  // timbre on every unit. Switched off, the chunks go to the crossfade exactly as
+  // they were cut, so a clean file is the recordings and nothing else.
+  const shapedChunks = model.bypass?.contour ? chunks : applyProsody(chunks, chunkProsody);
+  const joined = crossfadeJoinWithOffsets(shapedChunks);
   // Chunk i begins on the midpoint of phone i-1 within its segment, so the
   // offsets of a segment's phones are the starts of the chunks after its lead.
   for (const { chunkIndex, phoneCount } of segmentStarts) {

@@ -136,6 +136,101 @@ check(
   `${cmuPitchOffOnly.length} vs ${Math.floor(input.length / 0.7)}`,
 );
 
+console.log('\nthe two stages that ran with no switch at all');
+
+// Finding from the second complaint: with all seven switches off the render was
+// still 69 % different from the assembled units. Two stages ran unconditionally —
+// the phrase contour, which re-pitches every unit onto one line, and the output
+// leveller, which lifted the assembled recording by about 1 dB. Both are now off
+// with their switch, and this is the measurement that says so on the real pack.
+{
+  const { readFileSync } = await import('node:fs');
+  const { join } = await import('node:path');
+  const { registerOptionalVoiceSource, unregisterOptionalVoiceSource } = await import(
+    '../src/utils/optionalVoicePacks'
+  );
+  const { renderSpeech, initializeLocalSpeechEngine } = await import('../src/utils/naturalVoiceEngine');
+  const { AUDITION_PHRASE } = await import('../src/utils/voiceLibrary');
+  const { normaliseSamples } = await import('../src/utils/phonemeSynthesizer');
+
+  const root = join(import.meta.dirname, '..');
+  const dir = join(root, 'public', 'optional-voices', 'arctic-awb');
+  const manifest = JSON.parse(readFileSync(join(dir, 'manifest.json'), 'utf8'));
+  const audio = readFileSync(join(dir, 'diphones.bin'));
+  registerOptionalVoiceSource({
+    id: 'bypass-probe',
+    displayName: 'bypass probe',
+    loadPack: async () => ({
+      manifest,
+      audio: audio.buffer.slice(audio.byteOffset, audio.byteOffset + audio.byteLength) as ArrayBuffer,
+    }),
+  });
+
+  const base = {
+    ...PRESET_VOICE_MODELS[0],
+    id: 'bypass-probe',
+    name: 'bypass probe',
+    baseVoiceId: 'bypass-probe',
+    synthesisMethod: 'cmu-arctic' as const,
+    pitch: 1,
+    rate: 1,
+    volume: 1,
+    toneStyle: 'natural' as const,
+    throatWarmth: 0,
+    oralClarity: 0,
+    airPresence: 0,
+  };
+  const off = {
+    pitch: true,
+    rate: true,
+    volume: true,
+    tone: true,
+    throatWarmth: true,
+    oralClarity: true,
+    airPresence: true,
+    contour: true,
+  };
+  await initializeLocalSpeechEngine(base as never);
+  const clean = await renderSpeech(AUDITION_PHRASE, { ...base, bypass: off } as never);
+  const withContour = await renderSpeech(AUDITION_PHRASE, { ...base, bypass: { ...off, contour: false } } as never);
+
+  let changed = 0;
+  for (let index = 0; index < Math.min(clean.samples.length, withContour.samples.length); index += 1) {
+    if (Math.abs(clean.samples[index] - withContour.samples[index]) > 1e-4) changed += 1;
+  }
+  const changedPct = (100 * changed) / clean.samples.length;
+  check(
+    'the phrase contour is a real stage, not a rounding error',
+    changedPct > 20,
+    `${changedPct.toFixed(1)}% of samples move when it is the only difference`,
+  );
+
+  const peakOf = (samples: Float32Array) => {
+    let peak = 0;
+    for (const value of samples) peak = Math.max(peak, Math.abs(value));
+    return peak;
+  };
+  check(
+    'with Volume off the render keeps the level the units arrived at',
+    Math.abs(peakOf(clean.samples) - 0.685) < 0.02,
+    `peak ${peakOf(clean.samples).toFixed(3)}, and the leveller alone would take it to 0.780`,
+  );
+  check(
+    'and switching Volume on still levels it to the output ceiling',
+    Math.abs(peakOf(normaliseSamples(clean.samples, 1)) - Math.min(0.78, 0.685 * 4)) < 0.01,
+    `peak ${peakOf(normaliseSamples(clean.samples, 1)).toFixed(3)}`,
+  );
+
+  const repeat = await renderSpeech(AUDITION_PHRASE, { ...base, bypass: off } as never);
+  let identicalRepeat = repeat.samples.length === clean.samples.length;
+  for (let index = 0; identicalRepeat && index < clean.samples.length; index += 1) {
+    if (repeat.samples[index] !== clean.samples[index]) identicalRepeat = false;
+  }
+  check('a clean render is repeatable to the sample', identicalRepeat, `${clean.samples.length} samples`);
+
+  unregisterOptionalVoiceSource('bypass-probe');
+}
+
 console.log(`\n${passed}/${passed + failures.length} bypass checks passed.`);
 if (failures.length) {
   console.log('Failures:');

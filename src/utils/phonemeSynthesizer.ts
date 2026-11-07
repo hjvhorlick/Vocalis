@@ -396,7 +396,16 @@ const SILENCE_FLOOR = 0.02;
  * Preview and export both consume the result of this function, so what you hear
  * is byte for byte what you download.
  */
-export function normaliseSamples(samples: Float32Array, volume: number): Float32Array {
+export function normaliseSamples(
+  samples: Float32Array,
+  volume: number,
+  volumeBypassed = false,
+): Float32Array {
+  // The Volume switch is a real bypass. Levelling the render to the output ceiling
+  // is a stage of its own — measured on the reference sentence it lifts the
+  // assembled recording by about 1 dB — so a voice file with Volume off has to
+  // leave the samples at the level the units arrived at, not at ours.
+  if (volumeBypassed) return Float32Array.from(samples);
   let peak = 0;
   for (let i = 0; i < samples.length; i += 1) peak = Math.max(peak, Math.abs(samples[i]));
   const makeup = peak >= SILENCE_FLOOR ? Math.min(MAX_MAKEUP_GAIN, OUTPUT_CEILING / peak) : 1;
@@ -660,7 +669,7 @@ export async function synthesizeText(text: string, model: VoiceModelConfig): Pro
 
   const processed = method === 'cmu-arctic' ? processCmuVoice(raw, model) : raw;
   const scale = raw.length ? processed.length / raw.length : 1;
-  const samples = normaliseSamples(processed, model.volume);
+  const samples = normaliseSamples(processed, model.volume, model.bypass?.volume === true);
   const duration = samples.length / SAMPLE_RATE;
   const wordTimings = wordTimingsFrom(utterance, phoneOffsets, raw.length, scale);
   const wavBlob = encodeWav(samples, SAMPLE_RATE);

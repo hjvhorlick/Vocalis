@@ -114,6 +114,78 @@ export const VoiceToneRow: React.FC<{
   </div>
 );
 
+/**
+ * A setting that has no knob: one switch, a name and an A/B test.
+ *
+ * Intonation is the case this exists for. The contour stage re-pitches every unit
+ * onto one phrase line; there is no number to slide, only the stage to have on or
+ * off, and it has to be switchable for the same reason as the rest — a voice file
+ * that sounds processed must be rebuildable without it.
+ */
+export const VoiceSwitchRow: React.FC<{
+  label: string;
+  hint: string;
+  on: boolean;
+  testing?: boolean;
+  disabled?: boolean;
+  onToggle: () => void;
+  onTest?: () => void;
+}> = ({ label, hint, on, testing = false, disabled = false, onToggle, onTest }) => (
+  <div
+    data-setting={label.toLowerCase()}
+    className={`rounded-xl border px-3 py-2.5 transition-colors ${
+      on ? 'border-slate-800 bg-slate-950/40' : 'border-slate-800/60 bg-slate-950/20'
+    }`}
+  >
+    <div className="flex items-center gap-2.5">
+      <button
+        type="button"
+        role="switch"
+        aria-checked={on}
+        aria-label={`${label} on or off`}
+        onClick={onToggle}
+        title={on ? `${label} is applied` : `${label} is bypassed`}
+        className={`flex h-5 w-10 shrink-0 items-center rounded-full border px-0.5 transition-colors ${
+          on ? 'border-emerald-400/60 bg-emerald-500' : 'border-slate-600 bg-slate-700'
+        }`}
+      >
+        <span
+          className={`h-4 w-4 rounded-full bg-white shadow transition-transform ${
+            on ? 'translate-x-[18px]' : 'translate-x-0'
+          }`}
+        />
+      </button>
+      <span className={`w-[4.5rem] shrink-0 text-[11px] font-semibold ${on ? 'text-slate-200' : 'text-slate-500'}`}>
+        {label}
+      </span>
+      <span className="min-w-0 flex-1 text-[11px] text-slate-500">
+        {on ? 'applied to every unit' : 'units joined as they were cut'}
+      </span>
+      <span className={`w-11 shrink-0 text-right text-[11px] tabular-nums ${on ? 'text-slate-300' : 'text-slate-600'}`}>
+        {on ? 'on' : 'off'}
+      </span>
+      {onTest && (
+        <button
+          type="button"
+          onClick={onTest}
+          disabled={disabled}
+          className={`shrink-0 rounded-md border px-1.5 py-1 text-[10px] font-semibold disabled:opacity-40 ${
+            testing
+              ? 'border-amber-400/60 bg-amber-500/20 text-amber-200'
+              : 'border-slate-700 text-slate-400 hover:border-indigo-500 hover:text-white'
+          }`}
+          title={`Play the sentence with ${label} on, then with it bypassed`}
+        >
+          {testing ? 'Stop' : 'A/B'}
+        </button>
+      )}
+    </div>
+    <p className="mt-1 pl-[3.25rem] text-[11px] leading-snug text-slate-500">
+      {on ? hint : `${label} is bypassed for this voice file.`}
+    </p>
+  </div>
+);
+
 export const VoiceSettingRow: React.FC<VoiceSettingRowProps> = ({
   label,
   hint,
