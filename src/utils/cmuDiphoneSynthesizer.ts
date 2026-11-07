@@ -34,6 +34,7 @@
  * extraction tool is `scripts/build_cmu_voicepack.py`.
  */
 import type { VoiceModelConfig } from './naturalVoiceEngine';
+import { isBaseVoiceId, getOptionalVoiceSource } from './optionalVoicePacks';
 import { transformRecordedVoice } from './voiceTransform';
 
 const SAMPLE_RATE = 16000;
@@ -113,7 +114,7 @@ export type FallbackPhone = (phone: string, absoluteOffset: number) => Float32Ar
 
 export interface DiphoneRender {
   samples: Float32Array;
-  speaker: 'slt' | 'bdl';
+  speaker: string;
   diagnostics: RenderDiagnostics;
   /**
    * Sample offset of every phone's midpoint, indexed to match the concatenated
@@ -124,7 +125,7 @@ export interface DiphoneRender {
   segmentPhoneCounts: number[];
 }
 
-const packs = new Map<'slt' | 'bdl', Promise<VoicePack>>();
+const packs = new Map<string, Promise<VoicePack>>();
 
 /**
  * Which recorded speaker a profile is built from.
@@ -133,18 +134,30 @@ const packs = new Map<'slt' | 'bdl', Promise<VoicePack>>();
  * what let a Neutral profile silently become a female voice; the label is only a
  * fallback for profiles that predate the field.
  */
-export function speakerForModel(model: VoiceModelConfig): 'slt' | 'bdl' {
-  if (model.baseVoiceId === 'slt' || model.baseVoiceId === 'bdl') return model.baseVoiceId;
+export function speakerForModel(model: VoiceModelConfig): string {
+  // Any installed optional voice is addressed by its own id; the two protected
+  // base voices keep their names and their loaders.
+  if (model.baseVoiceId) return model.baseVoiceId;
   // A voice that never says which recording it comes from still has to come from
   // one. Only an explicitly male identity is given the male speaker; everything
   // else, including a neutral one, resolves to SLT rather than being guessed at.
   return model.gender === 'Male' ? 'bdl' : 'slt';
 }
 
-async function loadVoicePack(speaker: 'slt' | 'bdl'): Promise<VoicePack> {
+async function loadVoicePack(speaker: string): Promise<VoicePack> {
   const cached = packs.get(speaker);
   if (cached) return cached;
   const request = (async () => {
+    const optional = isBaseVoiceId(speaker) ? undefined : getOptionalVoiceSource(speaker);
+    if (!isBaseVoiceId(speaker) && !optional) {
+      throw new Error(
+        `The voice "${speaker}" is not installed. Install it from the voice library first.`,
+      );
+    }
+    if (optional) {
+      const { manifest, audio } = await optional.loadPack();
+      return indexPack(manifest as unknown as DiphoneManifest, audio, speaker);
+    }
     const root = `/voicepacks/cmu-arctic/${speaker}`;
     const [manifestResponse, audioResponse] = await Promise.all([
       fetch(`${root}/manifest.json`),
@@ -155,6 +168,24 @@ async function loadVoicePack(speaker: 'slt' | 'bdl'): Promise<VoicePack> {
     }
     const manifest = (await manifestResponse.json()) as DiphoneManifest;
     const buffer = await audioResponse.arrayBuffer();
+    return indexPack(manifest, buffer, speaker);
+  })();
+  packs.set(speaker, request);
+  try {
+    return await request;
+  } catch (error) {
+    // A failed load must not stay cached, so a later render can try again.
+    packs.delete(speaker);
+    throw error;
+  }
+}
+
+/**
+ * Validate a manifest against its audio and build the lookup tables the
+ * assembler needs. Shared by the compiled-in packs and every optional voice, so
+ * an installed voice is held to the same integrity rules as a base voice.
+ */
+function indexPack(manifest: DiphoneManifest, buffer: ArrayBuffer, speaker: string): VoicePack {
     if (!manifest.units || !Object.keys(manifest.units).length) {
       throw new Error(`The CMU ARCTIC ${speaker.toUpperCase()} voice pack has no unit index.`);
     }
@@ -188,15 +219,6 @@ async function loadVoicePack(speaker: 'slt' | 'bdl'): Promise<VoicePack> {
       else byRight.set(right, [key]);
     }
     return { manifest, samples: new Int16Array(buffer), byLeft, byRight };
-  })();
-  packs.set(speaker, request);
-  try {
-    return await request;
-  } catch (error) {
-    // A failed load must not stay cached, so a later render can try again.
-    packs.delete(speaker);
-    throw error;
-  }
 }
 
 /** Load a speaker's pack ahead of the first render, so playback does not stall. */
@@ -206,6 +228,14 @@ export function prepareCmuVoice(model: VoiceModelConfig): Promise<void> {
 
 export function isVoicePackLoaded(model: VoiceModelConfig): boolean {
   return packs.has(speakerForModel(model));
+}
+
+/**
+ * Drop a voice's audio and index from memory. Used when switching away from an
+ * optional voice so the application never holds several packs at once.
+ */
+export function releaseVoicePack(speaker: string): void {
+  packs.delete(speaker);
 }
 
 // ---------------------------------------------------------------------------

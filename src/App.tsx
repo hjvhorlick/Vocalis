@@ -9,6 +9,7 @@ import { DialogueStudio } from './components/DialogueStudio';
 import { VoiceLibrary } from './components/VoiceLibrary';
 import { GitHubSyncModal } from './components/GitHubSyncModal';
 import { VoiceCredits } from './components/VoiceCredits';
+import { RecordedVoiceLibrary } from './components/RecordedVoiceLibrary';
 
 export function App() {
   const [activeTab, setActiveTab] = useState<'studio' | 'dialogue' | 'library'>('studio');
@@ -205,21 +206,34 @@ export function App() {
         {activeTab === 'dialogue' && <DialogueStudio models={models} />}
 
         {activeTab === 'library' && (
-          <VoiceLibrary
-            models={models}
-            savedTakes={savedTakes}
-            onSelectModelForShaper={(m) => {
-              setActiveModel(m);
-              setActiveTab('studio');
-            }}
-            onSelectModelForStudio={(m) => {
-              setActiveModel(m);
-              setActiveTab('studio');
-            }}
-            onDeleteCustomModel={handleDeleteCustomModel}
-            onDeleteTake={handleDeleteTake}
-            onGoToNewModel={handleNewVoice}
-          />
+          <div className="space-y-6">
+            <RecordedVoiceLibrary
+              activeVoiceId={
+                activeModel.baseVoiceId && !['slt', 'bdl'].includes(activeModel.baseVoiceId)
+                  ? activeModel.baseVoiceId
+                  : undefined
+              }
+              onSelectVoice={(model) => {
+                setActiveModel(model);
+                setActiveTab('studio');
+              }}
+            />
+            <VoiceLibrary
+              models={models}
+              savedTakes={savedTakes}
+              onSelectModelForShaper={(m) => {
+                setActiveModel(m);
+                setActiveTab('studio');
+              }}
+              onSelectModelForStudio={(m) => {
+                setActiveModel(m);
+                setActiveTab('studio');
+              }}
+              onDeleteCustomModel={handleDeleteCustomModel}
+              onDeleteTake={handleDeleteTake}
+              onGoToNewModel={handleNewVoice}
+            />
+          </div>
         )}
       </main>
 

@@ -64,7 +64,11 @@ export interface VoiceModelConfig {
   /** Reference recording used by the source audition feature. */
   baseSampleId: string;
   /** Which recorded speaker this voice is built from. */
-  baseVoiceId?: 'slt' | 'bdl';
+  /**
+   * The recorded voice this profile speaks from: `slt`, `bdl`, or the id of a
+   * voice installed from the library. Leave it unset and the gender decides.
+   */
+  baseVoiceId?: string;
   /** 'cmu-arctic' is the product; 'formant' is the preserved experiment. */
   synthesisMethod?: 'cmu-arctic' | 'formant';
   throatWarmth?: number; // low-band tilt, -3 to +3 dB (clamped)
@@ -262,7 +266,8 @@ export const PRESET_VOICE_MODELS: VoiceModelConfig[] = [
 export interface EngineReadiness {
   dictionary: boolean;
   voicePack: boolean;
-  speaker: 'slt' | 'bdl';
+  /** The recorded voice this profile is spoken from: a base id or an installed one. */
+  speaker: string;
 }
 
 let dictionaryReady = false;

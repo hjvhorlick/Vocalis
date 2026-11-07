@@ -21,6 +21,16 @@ Read this before changing anything. These rules are binding for every session, h
   duration, unit selection, join smoothing, pitch/duration modification, accent modelling,
   playback, export, evaluation. New speakers arrive as **additional** frozen packs.
 
+### Optional voices are additive
+
+- Voices installed from the library live in `public/optional-voices/<id>/` (never committed),
+  load through `src/utils/optionalVoicePacks.ts`, and are removed one at a time.
+- Never copy an optional pack into `public/voicepacks/cmu-arctic/`, never register one under the
+  id `slt` or `bdl`, and never let a library feature read or write the base packs. The guards for
+  this are `src/utils/voiceLibraryPaths.ts` and the catalogue's `install` recipes.
+- An installed voice speaks **as recorded**: pitch 1, rate 1, no tone shaping. Presets are where
+  transformation happens. See `docs/VOICE_LIBRARY.md`.
+
 Verify before committing anything that touches `public/`, `src/utils/` or the voice presets:
 
 ```sh

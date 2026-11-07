@@ -3,8 +3,14 @@ import { createServer as createHttpServer } from 'node:http';
 import { createServer as createViteServer } from 'vite';
 import path from 'path';
 import fs from 'fs';
-import { exec } from 'child_process';
+import { exec, spawn } from 'child_process';
 import { fileURLToPath } from 'url';
+import { VOICE_CATALOGUE, findVoiceCandidate } from './src/data/voiceCatalogue';
+import {
+  installedVoiceDir as resolveInstalledVoiceDir,
+  isProtectedVoiceId,
+  progressFilePath,
+} from './src/utils/voiceLibraryPaths';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -116,6 +122,140 @@ async function startServer() {
       });
     });
   });
+
+  // -------------------------------------------------------------------------
+  // Voice library: optional, independently installed recorded voices
+  // -------------------------------------------------------------------------
+  //
+  // Every installed voice is a directory of its own under public/optional-voices.
+  // The two protected base voices live elsewhere entirely (public/voicepacks/
+  // cmu-arctic) and are refused by name at every entry point here, so no request
+  // can modify, replace or delete them.
+
+  const VOICE_ROOT = path.join(process.cwd(), 'public', 'optional-voices');
+  const PROGRESS_ROOT = path.join(process.cwd(), 'var', 'voice-progress');
+  /** Resolve an installed voice's directory, or null if the id is not allowed. */
+  const installedVoiceDir = (id: string): string | null => resolveInstalledVoiceDir(VOICE_ROOT, id);
+
+  const readInstalled = () => {
+    if (!fs.existsSync(VOICE_ROOT)) return [];
+    return fs
+      .readdirSync(VOICE_ROOT, { withFileTypes: true })
+      .filter((entry) => entry.isDirectory() && !entry.name.startsWith('.'))
+      .map((entry) => {
+        const dir = path.join(VOICE_ROOT, entry.name);
+        const infoPath = path.join(dir, 'installed.json');
+        if (!fs.existsSync(infoPath) || !fs.existsSync(path.join(dir, 'manifest.json'))) return null;
+        try {
+          const info = JSON.parse(fs.readFileSync(infoPath, 'utf-8'));
+          return {
+            id: entry.name,
+            units: info.units ?? null,
+            bytes: info.bytes ?? null,
+            installedAt: info.installedAt ?? null,
+            sourceUrl: info.sourceUrl ?? null,
+          };
+        } catch {
+          return null;
+        }
+      })
+      .filter((voice): voice is NonNullable<typeof voice> => voice !== null);
+  };
+
+  app.get('/api/voices', (_req: Request, res: Response) => {
+    const installed = readInstalled();
+    res.json({
+      catalogueVersion: '2026-11-07',
+      catalogueSize: VOICE_CATALOGUE.length,
+      installed,
+      storageBytes: installed.reduce((total, voice) => total + (voice.bytes ?? 0), 0),
+      engineCanSpeak: ['English'],
+    });
+  });
+
+  app.get('/api/voices/:id/progress', (req: Request, res: Response) => {
+    const file = progressFilePath(PROGRESS_ROOT, req.params.id);
+    if (!file) return res.status(400).json({ error: 'Invalid voice id' });
+    if (!fs.existsSync(file)) return res.json({ stage: 'idle' });
+    try {
+      return res.json(JSON.parse(fs.readFileSync(file, 'utf-8')));
+    } catch {
+      return res.json({ stage: 'idle' });
+    }
+  });
+
+  app.post('/api/voices/:id/install', (req: Request, res: Response) => {
+    const id = req.params.id;
+    const candidate = findVoiceCandidate(id);
+    if (!candidate) return res.status(404).json({ error: `Unknown voice "${id}"` });
+    if (!candidate.install) {
+      return res.status(400).json({
+        error: `${candidate.displayName} has no installer yet: ${candidate.compatibilityNote}`,
+      });
+    }
+    const dir = installedVoiceDir(id);
+    if (!dir) return res.status(400).json({ error: 'That voice id is protected or invalid' });
+    if (fs.existsSync(path.join(dir, 'manifest.json'))) {
+      return res.status(409).json({ error: 'That voice is already installed. Remove it first to reinstall.' });
+    }
+    if (!fs.existsSync(PROGRESS_ROOT)) fs.mkdirSync(PROGRESS_ROOT, { recursive: true });
+    const progressFile = path.join(PROGRESS_ROOT, `${id}.json`);
+    fs.writeFileSync(
+      progressFile,
+      JSON.stringify({ stage: 'starting', message: 'Starting the installer…', percent: 0 }),
+    );
+
+    const recipe = candidate.install;
+    const args = [
+      'scripts/install_voice.py',
+      '--id', id,
+      '--kind', recipe.kind,
+      '--url', recipe.url,
+      '--out-root', VOICE_ROOT,
+      '--progress', progressFile,
+      '--display-name', candidate.displayName,
+      '--accent', candidate.accent,
+      '--gender', candidate.gender,
+      '--language', candidate.language,
+      '--source', candidate.sourceProject,
+      '--source-url', candidate.sourceUrl,
+      '--attribution', candidate.licence.attribution,
+      '--licence', candidate.licence.name,
+    ];
+    if (recipe.kind === 'arctic-archive') args.push('--speaker', recipe.speaker);
+    else args.push('--dic', recipe.dicPath, '--wav', recipe.wavPath);
+
+    const child = spawn('python3', args, { cwd: process.cwd(), detached: true, stdio: 'ignore' });
+    child.unref();
+    res.json({ started: true, id, progressUrl: `/api/voices/${id}/progress` });
+  });
+
+  app.delete('/api/voices/:id', (req: Request, res: Response) => {
+    const id = req.params.id;
+    if (isProtectedVoiceId(id)) {
+      return res.status(403).json({ error: 'SLT and BDL are the protected base voices and cannot be removed.' });
+    }
+    const dir = installedVoiceDir(id);
+    if (!dir) return res.status(400).json({ error: 'That voice id is protected or invalid' });
+    if (!fs.existsSync(dir)) return res.status(404).json({ error: 'That voice is not installed' });
+    try {
+      fs.rmSync(dir, { recursive: true, force: true });
+      const progressFile = progressFilePath(PROGRESS_ROOT, id);
+      if (progressFile && fs.existsSync(progressFile)) fs.rmSync(progressFile, { force: true });
+      res.json({ removed: id });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // Installed packs are plain files on disk, so they are served like any other
+  // static asset — no service, no network, nothing to fall over.
+  app.use(
+    '/optional-voices',
+    express.static(VOICE_ROOT, {
+      setHeaders: (response) => response.setHeader('Cache-Control', 'no-cache'),
+    }),
+  );
 
   // Use one HTTP server for Express and Vite. In middleware mode, Vite otherwise
   // opens a separate HMR-only port, which can be mistaken for the app preview.

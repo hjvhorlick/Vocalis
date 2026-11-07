@@ -161,6 +161,13 @@ replaces this graph with the shared transformation module.
 | `utils/cmuDiphoneSynthesizer.ts` | 862 | **Head rebuilt, tail moved out, contour added.** Pack loading, indexing, assembly, half-unit backoff and offsets unchanged; the pitch/rate/character tail delegates to `voiceTransform.ts`; `applyProsody` gives the joined chunks one pitch line (`RECORDED_VOICE_PROSODY.md`). |
 | `utils/naturalVoiceEngine.ts` | 753 | **Rewired.** One entry point, one dialogue timeline, presets that state their method and speaker, engine warm-up, and the audition feature kept as a labelled separate thing. |
 | `utils/audioDspEngine.ts` | 290 | **Extended.** `samplesToAudioBuffer` + `playRenderedSpeech` are the single playback path for generated speech; `stopTransformedVoice` releases the analyser and no longer fires `onended`. The Web Audio node graph is gone: the audition transforms its buffer with `transformRecordedVoice` and plays the resulting samples, so playback and export of the reference recording are the same audio (D3 and D4 closed). |
+| `data/voiceCatalogue.ts` | 2,795 | **New.** The 105 recorded voices investigated for the library, with sources, licences, compatibility classes and install recipes. Data only; see `VOICE_LIBRARY.md`. |
+| `utils/optionalVoicePacks.ts` | 132 | **New.** The registry the engine resolves installed voices through. Refuses the two protected ids, so a library voice can never take the place of SLT or BDL. |
+| `utils/voiceLibraryPaths.ts` | 62 | **New.** The id and path guard shared by the server and the tests. |
+| `utils/voiceLibrary.ts` | 232 | **New.** Library client: state, install/remove calls, filters, sorting and the neutral profile an installed voice speaks through. |
+| `components/RecordedVoiceLibrary.tsx` | 452 | **New.** The library UI. |
+| `scripts/install_voice.py` | 330 | **New.** Download → convert → validate → atomic install, with progress for the UI. |
+| `scripts/import_festival_diphone.py` | 245 | **New.** Festival EST diphone database → Vocalis pack, audio copied unchanged. |
 | `utils/voiceTransform.ts` | 676 | **New.** The voice transformation stage: band-limited pitch resampling, five-band timbre correction, correlation-aligned pace change, tone character, resonance sliders under a 3 dB colour budget. Original code; see `PHASE3_VOICE_TRANSFORM.md` for the measurements. |
 | `utils/naturalHumanAudio.ts` | 121 | **Retained, corrected.** Shared context and decode helpers unchanged; licence wording and speaker provenance fixed; each sample names its recorded speaker's pack. |
 | `components/SpeechStudio.tsx` | 866 | **Rebuilt.** Script field, measured word highlighting, render reuse for export, a diagnostics panel, labelled audition. |

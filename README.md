@@ -16,6 +16,8 @@ The recorded-unit engine **is the product**: Speech Studio speaks the text you t
 
 Measured on the current tree by `npm run test:render` (555 checks) over ten passages and a 326-word passage: 573 exact recorded units plus 8 adaptations of the same speaker's own audio, **0 mathematical stand-ins**, 92.5–100 % recorded coverage, 10.1–17.0 % silence, 91–152 words per minute, peak exactly 0.78 with nothing clipped, every letter of the source text covered by a measured word span, and every profile's transformation measured on known signals (pitch lands on its shifted frequency with 99.99 % of the energy in a five-bin window, nothing folds back over Nyquist, and a 1.4× or 0.7× pace change leaves the pitch where it was). The full record, including what is still rough, is [`docs/PHASE2_PIPELINE_CORRECTION.md`](docs/PHASE2_PIPELINE_CORRECTION.md); how the joined units are given one pitch line, and what that is still not, is [`docs/RECORDED_VOICE_PROSODY.md`](docs/RECORDED_VOICE_PROSODY.md); the verified call graph is [`docs/PIPELINE_MAP.md`](docs/PIPELINE_MAP.md); every discrepancy found in a full investigation of the tree is listed in [`docs/APPLICATION_AUDIT.md`](docs/APPLICATION_AUDIT.md).
 
+Beyond the two protected voices there is a **recorded voice library**: 105 human-recorded, non-neural databases were investigated, 18 of them can be installed and spoken today (the other 16 CMU ARCTIC speakers plus the CMU KAL and CSTR RAB diphone databases), and each is installed, auditioned and removed on its own — as recorded, with no transformation. The findings, the licences and the exclusions are in [`docs/VOICE_LIBRARY.md`](docs/VOICE_LIBRARY.md).
+
 A second, smaller path transforms one pre-recorded reference sentence for A/B comparison. It is labelled "Audition source recording" in the interface and it is not what Play or Export use.
 
 ## Complete speech workflow
@@ -52,6 +54,8 @@ npm run lint                # type-check src
 npm run test:engine         # 212 checks: text analysis against the real bundled dictionary
 npm run test:render         # 555 checks: rendered audio, timings, silence, pace, determinism, export,
                             #   and the transformation itself measured on known signals
+npm run test:voices         # 67 checks: the recorded voice library — catalogue, guards, conversion,
+                            #   install/remove, and an optional voice actually speaking
 npm run verify:base-voice   # frozen fingerprints, pack integrity, engine presence, no foreign code or TTS
 npm run audit               # type-check plus the contract check
 ```
