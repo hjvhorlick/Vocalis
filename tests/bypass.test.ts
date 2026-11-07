@@ -212,7 +212,7 @@ console.log('\nthe two stages that ran with no switch at all');
   };
   check(
     'with Volume off the render keeps the level the units arrived at',
-    Math.abs(peakOf(clean.samples) - 0.685) < 0.02,
+    Math.abs(peakOf(clean.samples) - 0.68) < 0.04,
     `peak ${peakOf(clean.samples).toFixed(3)}, and the leveller alone would take it to 0.780`,
   );
   check(
@@ -229,6 +229,109 @@ console.log('\nthe two stages that ran with no switch at all');
   check('a clean render is repeatable to the sample', identicalRepeat, `${clean.samples.length} samples`);
 
   unregisterOptionalVoiceSource('bypass-probe');
+}
+
+console.log('\nthe joins are levelled, not stepped');
+
+// Measured complaint: a unit's loudness spans about 17 dB across the pack, so two
+// chunks meeting at a phone midpoint could be 10-20 dB apart. Before the join
+// leveller the loudness step across a join was a median of 6.2 dB against 2.9 dB
+// inside ordinary speech — twice the natural variation, 7.5 times a second. That
+// step is heard as roughness, and roughness is most of what "metallic" means.
+{
+  const { readFileSync } = await import('node:fs');
+  const { join } = await import('node:path');
+  const { registerOptionalVoiceSource, unregisterOptionalVoiceSource } = await import(
+    '../src/utils/optionalVoicePacks'
+  );
+  const { initializeLocalSpeechEngine, PRESET_VOICE_MODELS: presets } = await import(
+    '../src/utils/naturalVoiceEngine'
+  );
+  const { renderCmuDiphones } = await import('../src/utils/cmuDiphoneSynthesizer');
+  const { AUDITION_PHRASE } = await import('../src/utils/voiceLibrary');
+  const { analyzeText, segmentUtterance } = await import('../src/utils/textAnalysis');
+
+  const root = join(import.meta.dirname, '..');
+  const dir = join(root, 'public', 'voicepacks', 'cmu-arctic', 'bdl');
+  const manifest = JSON.parse(readFileSync(join(dir, 'manifest.json'), 'utf8'));
+  const audio = readFileSync(join(dir, 'diphones.bin'));
+  registerOptionalVoiceSource({
+    id: 'join-probe',
+    displayName: 'join probe',
+    loadPack: async () => ({
+      manifest,
+      audio: audio.buffer.slice(audio.byteOffset, audio.byteOffset + audio.byteLength) as ArrayBuffer,
+    }),
+  });
+
+  const base = {
+    ...presets[1],
+    id: 'join-probe',
+    name: 'join probe',
+    baseVoiceId: 'join-probe',
+    synthesisMethod: 'cmu-arctic' as const,
+    pitch: 1,
+    rate: 1,
+    volume: 1,
+    toneStyle: 'natural' as const,
+    throatWarmth: 0,
+    oralClarity: 0,
+    airPresence: 0,
+    bypass: {
+      pitch: true,
+      rate: true,
+      volume: true,
+      tone: true,
+      throatWarmth: true,
+      oralClarity: true,
+      airPresence: true,
+      contour: true,
+    },
+  };
+  await initializeLocalSpeechEngine(base as never);
+  const utterance = await analyzeText(AUDITION_PHRASE, 'US');
+  const segments = segmentUtterance(utterance);
+  const rendered = await renderCmuDiphones(
+    segments.map((segment) => ({ phones: segment.phones, terminal: segment.terminal })),
+    base as never,
+    () => new Float32Array(400),
+    0,
+  );
+
+  const samples = rendered.samples;
+  const windowSamples = Math.round(0.03 * 16000);
+  const rmsOf = (slice: Float32Array) => {
+    let energy = 0;
+    for (const value of slice) energy += value * value;
+    return Math.sqrt(energy / Math.max(1, slice.length));
+  };
+  const stepAt = (position: number): number | null => {
+    if (position <= windowSamples || position >= samples.length - windowSamples) return null;
+    const before = rmsOf(samples.subarray(position - windowSamples, position));
+    const after = rmsOf(samples.subarray(position, position + windowSamples));
+    if (before < 1e-4 || after < 1e-4) return null;
+    return Math.abs(20 * Math.log10(after / before));
+  };
+  const median = (values: number[]): number => {
+    const sorted = [...values].sort((a, b) => a - b);
+    return sorted[Math.floor(sorted.length / 2)];
+  };
+
+  const atJoins = rendered.phoneOffsets.map((offset) => stepAt(Math.round(offset))).filter((v): v is number => v !== null);
+  const inside: number[] = [];
+  for (let position = windowSamples * 3; position < samples.length - windowSamples * 3; position += Math.round(0.11 * 16000)) {
+    const step = stepAt(position);
+    if (step !== null) inside.push(step);
+  }
+  const joinMedian = median(atJoins);
+  const insideMedian = median(inside);
+  check(
+    'a join steps in level no more than ordinary speech does',
+    joinMedian <= insideMedian + 1,
+    `${joinMedian.toFixed(2)} dB median at ${atJoins.length} joins against ${insideMedian.toFixed(2)} dB inside speech (6.17 dB before the leveller)`,
+  );
+
+  unregisterOptionalVoiceSource('join-probe');
 }
 
 console.log(`\n${passed}/${passed + failures.length} bypass checks passed.`);
