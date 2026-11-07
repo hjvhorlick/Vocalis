@@ -396,6 +396,67 @@ const SILENCE_FLOOR = 0.02;
  * Preview and export both consume the result of this function, so what you hear
  * is byte for byte what you download.
  */
+/**
+ * The three resonance controls, as three peaking filters over the finished render.
+ *
+ * They were exposed in the interface, wired to sliders in two components, and read
+ * by exactly one function: `buildDspGraph` in `audioDspEngine.ts`, which is the
+ * audition path - the one that plays an original recording back. Nothing on the
+ * generated-speech path ever read them, so at +10 dB and at -10 dB the render came
+ * out byte-identical, which is a control that reaches nothing while its slider
+ * moves and its number changes. Measured across the whole range before this
+ * existed: `throatWarmth`, `oralClarity` and `airPresence` all produced samples
+ * equal to the neutral render, sample for sample.
+ *
+ * The frequencies, Q values and gains are the ones the audition path already uses
+ * (450 Hz at Q 1.2, 1800 Hz at Q 1.4, 4200 Hz at Q 1.0), so the two paths now
+ * describe the same voice rather than one describing a voice and the other
+ * describing nothing. The coefficients are the standard peaking-EQ bilinear
+ * transform, written out here.
+ */
+function peakingFilter(
+  samples: Float32Array,
+  sampleRate: number,
+  frequency: number,
+  q: number,
+  gainDb: number,
+): Float32Array {
+  if (!Number.isFinite(gainDb) || Math.abs(gainDb) < 0.01) return samples;
+  const amplitude = 10 ** (Math.max(-24, Math.min(24, gainDb)) / 40);
+  const w0 = (2 * Math.PI * Math.max(20, Math.min(sampleRate / 2 - 100, frequency))) / sampleRate;
+  const cosine = Math.cos(w0);
+  const alpha = Math.sin(w0) / (2 * Math.max(0.1, q));
+  const a0 = 1 + alpha / amplitude;
+  const b0 = (1 + alpha * amplitude) / a0;
+  const b1 = (-2 * cosine) / a0;
+  const b2 = (1 - alpha * amplitude) / a0;
+  const a1 = (-2 * cosine) / a0;
+  const a2 = (1 - alpha / amplitude) / a0;
+  const output = new Float32Array(samples.length);
+  let x1 = 0;
+  let x2 = 0;
+  let y1 = 0;
+  let y2 = 0;
+  for (let index = 0; index < samples.length; index += 1) {
+    const x0 = samples[index];
+    const y0 = b0 * x0 + b1 * x1 + b2 * x2 - a1 * y1 - a2 * y2;
+    output[index] = y0;
+    x2 = x1;
+    x1 = x0;
+    y2 = y1;
+    y1 = y0;
+  }
+  return output;
+}
+
+/** Throat, mouth and air: the three bands, in the order the audition path chains them. */
+export function applyResonance(samples: Float32Array, model: VoiceModelConfig): Float32Array {
+  const sampleRate = SAMPLE_RATE;
+  let out = peakingFilter(samples, sampleRate, 450, 1.2, model.throatWarmth ?? 0);
+  out = peakingFilter(out, sampleRate, 1800, 1.4, model.oralClarity ?? 0);
+  return peakingFilter(out, sampleRate, 4200, 1.0, model.airPresence ?? 0);
+}
+
 export function normaliseSamples(samples: Float32Array, volume: number): Float32Array {
   let peak = 0;
   for (let i = 0; i < samples.length; i += 1) peak = Math.max(peak, Math.abs(samples[i]));
@@ -592,7 +653,9 @@ function emptyResult(method: SynthesisMethod, utterance: Utterance): SynthesisRe
  */
 export async function synthesizeText(text: string, model: VoiceModelConfig): Promise<SynthesisResult> {
   const method: SynthesisMethod = model.synthesisMethod ?? 'cmu-arctic';
-  const utterance = await analyzeText(text, model.accent);
+  // A reference render speaks the recordings as they are, so it also reads the
+  // text as they would: no regional rules over a US corpus.
+  const utterance = await analyzeText(text, model.referenceRaw ? 'US' : model.accent);
   const segments = segmentUtterance(utterance);
   const prosody = buildWordProsody(utterance, segments);
 
@@ -703,7 +766,14 @@ export async function synthesizeText(text: string, model: VoiceModelConfig): Pro
 
   // When the units were re-timed on their own pitch marks, the pitch and the
   // tempo are already in the audio: doing either again here would do it twice.
-  const processed = method === 'cmu-arctic' ? processCmuVoice(raw, model, timedFromPlan) : raw;
+  // Reference mode is the recorded units and nothing else: no pitch, no tempo, no
+  // character, no resonance. Everything a listener can switch on is off, so what
+  // comes out is what the corpus contains.
+  const processed = model.referenceRaw
+    ? raw
+    : method === 'cmu-arctic'
+      ? applyResonance(processCmuVoice(raw, model, timedFromPlan), model)
+      : applyResonance(raw, model);
   const scale = raw.length ? processed.length / raw.length : 1;
   const samples = normaliseSamples(processed, model.volume);
   const duration = samples.length / SAMPLE_RATE;

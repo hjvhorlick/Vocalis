@@ -349,7 +349,21 @@ const marcus = PRESET_VOICE_MODELS.find((model) => model.id === 'titan-marcus');
 if (!aria || !marcus) throw new Error('the shipped presets are missing');
 
 function voice(overrides: Partial<VoiceModelConfig> = {}): VoiceModelConfig {
-  return { ...aria, pitch: 1, rate: 1, volume: 1, toneStyle: 'natural', ...overrides };
+  // narrator-aria ships with a little low-band warmth and mid-band clarity in its
+  // profile. Those three fields are three peaking filters in the render path now, so
+  // a fixture that means "neutral" has to say so explicitly - otherwise every check
+  // below measures a voice that is quietly equalised by 3, 2 and 1 dB.
+  return {
+    ...aria,
+    pitch: 1,
+    rate: 1,
+    volume: 1,
+    toneStyle: 'natural',
+    throatWarmth: 0,
+    oralClarity: 0,
+    airPresence: 0,
+    ...overrides,
+  };
 }
 
 /** Passages that must all be spoken from recorded units with nothing invented. */
@@ -582,6 +596,200 @@ function checkRender(
   between(`${label}: pace while speaking`, speakingWpm, 125, 280, ' wpm');
 
   return metrics;
+}
+
+// --- every control reaches the audio ---------------------------------------
+// A slider that moves and changes nothing is worse than no slider: it tells the
+// person using it that their voice changed. Three of them did exactly that.
+// `throatWarmth`, `oralClarity` and `airPresence` were declared on the voice
+// profile, wired to sliders in two components, and read by exactly one function -
+// `buildDspGraph` in audioDspEngine.ts, which is the audition path, the one that
+// plays an original recording back. Nothing on the generated-speech path read them,
+// so at +10 dB and at -10 dB the render came out byte-identical to the neutral one,
+// sample for sample, while the sliders moved and the numbers next to them changed.
+// They are three peaking filters in the render path now, at the frequencies and Q
+// values the audition path already used, and this block is why they stay there.
+const CONTROL_TEXT = 'The car park is far from the station, so we walked.';
+
+function differsFrom(reference: SynthesisResult, result: SynthesisResult): boolean {
+  if (result.samples.length !== reference.samples.length) return true;
+  for (let index = 0; index < result.samples.length; index += 1) {
+    if (Math.abs(result.samples[index] - reference.samples[index]) > 1e-9) return true;
+  }
+  return false;
+}
+
+/**
+ * The share of a render's energy above a cutoff, from a coarse DFT over the whole
+ * signal: the same measurement the consonant-clarity numbers in the docs use, so a
+ * resonance control can be checked against where it says it works.
+ */
+function spectralShareAbove(samples: Float32Array, sampleRate: number, cutoff: number): number {
+  const step = Math.max(1, Math.floor(samples.length / 24000));
+  const n = Math.floor(samples.length / step);
+  if (n < 64) return 0;
+  const frequencies = [200, 300, 450, 650, 900, 1250, 1700, 2300, 3000, 3900, 5000, 6200, 7400];
+  let low = 0;
+  let high = 0;
+  for (const frequency of frequencies) {
+    let real = 0;
+    let imaginary = 0;
+    for (let index = 0; index < n; index += 1) {
+      const value = samples[index * step];
+      const angle = (2 * Math.PI * frequency * index) / (sampleRate / step);
+      real += value * Math.cos(angle);
+      imaginary -= value * Math.sin(angle);
+    }
+    const energy = real * real + imaginary * imaginary;
+    if (frequency >= cutoff) high += energy;
+    else low += energy;
+  }
+  return high / Math.max(1e-12, high + low);
+}
+
+const controlNeutral = await renderSpeech(CONTROL_TEXT, voice());
+const CONTROLS: Array<[string, Partial<VoiceModelConfig>]> = [
+  ['pitch down to 0.72x', { pitch: 0.72 }],
+  ['pitch up to 1.4x', { pitch: 1.4 }],
+  ['rate down to 0.7x', { rate: 0.7 }],
+  ['rate up to 1.4x', { rate: 1.4 }],
+  ['volume down to 0.35', { volume: 0.35 }],
+  ['the deep character', { toneStyle: 'deep' }],
+  ['the energetic character', { toneStyle: 'energetic' }],
+  ['the whisper character', { toneStyle: 'whisper' }],
+  ['the radio character', { toneStyle: 'radio' }],
+  ['the robot character', { toneStyle: 'robot' }],
+  ['a British accent', { accent: 'UK' }],
+  ['an Australian accent', { accent: 'AU' }],
+  ['throat warmth +10 dB', { throatWarmth: 10 }],
+  ['throat warmth -10 dB', { throatWarmth: -10 }],
+  ['oral clarity +10 dB', { oralClarity: 10 }],
+  ['oral clarity -10 dB', { oralClarity: -10 }],
+  ['air presence +10 dB', { airPresence: 10 }],
+  ['air presence -10 dB', { airPresence: -10 }],
+];
+for (const [name, overrides] of CONTROLS) {
+  const result = await renderSpeech(CONTROL_TEXT, voice(overrides));
+  check(`${name} changes the generated audio`, differsFrom(controlNeutral, result),
+    'the render was byte-identical to the neutral one, so this control reaches nothing');
+  releaseSynthesis(result);
+}
+releaseSynthesis(controlNeutral);
+
+// And each resonance band has to move the energy where it says it does, or it is a
+// control that reaches the audio without reaching the voice.
+{
+  const neutral = await renderSpeech(CONTROL_TEXT, voice());
+  const share = (result: SynthesisResult, cutoff: number) => spectralShareAbove(result.samples, result.sampleRate, cutoff);
+  const warm = await renderSpeech(CONTROL_TEXT, voice({ throatWarmth: 10 }));
+  const cold = await renderSpeech(CONTROL_TEXT, voice({ throatWarmth: -10 }));
+  check('throat warmth +10 dB puts energy into the low band',
+    share(neutral, 700) > share(warm, 700),
+    `${(share(warm, 700) * 100).toFixed(2)}% above 700 Hz against ${(share(neutral, 700) * 100).toFixed(2)}% neutral`);
+  check('throat warmth -10 dB takes energy out of the low band',
+    share(neutral, 700) < share(cold, 700),
+    `${(share(cold, 700) * 100).toFixed(2)}% above 700 Hz against ${(share(neutral, 700) * 100).toFixed(2)}% neutral`);
+  const clear = await renderSpeech(CONTROL_TEXT, voice({ oralClarity: 10 }));
+  const dull = await renderSpeech(CONTROL_TEXT, voice({ oralClarity: -10 }));
+  check('oral clarity +10 dB puts energy into the middle band',
+    share(neutral, 2500) < share(clear, 2500) || share(neutral, 700) > share(clear, 700),
+    'neither the share above 2.5 kHz nor the share above 700 Hz moved the way a 1.8 kHz boost should');
+  check('oral clarity -10 dB takes energy out of the middle band',
+    share(neutral, 2500) > share(dull, 2500) || share(neutral, 700) < share(dull, 700),
+    'neither share moved the way a 1.8 kHz cut should');
+  const airy = await renderSpeech(CONTROL_TEXT, voice({ airPresence: 10 }));
+  const dullAir = await renderSpeech(CONTROL_TEXT, voice({ airPresence: -10 }));
+  check('air presence +10 dB puts energy into the top band', share(airy, 2500) > share(neutral, 2500),
+    `${(share(airy, 2500) * 100).toFixed(2)}% above 2.5 kHz against ${(share(neutral, 2500) * 100).toFixed(2)}% neutral`);
+  check('air presence -10 dB takes energy out of the top band', share(dullAir, 2500) < share(neutral, 2500),
+    `${(share(dullAir, 2500) * 100).toFixed(2)}% above 2.5 kHz against ${(share(neutral, 2500) * 100).toFixed(2)}% neutral`);
+  for (const result of [neutral, warm, cold, clear, dull, airy, dullAir]) releaseSynthesis(result);
+}
+
+// --- the reference: recorded units with nothing applied ---------------------
+// Asked for directly, and it is the honest way to judge every adjustment in the
+// application: the same words, assembled from the same licensed units, at the
+// lengths they were recorded at, with no plan, no re-timing, no pitch, no pace, no
+// character, no resonance and no regional rules. It is a labelled reference beside
+// the product and never the default, which is what finding A1 in
+// docs/APPLICATION_AUDIT.md is about: the product quietly becoming playback of a
+// recording is a defect, the product offering playback of a recording as a labelled
+// reference is a feature.
+{
+  const planned = await renderSpeech(CONTROL_TEXT, voice());
+  const reference = await renderSpeech(CONTROL_TEXT, voice({ referenceRaw: true }));
+  const everything = await renderSpeech(CONTROL_TEXT, voice({
+    referenceRaw: true,
+    pitch: 0.72,
+    rate: 1.4,
+    toneStyle: 'robot',
+    accent: 'UK',
+    throatWarmth: 10,
+    oralClarity: -6,
+    airPresence: 6,
+  }));
+  eq('the reference says plainly that it was not timed from a plan', reference.diagnostics.timedFromPlan, false);
+  eq('the planned render says plainly that it was', planned.diagnostics.timedFromPlan, true);
+  check('the reference bypasses every adjustment', !differsFrom(reference, everything),
+    'pitch, rate, character, accent or resonance still reached the audio in reference mode');
+  check('the reference still speaks every word', reference.diagnostics.words === planned.diagnostics.words,
+    `${reference.diagnostics.words} words against ${planned.diagnostics.words}`);
+  eq('the reference invents no phones', reference.diagnostics.fallbackPhones, 0);
+  check('the reference is longer than the planned render of the same words',
+    reference.duration > planned.duration,
+    `${reference.duration.toFixed(2)}s against ${planned.duration.toFixed(2)}s: at recorded lengths every phone lasts about as long as every other`);
+
+  // It is the recording, not a resynthesis of it: one recorded unit must appear in
+  // the output verbatim, to within the single gain the render is normalised by.
+  const utterance = await analyzeText(CONTROL_TEXT, 'US');
+  const packPhoneOf = (phone: string) => {
+    const bare = phone.toUpperCase().replace(/[012]$/, '');
+    return (bare === 'AX' ? 'AH' : bare).toLowerCase();
+  };
+  const key = `${packPhoneOf(utterance.phones[0].phone)}|${packPhoneOf(utterance.phones[1].phone)}`;
+  const dir = join(ROOT, 'public', 'voicepacks', 'cmu-arctic', 'slt');
+  const manifest = JSON.parse(readFileSync(join(dir, 'manifest.v2.json'), 'utf-8')) as ManifestV2;
+  const blob = readFileSync(join(dir, 'diphones.bin'));
+  const pcm = new Int16Array(blob.buffer, blob.byteOffset, blob.byteLength / 2);
+  const unit = manifest.units[key];
+  check(`the reference sentence opens on a unit the pack contains (${key})`, unit !== undefined);
+  if (unit) {
+    const recorded = new Float32Array(unit.length);
+    for (let index = 0; index < unit.length; index += 1) recorded[index] = pcm[unit.offset / 2 + index] / 32768;
+    // The first and last few milliseconds of a unit are crossfaded into its
+    // neighbours, so only the interior can match verbatim: scored over the whole
+    // unit, a genuine match loses to a stretch of near-silence.
+    const margin = Math.min(240, Math.floor(recorded.length * 0.15));
+    const from = margin;
+    const to = recorded.length - margin;
+    const limit = Math.min(reference.samples.length - recorded.length, Math.round(1.5 * reference.sampleRate));
+    let bestError = Number.POSITIVE_INFINITY;
+    let bestAt = -1;
+    let bestGain = 0;
+    let unitEnergy = 0;
+    for (let index = from; index < to; index += 1) unitEnergy += recorded[index] * recorded[index];
+    for (let at = 0; at <= limit; at += 1) {
+      let dot = 0;
+      for (let index = from; index < to; index += 1) {
+        dot += reference.samples[at + index] * recorded[index];
+      }
+      const gain = unitEnergy > 0 ? dot / unitEnergy : 0;
+      let error = 0;
+      for (let index = from; index < to; index += 1) {
+        error += (reference.samples[at + index] - gain * recorded[index]) ** 2;
+      }
+      if (error < bestError) {
+        bestError = error;
+        bestAt = at;
+        bestGain = gain;
+      }
+    }
+    const relative = Math.sqrt(bestError / Math.max(1e-12, unitEnergy));
+    check('the reference contains the recorded unit verbatim, to within one output gain',
+      relative < 0.02 && bestGain > 0.2,
+      `interior residual ${(relative * 100).toFixed(2)}% of the unit's energy at ${(bestAt / reference.sampleRate * 1000).toFixed(0)} ms, gain ${bestGain.toFixed(3)} - the reference is not the recording`);
+  }
+  for (const result of [planned, reference, everything]) releaseSynthesis(result);
 }
 
 // --- the human readings ----------------------------------------------------

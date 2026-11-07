@@ -313,3 +313,84 @@ per second, and silence as a share of the time between the first peak and the la
    between sentences, and the v1 selection bias toward 160 ms units is what sets it. Measured, the
    result is inside the human range (longest inner run 11–79 ms against 11–50 ms), so this is a
    watch item rather than a defect.
+
+---
+
+## 7. The reference, and every control measured against it
+
+The duration model is an adjustment to a recording, and the person listening to the result said
+it made the voice worse than the recording it started from. That is a fair thing to say and there
+was no way to check it inside the application: every render went through the plan, the re-timing,
+the pitch work and the tone character at once, so nothing isolated the recording. There is now.
+
+### `referenceRaw`: the corpus with nothing applied
+
+`VoiceModelConfig.referenceRaw` (`naturalVoiceEngine.ts:84`) makes a render take every adjustment
+out of the chain:
+
+| Stage | Reference mode |
+| --- | --- |
+| `analyzeText(text, accent)` | forced to `'US'`, so no regional rule touches the text |
+| `planDurations` | not called — `renderCmuDiphones` builds no plan (`cmuDiphoneSynthesizer.ts:780`) |
+| `joinRetimed` / `synthesiseUnit` / `joinInPhase` | not called — the units are crossfaded at the lengths they were recorded at |
+| `processCmuVoice` (pitch resample, WSOLA, `applyStyle`) | skipped whole (`phonemeSynthesizer.ts:772`) |
+| `applyResonance` | skipped, so no profile EQ survives into it |
+| `normaliseSamples` | still applied — one gain over the whole file, so it can be compared at the same loudness |
+
+Speech Studio exposes it as a checkbox under the pitch and pace sliders, labelled "Reference:
+recorded units, unadjusted", and it is in that component's render cache key, so ticking it cannot
+be served a cached preview of the adjusted voice. It is never a default and no preset sets it:
+finding A1 in `APPLICATION_AUDIT.md` is that the product must not quietly become playback of a
+recording, and a labelled reference beside the product is the opposite of that.
+
+It is the recording, and that is checked rather than claimed. The suite takes the first joint of
+a sentence, reads that unit's samples out of `diphones.bin`, and searches the reference render for
+the offset and single gain that reproduce them. Matched over the unit's interior — its first and
+last few milliseconds are crossfaded into its neighbours — the residual is **0.0000 %** of the
+unit's energy at gain **1.2001**, for both speakers. One gain, applied once, is the normaliser.
+
+### What the reference costs, in seconds
+
+Same text, same units, same speaker. "Human" is the intact CMU ARCTIC recording where this
+repository has one.
+
+| Sentence | Speaker | Human | Reference | Engine | Reference ÷ engine | Reference ÷ human |
+| --- | --- | --- | --- | --- | --- | --- |
+| a0001 "Author of the danger trail…" | slt | 3.35 s | 4.94 s | 3.21 s | 1.54× | 1.47× |
+| a0001 | bdl | 3.24 s | 4.75 s | 2.92 s | 1.63× | 1.47× |
+| a0003 "For the twentieth time…" | slt | 3.21 s | 5.33 s | 3.56 s | 1.50× | 1.66× |
+| a0003 | bdl | 3.37 s | 5.42 s | 3.18 s | 1.70× | 1.61× |
+| "The quick brown fox… open field." | slt | — | 8.06 s | 5.40 s | 1.49× | — |
+| same | bdl | — | 7.96 s | 4.90 s | 1.62× | — |
+
+The reference is roughly half as long again as the engine on every sentence, and 1.5–1.7× the
+human reading of the same words. That is the drag this document exists to remove, heard on its
+own: at recorded lengths a reduced vowel in a function word lasts as long as a stressed nucleus,
+because the corpus has no reason to shorten one for a sentence it was never read in. It is not a
+better or worse voice than the engine's, it is the same voice with no rhythm imposed on it, which
+is what makes it a usable reference.
+
+### The controls that reach the audio, and how far
+
+The full table is in `APPLICATION_AUDIT.md` under "Status after the control audit"; what belongs
+here is the part the duration model is responsible for. `pitch` and `rate` under-deliver at their
+extremes, and the reason is this model's own bounds:
+
+| Asked | Delivered | Why |
+| --- | --- | --- |
+| `pitch` 0.50 | 0.54× (97.6 Hz against 179.8) | a half phone cannot be stretched past `MAX_STRETCH_RATIO` 1.35 without losing the recording |
+| `pitch` 1.75 | 1.65× (296.3 Hz) | below `TRUNCATE_BELOW_RATIO` 0.4 a voiced half is cut, and cutting an unvoiced one deletes the consonant |
+| `rate` 0.60 | 1.34× slower, not 1.67× | `MIN_SECONDS_BY_CLASS` — a fricative keeps 60 ms, a stop 45 ms, whatever the plan asks for |
+| `rate` 1.50 | 0.77×, not 0.67× | the same floors, from the other side |
+
+Those bounds were fitted against the human readings in §3 and they are why the suite's rate
+proportionality check is [0.79, 0.86] and [1.20, 1.26] rather than exact. A control that cannot
+reach its label is recorded here with the number it does reach, which is the difference between a
+limitation and a lie.
+
+Three controls were lies until this pass: `throatWarmth`, `oralClarity` and `airPresence` were
+read only by the audition path and produced output byte-identical to neutral at ±10 dB. They are
+three peaking biquads in the render path now — 450 Hz Q 1.2, 1800 Hz Q 1.4, 4200 Hz Q 1.0, the
+bands the audition path already used — and the suite checks both that each one changes the samples
+and that each one moves energy in the band its name claims. `accent: 'Global'` still reaches
+nothing and is documented as a region-filter label, not a synthesis setting.

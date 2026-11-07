@@ -60,6 +60,7 @@ function renderKey(script: string, model: VoiceModelConfig): string {
     model.throatWarmth ?? 0,
     model.oralClarity ?? 0,
     model.airPresence ?? 0,
+    model.referenceRaw ?? false,
   ]);
 }
 
@@ -560,6 +561,41 @@ export const SpeechStudio: React.FC<SpeechStudioProps> = ({
             <span className="text-[10px] text-slate-500">Vocalis Engine</span>
           </div>
         </div>
+
+        {/* The source material on its own, for judging what the adjustments are worth */}
+        <div className="w-full pt-3 border-t border-slate-800/80">
+          <label className="flex items-start gap-3 cursor-pointer group">
+            <input
+              type="checkbox"
+              checked={activeModel.referenceRaw === true}
+              onChange={(event) => {
+                if (onUpdateActiveModel) {
+                  onUpdateActiveModel({ ...activeModel, referenceRaw: event.target.checked });
+                }
+              }}
+              className="mt-0.5 w-4 h-4 accent-amber-500 rounded cursor-pointer"
+              title="Play the recorded units with nothing applied"
+            />
+            <span className="space-y-1">
+              <span className="block text-[11px] font-medium text-slate-300 group-hover:text-white">
+                Reference: recorded units, unadjusted
+                {activeModel.referenceRaw === true && (
+                  <span className="ml-2 text-amber-400 font-mono text-[10px]">
+                    ON &mdash; every adjustment bypassed
+                  </span>
+                )}
+              </span>
+              <span className="block text-[10px] text-slate-500 leading-relaxed">
+                The licensed CMU ARCTIC units at the lengths they were recorded at, joined by
+                crossfade: no duration plan, no re-timing on the voice cycle, no pitch, pace,
+                character or resonance, and no regional rules over the text. This is what the engine
+                starts from, and it is here so you can hear what each adjustment is worth. It is not
+                the product voice &mdash; at recorded lengths every phone lasts about as long as
+                every other, which is the flat delivery the duration model exists to fix.
+              </span>
+            </span>
+          </label>
+        </div>
       </div>
 
       {/* Main Studio Console */}
@@ -571,7 +607,11 @@ export const SpeechStudio: React.FC<SpeechStudioProps> = ({
           </div>
           <span className="text-xs text-slate-400 font-mono">
             {wordCount} word{wordCount === 1 ? '' : 's'} &bull;{' '}
-            {activeModel.synthesisMethod === 'formant' ? 'experimental formant path' : 'recorded CMU ARCTIC units'}
+            {activeModel.synthesisMethod === 'formant'
+              ? 'experimental formant path'
+              : activeModel.referenceRaw === true
+                ? 'recorded CMU ARCTIC units, unadjusted reference'
+                : 'recorded CMU ARCTIC units'}
           </span>
         </div>
 

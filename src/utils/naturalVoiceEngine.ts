@@ -67,6 +67,21 @@ export interface VoiceModelConfig {
   baseVoiceId?: 'slt' | 'bdl';
   /** 'cmu-arctic' is the product; 'formant' is the preserved experiment. */
   synthesisMethod?: 'cmu-arctic' | 'formant';
+  /**
+   * Hear the source material instead of the product.
+   *
+   * True assembles the recorded units at the lengths they were recorded at, joins
+   * them by crossfade, and applies nothing else: no duration plan, no pitch-synchronous
+   * re-timing, no pitch, tempo, character or resonance. It is a reference for
+   * listening to what the engine starts from and for judging what the adjustments
+   * are worth, and the app labels it as that wherever it can be switched on. It is
+   * never the default, because a voice that only plays units at recorded length
+   * cannot speak a sentence a person wrote - that is the flat 134-143 ms per phone
+   * that reads as a drag, and it is what `docs/APPLICATION_AUDIT.md` finding A1 is
+   * about. A labelled reference beside the product is honest; the product quietly
+   * becoming one is not.
+   */
+  referenceRaw?: boolean;
   throatWarmth?: number; // low-band resonance, -10 to +10 dB
   oralClarity?: number; // mid-band resonance, -10 to +10 dB
   airPresence?: number; // high-band resonance, -10 to +10 dB

@@ -775,7 +775,9 @@ export async function renderCmuDiphones(
   // Without the derived index there is nothing to plan against and the units are
   // played at the length they were recorded at, exactly as before.
   const { pitch: pitchFactor, rate: rateFactor } = factorsFor(model);
-  const plan = pack.derived && Object.keys(pack.intrinsic).length
+  // In reference mode there is no plan at all: every unit plays at the length it
+  // was recorded at, which is the `plan === null` path below.
+  const plan = !model.referenceRaw && pack.derived && Object.keys(pack.intrinsic).length
     ? planDurations(segments, pack.intrinsic, { rate: rateFactor })
     : null;
   diagnostics.plannedSeconds = plan ? plan.totalSeconds : 0;

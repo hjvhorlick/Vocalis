@@ -77,6 +77,43 @@ path 8 dB quieter than the default. See `PHASE2_PIPELINE_CORRECTION.md` §4.
 
 ---
 
+## Status after the control audit (2026-11-07)
+
+The report from the person using the application was that the base voice now sounds worse than
+the recordings it is built from, and that the settings "either do not work or over-compensate".
+Both halves were measured rather than argued with: every control the UI exposes was rendered at
+its extremes on the same text and compared against a neutral render **sample for sample**, and
+pitch was checked with a median-F0 autocorrelation over the loudest voiced 40 ms windows instead
+of being trusted from its label.
+
+| Control | Reaches generated speech | Measured on one sentence (neutral 3.21 s, peak 0.780, median F0 179.8 Hz) |
+| --- | --- | --- |
+| `pitch` 0.50–1.75 | yes | median F0 97.6 → 296.3 Hz, monotonic |
+| ↳ under-delivers | partly | 0.50 asks for a halving and gets 0.54×; 1.75 gets 1.65× |
+| `rate` 0.60–1.50 | yes | 3.21 s → 4.30 s and → 2.47 s |
+| ↳ bounded | partly | 0.60 delivers 1.34× slower (asked 1.67×); 1.50 delivers 0.77× (asked 0.67×) |
+| `volume` | yes | 0.20 → peak 0.156, −14.0 dB rms |
+| `toneStyle` | yes | deep 1.05× / 146 Hz; energetic 0.94× / 170 Hz; whisper air 0.1 → 0.5 %; radio air 0.1 → 3.8 %; robot −2.0 dB rms |
+| `accent` UK / AU | yes, where rules apply | "car park … station" 3.16 → 2.97 s; identical on text carrying no regional words |
+| `accent` `Global` | **no** | identical to `US` in all three test sentences (see A3 and D11) |
+| `throatWarmth` | **no → yes** | was byte-identical to neutral at +10 and −10 dB; now 450 Hz, Q 1.2 |
+| `oralClarity` | **no → yes** | was byte-identical; now 1800 Hz, Q 1.4 |
+| `airPresence` | **no → yes** | was byte-identical; now 4200 Hz, Q 1.0 — energy above 2.5 kHz 0.1 % → 0.3 % at +10 dB, → 0.0 % at −10 dB |
+| `referenceRaw` | new | bypasses all of the above: 4.94 s against 3.21 s for the same words, and every adjustment set at once still renders byte-identically |
+
+**Resolved**
+
+| ID | How |
+| --- | --- |
+| D11 | `throatWarmth`, `oralClarity` and `airPresence` are now three peaking biquads in the render path (`peakingFilter` / `applyResonance`, `phonemeSynthesizer.ts:417` / `:453`), at the frequencies and Q values the audition path already used, gains clamped ±24 dB and pass-through below 0.01 dB so a profile that leaves them at zero is untouched. 32 checks were added to `tests/renderSpeech.test.ts`: one per control position asserting the output differs from neutral, six asserting each band moves energy the direction its label claims, and six on the reference mode. |
+| A3 (partly) | A labelled reference makes the comparison available in the product itself: `model.referenceRaw` renders the recorded units at their recorded lengths with no plan, no re-timing, no pitch, pace, character, resonance or regional rules. Speech Studio exposes it as a checkbox under the pitch and pace sliders and lists it in the render cache key; it is never a default, which is what A1 forbids. The suite locates one recorded unit inside a reference render and matches its interior against the pack bytes: residual **0.0000 %** of the unit's energy at a single output gain of **1.2001**. |
+
+`accent: 'Global'` is still a no-op and stays one: it is not a slider, it is a region-filter
+label in the voice list ("🌐 Global / Sci-Fi") used by one preset, `unit-7-droid`. It is recorded
+here so nobody wires a control to it and expects sound.
+
+---
+
 ## A. P0 — the base voice is disconnected from the UI
 
 **A1. The recorded-unit TTS engine is dead code.**
@@ -365,6 +402,20 @@ become, a new base voice.
 formants, cannot change vocal-tract length, and at +10 dB on three bands will clip material
 that is already peak-normalised. The labels promise articulatory modelling that is not there.
 
+**D11. On generated speech, those three controls reached nothing at all.** The audit found the
+labels dishonest; it missed that the bands were not in the path. `throatWarmth`, `oralClarity`
+and `airPresence` were read by exactly one function in the whole tree — `buildDspGraph` in
+`audioDspEngine.ts`, which serves the *audition*, the feature that plays an original recording
+back for comparison. Generated speech never went through it. So the sliders in
+`VoiceManipulator.tsx` moved, the dB numbers beside them changed, the values were saved into the
+profile and into `SpeechStudio.tsx`'s render cache key, and the render that came out was
+**byte-identical** to the neutral one at +10 dB and at −10 dB. Three controls out of the twelve
+the application exposes did nothing on the only path that produces the product. This is the
+"settings do not work" half of the user report, and it is fixed as recorded in the status table
+above; the "over-compensate" half is real too and is measured there rather than denied — `pitch`
+and `rate` under-deliver at their extremes because a unit can only be stretched 1.35× or cut to
+0.4× of its recorded length before it stops sounding like the recording.
+
 ---
 
 ## E. P2 — dead code and product identity
@@ -583,6 +634,7 @@ Findings as originally measured. For what has since been fixed, read the status 
 | D8 | P1 | 14.6 MB of voice data never preloaded, no progress UI | lazy fetch on first render |
 | D9 | P2 | Mic blob mistyped; user audio silently becomes the base sample | `type: 'audio/wav'` on webm/opus |
 | D10 | P2 | "Formant" sliders are fixed EQ bands | 450/1800/4200 Hz peaking |
+| D11 | P0 | Three voice-profile controls were byte-identical no-ops on generated speech | read only by `buildDspGraph`, the audition path; fixed by `applyResonance` |
 | E1 | P2 | 3,962 of 7,520 lines unreachable (52.7%) | import-graph walk |
 | E2 | P3 | Metadata advertises the dead pitch trainer | title + `MICROPHONE_PITCH_ANALYSIS` |
 | E3 | P3 | `clsx`, `tailwind-merge` unused; confetti dead-only | 0 references |
