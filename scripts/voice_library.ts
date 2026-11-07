@@ -283,14 +283,14 @@ function runInstaller(voice: VoiceCandidate, archiveOverride?: string): Promise<
         console.log(`  ✓ installed: ${info?.units ?? '?'} recorded units, ${humanBytes(info?.bytes)}`);
       } else {
         // The installer explains itself; print its explanation, not just "failed".
+        // The installer's last line is the explanation; never invent one.
+        const lines = stderr
+          .split('\n')
+          .map((line) => line.trim())
+          .filter(Boolean);
         const explanation =
-          stderr
-            .split('\n')
-            .map((line) => line.trim())
-            .filter((line) => line && !line.startsWith('install failed:'))
-            .slice(-4)
-            .join(' ') ||
-          (lastLine().includes('failed:') ? lastLine().replace(/.*failed: /, '') : 'unknown error');
+          (lines.length ? lines[lines.length - 1].replace(/^install failed:\s*/, '') : '') ||
+          (lastLine().includes('failed:') ? lastLine().replace(/.*failed: /, '') : 'The installer failed without saying why.');
         console.error(`  ✗ ${explanation}`);
       }
       resolvePromise(code ?? 1);

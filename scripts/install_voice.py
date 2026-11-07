@@ -239,11 +239,25 @@ def find_one(root: Path, pattern: str) -> Path:
 
 
 def install_arctic(args: argparse.Namespace, work: Path, pack: Path, progress: Path) -> str:
-    archive = work / "source.tar.bz2"
-    download(args.url, archive, progress, args.display_name)
-    unpacked = work / "unpacked"
-    extract_archive(archive, unpacked, progress)
-    speaker_dir = find_one(unpacked, f"cmu_us_{args.speaker}_arctic")
+    local = local_path_for(args.url)
+    if local is not None and local.is_dir():
+        # A speaker directory that is already unpacked — a mirror cloned with
+        # `git sparse-checkout`, an archive the user unpacked by hand. Nothing to
+        # download, nothing to extract: the files are already here.
+        write_progress(
+            progress,
+            stage="extract",
+            message=f"Using the unpacked speaker directory {local.name}…",
+            percent=40,
+        )
+        candidates = [local / f"cmu_us_{args.speaker}_arctic", local]
+        speaker_dir = next((path for path in candidates if (path / "wav").is_dir()), candidates[0])
+    else:
+        archive = work / "source.tar.bz2"
+        download(args.url, archive, progress, args.display_name)
+        unpacked = work / "unpacked"
+        extract_archive(archive, unpacked, progress)
+        speaker_dir = find_one(unpacked, f"cmu_us_{args.speaker}_arctic")
     if speaker_dir.is_file():
         speaker_dir = speaker_dir.parent
     if not (speaker_dir / "wav").is_dir():
@@ -299,6 +313,10 @@ def install_arctic_tree(args: argparse.Namespace, work: Path, pack: Path, progre
     that installs from the publisher's own data and a voice that cannot be installed
     at all.
     """
+    local = local_path_for(args.url)
+    if local is not None and local.is_dir():
+        return install_arctic(args, work, pack, progress)
+
     base = args.tree_url.rstrip("/") + "/"
     speaker_dir = work / "unpacked" / f"cmu_us_{args.speaker}_arctic"
     (speaker_dir / "wav").mkdir(parents=True, exist_ok=True)
@@ -476,6 +494,12 @@ def main() -> int:
     try:
         voice_id = sanitise_id(args.id)
         out_root = args.out_root.resolve()
+
+        if args.inspect and (local_path_for(args.url) or None) is not None and local_path_for(args.url).is_dir():  # type: ignore[union-attr]
+            report = inventory(local_path_for(args.url))  # type: ignore[arg-type]
+            write_progress(progress, stage="done", percent=100, message="Inspection complete.")
+            print(report)
+            return 0
 
         if args.inspect and args.kind == "arctic-tree":
             base = (args.tree_url or args.url).rstrip("/")

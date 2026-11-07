@@ -123,6 +123,46 @@ Download URLs and sizes were read from the published index at
 <http://festvox.org/cmu_arctic/packed/> and
 <http://festvox.org/cmu_arctic/cmu_arctic/packed/> on 2026-11-07.
 
+### Proved on real recordings, in this checkout
+
+Two voices have now been installed from real, complete recordings and spoken, with
+the render measured rather than assumed. Both go through the same HTTP path the
+browser uses (`/optional-voices/<id>/manifest.json` + `diphones.bin`):
+
+| voice | source | units | rendered sentence | peak | exact units | stand-ins |
+|---|---|---|---|---|---|---|
+| `cmu-kal` | CMU KAL diphone database | 1,578 | 6.03 s | 0.78 | 44 | 0 |
+| `arctic-awb` | CMU ARCTIC 0.95, Scottish male, real `lab/` | 1,334 | 6.05 s | 0.78 | 43 | 0 |
+
+The AWB figures come from 1,138 real utterances with phone labels; the labels were
+checked against the audio (speech starts at 0.64 s where the second `pau` label
+ends at 0.6245 s), and the render reports one missing diphone pair out of the
+sentence, no half-unit backoffs and no mathematical stand-ins.
+
+### Installing from a directory you already have
+
+If `festvox.org` is slow, blocking, or you already have the data, `--from` accepts
+an **unpacked speaker directory** and skips both the download and the extraction:
+
+```sh
+# A GitHub mirror of the ARCTIC corpus that carries wav/ and lab/ together
+git clone --depth 1 --filter=blob:none --sparse \
+  https://github.com/abearman/cs224s-accent-conversion ~/arctic-mirror
+cd ~/arctic-mirror
+git sparse-checkout set data/cmu_arctic/scottish-english-male-awb   # ~223 MB
+
+cd ~/Vocalis
+npm run voices -- install arctic-awb \
+  --from ~/arctic-mirror/data/cmu_arctic/scottish-english-male-awb
+```
+
+The same repository carries `us-english-female-clb`, `us-english-male-rms`,
+`canadian-english-male-jmk`, `indian-english-male-ksp`, `us-english-female-slt` and
+`us-english-male-bdl`; the id mapping is `arctic-clb`, `arctic-rms`, `arctic-jmk`,
+`arctic-ksp` (BDL and SLT are the protected base voices). The data is CMU ARCTIC
+under the ARCTIC terms — the mirror is a convenience, the licence and the
+attribution do not change.
+
 ### CMU KAL — class A, **built, installed and spoken here**
 
 `cmu_us_kal_diphone` is the classic Festival diphone database: 1,619 entries in an
@@ -332,7 +372,7 @@ they cannot drift from the data.
 
 ## 8. Testing
 
-`npm run test:voices` — **118 checks**, all passing, no network access:
+`npm run test:voices` — **134 checks**, all passing, no network access:
 
 * catalogue: unique ids, ≥80 candidates, no protected id offered, every entry has a
   source URL, licence, attribution, class and a reason; nothing class D installable;

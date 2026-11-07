@@ -683,6 +683,43 @@ with tarfile.open(sys.argv[1],'w:bz2') as t:
   server.close();
 }
 
+// A speaker directory that is already on disk — a mirror cloned with
+// `git sparse-checkout`, or an archive unpacked by hand. Nothing to download and
+// nothing to extract, and this is the path that produced the AWB voice verified
+// against real CMU ARCTIC recordings.
+{
+  const unpacked = buildArcticSpeaker(join(workDir, 'unpacked-speaker'), { speaker: 'disk' });
+  const diskRoot = join(workDir, 'disk-voices');
+  const diskOutcome = installerOutcome([
+    '--id', 'arctic-disk', '--kind', 'arctic-archive',
+    '--url', `file://${unpacked.speakerDir}`,
+    '--speaker', 'disk', '--out-root', diskRoot, '--progress', join(workDir, 'disk-progress.json'),
+    '--display-name', 'ARCTIC disk fixture', '--accent', 'Scottish English', '--gender', 'Male',
+  ]);
+  check('an unpacked speaker directory installs without a download', diskOutcome.code === 0, diskOutcome.output.trim().split('\n').slice(-1)[0]);
+  const diskManifest = join(diskRoot, 'arctic-disk', 'manifest.json');
+  check('and produces a pack', existsSync(diskManifest));
+  if (existsSync(diskManifest)) {
+    const manifest = JSON.parse(readFileSync(diskManifest, 'utf8'));
+    check('with units from its labels', Object.keys(manifest.units).length >= 200, `${Object.keys(manifest.units).length}`);
+  }
+
+  // Same directory, reached through the tree recipe: it must use the files rather
+  // than go back to the network for a listing.
+  const treeDisk = installerOutcome([
+    '--id', 'arctic-disk-tree', '--kind', 'arctic-tree',
+    '--url', `file://${unpacked.speakerDir}`,
+    '--tree-url', 'http://127.0.0.1:1/unreachable/',
+    '--speaker', 'disk', '--out-root', diskRoot, '--progress', join(workDir, 'disk-tree-progress.json'),
+    '--display-name', 'ARCTIC disk tree fixture', '--accent', 'Scottish English', '--gender', 'Male',
+  ]);
+  check(
+    'a local directory is used instead of fetching a tree',
+    treeDisk.code === 0,
+    treeDisk.output.trim().split('\n').slice(-1)[0],
+  );
+}
+
 // Labels that do not match the waveforms are a mismatch, not a zero-unit voice.
 {
   // Right number of files, wrong names: nothing lines up, and the pack would be empty.
