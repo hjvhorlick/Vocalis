@@ -646,6 +646,38 @@ export async function playRecordedVoice(
   }
 }
 
+/**
+ * Play the recording THROUGH the effects, without rebuilding it.
+ *
+ * The difference from `playRecordedVoice` is the whole point of the effects panel:
+ * the samples are the file, and the pitch, pace, character and three resonance bands
+ * are applied to those samples by the Web Audio graph. Nothing is re-segmented,
+ * re-timed or re-joined, so the sentence keeps its own rhythm and every sound keeps
+ * the length it had in it.
+ *
+ * What this path cannot do is change *words*: an accent is a rule over a phone
+ * stream, and there is no phone stream here, only audio. Those controls need the
+ * generated path and are labelled as such in the panel.
+ */
+export async function playRecordedWithEffects(
+  model: VoiceModelConfig,
+  callbacks?: SpeechCallbacks,
+): Promise<boolean> {
+  try {
+    const buffer = await resolveBufferForModel(model);
+    playTransformedVoice(buffer, dspConfigFor(model), {
+      onStart: () => callbacks?.onStart?.(),
+      onEnded: () => callbacks?.onEnd?.(),
+      onError: (error) => callbacks?.onError?.(error),
+    });
+    return true;
+  } catch (error) {
+    callbacks?.onError?.(error instanceof Error ? error : new Error(String(error)));
+    callbacks?.onEnd?.();
+    return false;
+  }
+}
+
 /** The recording a profile is built from: its id, sentence and duration. */
 export function recordingFor(
   model: VoiceModelConfig,

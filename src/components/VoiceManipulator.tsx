@@ -3,6 +3,7 @@ import {
   VoiceModelConfig,
   NATURAL_HUMAN_SAMPLES,
   playRecordedVoice,
+  playRecordedWithEffects,
   recordingFor,
   speakRealWords,
   stopSpeaking,
@@ -56,6 +57,13 @@ interface SoloTest {
   /** What the listener is being asked to judge. */
   listenFor: string;
   verdict: string;
+  /**
+   * True when the adjustment changes the SOUND and can therefore be applied to the
+   * recording file itself, in the Web Audio graph, with nothing rebuilt. False when
+   * it is a rule over the words — an accent rewrites the phone stream, and audio has
+   * no phone stream — so that one needs the generated voice and says so.
+   */
+  onRecording: boolean;
 }
 
 const SOLO_TESTS: SoloTest[] = [
@@ -66,6 +74,7 @@ const SOLO_TESTS: SoloTest[] = [
     overrides: { pitch: 0.72 },
     listenFor: 'a deeper speaker — and whether the vowels start to buzz',
     verdict: 'Drops the pitch without changing how long the words take. Below about 0.7 the voice cycle is stretched far enough that the sound thickens.',
+    onRecording: true,
   },
   {
     id: 'pitch-up',
@@ -74,6 +83,7 @@ const SOLO_TESTS: SoloTest[] = [
     overrides: { pitch: 1.4 },
     listenFor: 'a higher speaker — and whether it turns thin or metallic',
     verdict: 'Raises the pitch at the same speed. The recordings are one voice, so this is the strongest test of whether the grain survives.',
+    onRecording: true,
   },
   {
     id: 'rate-down',
@@ -82,6 +92,7 @@ const SOLO_TESTS: SoloTest[] = [
     overrides: { rate: 0.7 },
     listenFor: 'a slower reader — and whether the sounds smear into each other',
     verdict: 'Stretches the render. Every sound is rebuilt by overlap-add, which is where a drawn-out vowel turns watery.',
+    onRecording: true,
   },
   {
     id: 'rate-up',
@@ -90,6 +101,7 @@ const SOLO_TESTS: SoloTest[] = [
     overrides: { rate: 1.4 },
     listenFor: 'a quicker reader — and whether consonants go missing',
     verdict: 'Compresses the render. This one usually survives better than 0.70×, because cutting is cleaner than stretching.',
+    onRecording: true,
   },
   {
     id: 'volume',
@@ -98,6 +110,7 @@ const SOLO_TESTS: SoloTest[] = [
     overrides: { volume: 0.35 },
     listenFor: 'the same voice, quieter — the timbre should not change at all',
     verdict: 'A gain, applied after everything else. If this one sounds different beyond level, the problem is not the gain.',
+    onRecording: true,
   },
   {
     id: 'deep',
@@ -106,6 +119,7 @@ const SOLO_TESTS: SoloTest[] = [
     overrides: { toneStyle: 'deep' },
     listenFor: 'a lower, slower delivery',
     verdict: 'Pitch ×0.92 and pace ×0.92 on top of the recording. A character, not a different speaker.',
+    onRecording: true,
   },
   {
     id: 'energetic',
@@ -114,6 +128,7 @@ const SOLO_TESTS: SoloTest[] = [
     overrides: { toneStyle: 'energetic' },
     listenFor: 'a brighter, faster delivery',
     verdict: 'Pitch ×1.06 and pace ×1.10. The mildest of the six characters.',
+    onRecording: true,
   },
   {
     id: 'whisper',
@@ -122,6 +137,7 @@ const SOLO_TESTS: SoloTest[] = [
     overrides: { toneStyle: 'whisper' },
     listenFor: 'a thinner, breathier version — it is a filter, not real whispering',
     verdict: 'A high-pass and a level cut before the output gain, so it ends up brighter and quieter rather than actually whispered.',
+    onRecording: true,
   },
   {
     id: 'radio',
@@ -130,6 +146,7 @@ const SOLO_TESTS: SoloTest[] = [
     overrides: { toneStyle: 'radio' },
     listenFor: 'a narrow, gritty band — the most obviously altered setting here',
     verdict: 'High-pass, saturation and a level cut. The largest colour change on the panel and the easiest one to hear working.',
+    onRecording: true,
   },
   {
     id: 'robot',
@@ -138,6 +155,7 @@ const SOLO_TESTS: SoloTest[] = [
     overrides: { toneStyle: 'robot' },
     listenFor: 'a ring-modulated version at 34 Hz',
     verdict: 'Multiplies the signal by a slow sine. Purely an effect; it does not pretend to be a droid voice.',
+    onRecording: true,
   },
   {
     id: 'throat',
@@ -146,6 +164,7 @@ const SOLO_TESTS: SoloTest[] = [
     overrides: { throatWarmth: 10 },
     listenFor: 'more weight in the chest register around 450 Hz',
     verdict: 'One peaking filter at 450 Hz. Measured to move the audio; whether it sounds better is the listener\'s call.',
+    onRecording: true,
   },
   {
     id: 'oral',
@@ -154,6 +173,7 @@ const SOLO_TESTS: SoloTest[] = [
     overrides: { oralClarity: 10 },
     listenFor: 'a more forward, present midrange around 1.8 kHz',
     verdict: 'One peaking filter at 1.8 kHz. On speech recorded close to the microphone this is the band that carries intelligibility.',
+    onRecording: true,
   },
   {
     id: 'air',
@@ -162,6 +182,7 @@ const SOLO_TESTS: SoloTest[] = [
     overrides: { airPresence: 10 },
     listenFor: 'more hiss and breath above 4.2 kHz',
     verdict: 'One peaking filter at 4.2 kHz. The recording has very little energy up there, so this adds air rather than detail.',
+    onRecording: true,
   },
   {
     id: 'accent-uk',
@@ -170,6 +191,7 @@ const SOLO_TESTS: SoloTest[] = [
     overrides: { accent: 'UK' },
     listenFor: 'the R disappearing in “car” and “park”',
     verdict: 'A rule over the phone stream, not a filter. It only changes words that contain a post-vocalic R, so the sample sentence matters.',
+    onRecording: false,
   },
   {
     id: 'accent-au',
@@ -178,6 +200,7 @@ const SOLO_TESTS: SoloTest[] = [
     overrides: { accent: 'AU' },
     listenFor: 'the same R rule with the Australian vowel set',
     verdict: 'Same mechanism as British, with its own vowel table. Both run on American recordings, so this is a rule, not a regional speaker.',
+    onRecording: false,
   },
   {
     id: 'rhythm',
@@ -186,6 +209,7 @@ const SOLO_TESTS: SoloTest[] = [
     overrides: { referenceRaw: false },
     listenFor: 'the same words at a human pace — and whether the joins crackle',
     verdict: 'The unit timing model: faster, closer to a human reading, and the one setting that can introduce a mechanical edge at the joins.',
+    onRecording: false,
   },
 ];
 
@@ -244,8 +268,23 @@ export const VoiceManipulator: React.FC<VoiceManipulatorProps> = ({
       setLastHeard(null);
       return;
     }
-    speak(voice, `the voice as it is set now — ${describeSettings(voice)}`);
+    // The sliders describe a sound. Apply them to the sound.
+    void hearOnRecordingRaw(voice, `the recording with ${describeSettings(voice)}`);
   };
+
+  /**
+   * Play a profile's settings on the recording file. Defined before `handleAudition`
+   * is used so both the header button and the solo buttons share one path.
+   */
+  function hearOnRecordingRaw(model: VoiceModelConfig, label: string) {
+    stopSpeaking();
+    setIsAuditioning(true);
+    setLastHeard(label);
+    return playRecordedWithEffects(model, {
+      onEnd: () => setIsAuditioning(false),
+      onError: () => setIsAuditioning(false),
+    });
+  }
 
   /**
    * The settings that change nothing, restated here so a solo test starts from the
@@ -254,8 +293,27 @@ export const VoiceManipulator: React.FC<VoiceManipulatorProps> = ({
    */
   const original = (): VoiceModelConfig => ({ ...voice, ...NEUTRAL_SETTINGS });
 
+  /** One adjustment on the generated voice, for the controls that change words. */
   const hearOne = (overrides: Partial<VoiceModelConfig>, label: string) =>
     speak({ ...original(), ...overrides }, label);
+
+  /**
+   * One adjustment, on the recording file itself.
+   *
+   * The samples are the file; the graph applies the pitch, pace, character and the
+   * three resonance bands to it. Nothing is rebuilt, so the sentence keeps its own
+   * rhythm — which is exactly what was asked for: use the original as it is, and
+   * change only the thing being tested.
+   */
+  const hearOnRecording = async (overrides: Partial<VoiceModelConfig>, label: string) => {
+    stopSpeaking();
+    setIsAuditioning(true);
+    setLastHeard(label);
+    await playRecordedWithEffects({ ...original(), ...overrides }, {
+      onEnd: () => setIsAuditioning(false),
+      onError: () => setIsAuditioning(false),
+    });
+  };
 
   const handleSave = () => {
     const customCopy: VoiceModelConfig = {
@@ -359,12 +417,12 @@ export const VoiceManipulator: React.FC<VoiceManipulatorProps> = ({
               Effects panel — {voice.name}
             </span>
             <p className="text-[10px] text-slate-400 leading-relaxed mt-1 max-w-2xl">
-              The voice you selected is the recording, and every control on this panel starts at the
-              setting that changes nothing: pitch 1.00, pace 1.00, full volume, natural delivery,
-              all three resonance bands at 0 dB, American English, recorded timing. Move one control
-              and only that one is applied, so you can hear what it does to the recording on its own.
-              Each of them is checked in the test suite to reach the audio; the ones that do not are
-              listed at the bottom of this panel rather than left on it.
+              Every control starts at the setting that changes nothing, and the sound controls —
+              pitch, pace, volume, character and the three resonance bands — are applied
+              <b className="text-emerald-300"> to the recording file itself</b>, in the audio graph,
+              with nothing rebuilt. The sentence keeps its own rhythm and every sound keeps the
+              length it had in it. Only two things need a generated voice, because they are rules
+              over <em>words</em> rather than over sound: the accents, and the rhythm engine.
             </p>
           </div>
           <button
@@ -520,7 +578,15 @@ export const VoiceManipulator: React.FC<VoiceManipulatorProps> = ({
             type="button"
             onClick={() => {
               const test = SOLO_TESTS.find((t) => t.id === soloId);
-              if (test) hearOne(test.overrides, `${test.control} ${test.setting} — one change on the original`);
+              if (!test) return;
+              const label = `${test.control} ${test.setting} — ${
+                test.onRecording ? 'on the recording itself' : 'on the generated voice'
+              }`;
+              if (test.onRecording) {
+                void hearOnRecording(test.overrides, label);
+              } else {
+                hearOne(test.overrides, label);
+              }
             }}
             className="py-2 px-3 rounded-xl text-xs font-semibold border border-indigo-500/50 bg-indigo-500/15 text-indigo-200 hover:bg-indigo-500/25 transition-colors cursor-pointer"
           >
@@ -852,9 +918,26 @@ export const VoiceManipulator: React.FC<VoiceManipulatorProps> = ({
             </>
           ) : (
             <>
-              <Play className="w-3.5 h-3.5 fill-current" /> Hear Transformed Voice
+              <Play className="w-3.5 h-3.5 fill-current" /> Hear it on the recording
             </>
           )}
+        </button>
+
+        <button
+          onClick={() => {
+            if (isAuditioning) {
+              stopSpeaking();
+              setIsAuditioning(false);
+              setLastHeard(null);
+              return;
+            }
+            speak(voice, `the generated voice — ${describeSettings(voice)}`);
+          }}
+          className="px-4 py-2.5 rounded-xl font-semibold text-xs flex items-center gap-2 border border-slate-700 bg-slate-950 text-slate-300 hover:bg-slate-900 transition-colors shrink-0 cursor-pointer"
+          title="Needed only for accents and the rhythm engine, which change words rather than sound"
+        >
+          <Activity className="w-3.5 h-3.5" />
+          Generated voice
         </button>
       </div>
     </div>
