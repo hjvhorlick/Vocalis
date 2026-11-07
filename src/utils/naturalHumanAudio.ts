@@ -222,6 +222,156 @@ export const NATURAL_HUMAN_SAMPLES: HumanVoiceSample[] = [
     duration: 46.9,
     category: 'Open Speech Repository (Harvard Sentences)',
   },
+
+  // 10. OSR British English Male 1
+  {
+    id: 'osr-british-male-1',
+    name: 'Alistair / OSR (British RP Male)',
+    speaker: 'Real Human Male (British English Studio Recording)',
+    gender: 'Male',
+    accent: 'UK',
+    transcript: 'The birch canoe slid on the smooth planks. Four hours of steady work faced us.',
+    url: '/samples/osr_british_male_1.wav',
+    attribution: 'Open Speech Repository (OSR British English Corpus)',
+    license: 'Free Open License (Credit to Open Speech Repository)',
+    duration: 39.8,
+    category: 'Open Speech Repository (Harvard Sentences)',
+  },
+
+  // 11. OSR British English Male 2
+  {
+    id: 'osr-british-male-2',
+    name: 'Rupert / OSR (Distinguished UK Male)',
+    speaker: 'Real Human Male (British English Studio Recording)',
+    gender: 'Male',
+    accent: 'UK',
+    transcript: 'These days a chicken leg is a rare dish. Four hours of steady work faced us.',
+    url: '/samples/osr_british_male_2.wav',
+    attribution: 'Open Speech Repository (OSR British English Corpus)',
+    license: 'Free Open License (Credit to Open Speech Repository)',
+    duration: 43.4,
+    category: 'Open Speech Repository (Harvard Sentences)',
+  },
+
+  // 12. OSR Harvard Sentences Female List 2
+  {
+    id: 'osr-harvard-female-2',
+    name: 'Victoria / OSR (American Harvard Narrator II)',
+    speaker: 'Real Human Female (Open Speech Repository Studio)',
+    gender: 'Female',
+    accent: 'US',
+    transcript: 'A king ruled the state in the early days. The ship was torn on the sharp reef.',
+    url: '/samples/osr_harvard_female_2.wav',
+    attribution: 'Open Speech Repository (OSR IEEE Harvard Sentences)',
+    license: 'Free Open License (Credit to Open Speech Repository)',
+    duration: 32.7,
+    category: 'Open Speech Repository (Harvard Sentences)',
+  },
+
+  // 13. SLT - Sentence 4 (Dialogue greeting)
+  {
+    id: 'cmu-slt-4',
+    name: 'Willow / SLT (California Female - Dialogue)',
+    speaker: 'Real Human Female (US California)',
+    gender: 'Female',
+    accent: 'US',
+    transcript: "Lord, but I'm glad to see you again, Phil.",
+    url: '/samples/cmu_slt_arctic_a0004.wav',
+    attribution: 'Carnegie Mellon University (CMU ARCTIC Corpus - Speaker SLT)',
+    license: 'Free Open License (BSD-style attribution)',
+    duration: 2.5,
+    category: 'CMU ARCTIC (Speech Science)',
+  },
+
+  // 14. RMS - Sentence 4 (Deep baritone greeting)
+  {
+    id: 'cmu-rms-4',
+    name: 'Garrison / RMS (Deep Baritone - Dialogue)',
+    speaker: 'Real Human Male (Robert M. Smith, Deep Baritone)',
+    gender: 'Male',
+    accent: 'US',
+    transcript: "Lord, but I'm glad to see you again, Phil.",
+    url: '/samples/cmu_rms_arctic_a0004.wav',
+    attribution: 'Carnegie Mellon University (CMU ARCTIC Corpus - Speaker RMS)',
+    license: 'Free Open License (BSD-style attribution)',
+    duration: 2.2,
+    category: 'CMU ARCTIC (Speech Science)',
+  },
+
+  // 15. AWB - Sentence 4 (Scottish greeting)
+  {
+    id: 'cmu-awb-4',
+    name: 'Hamish / AWB (Scottish Male - Dialogue)',
+    speaker: 'Real Human Male (Alan W. Black, Edinburgh Scotland)',
+    gender: 'Male',
+    accent: 'UK',
+    transcript: "Lord, but I'm glad to see you again, Phil.",
+    url: '/samples/cmu_awb_arctic_a0004.wav',
+    attribution: 'Carnegie Mellon University (CMU ARCTIC Corpus - Speaker AWB)',
+    license: 'Free Open License (BSD-style attribution)',
+    duration: 3.9,
+    category: 'CMU ARCTIC (Speech Science)',
+  },
+
+  // 16. CLB - Sentence 4 (Boston female greeting)
+  {
+    id: 'cmu-clb-4',
+    name: 'Beatrice / CLB (Boston Female - Dialogue)',
+    speaker: 'Real Human Female (US Boston, Massachusetts)',
+    gender: 'Female',
+    accent: 'US',
+    transcript: "Lord, but I'm glad to see you again, Phil.",
+    url: '/samples/cmu_clb_arctic_a0004.wav',
+    attribution: 'Carnegie Mellon University (CMU ARCTIC Corpus - Speaker CLB)',
+    license: 'Free Open License (BSD-style attribution)',
+    duration: 2.9,
+    category: 'CMU ARCTIC (Speech Science)',
+  },
+
+  // 17. BDL - Sentence 4 (Boston male greeting)
+  {
+    id: 'cmu-bdl-4',
+    name: 'Sterling / BDL (Mid-Atlantic Male - Dialogue)',
+    speaker: 'Real Human Male (US Boston, Massachusetts)',
+    gender: 'Male',
+    accent: 'US',
+    transcript: "Lord, but I'm glad to see you again, Phil.",
+    url: '/samples/cmu_bdl_arctic_a0004.wav',
+    attribution: 'Carnegie Mellon University (CMU ARCTIC Corpus - Speaker BDL)',
+    license: 'Free Open License (BSD-style attribution)',
+    duration: 2.5,
+    category: 'CMU ARCTIC (Speech Science)',
+  },
+
+  // 18. JMK - Sentence 4 (Canadian greeting)
+  {
+    id: 'cmu-jmk-4',
+    name: 'Liam / JMK (Canadian Male - Dialogue)',
+    speaker: 'Real Human Male (John M. Kominek, Canada)',
+    gender: 'Male',
+    accent: 'CA',
+    transcript: "Lord, but I'm glad to see you again, Phil.",
+    url: '/samples/cmu_jmk_arctic_a0004.wav',
+    attribution: 'Carnegie Mellon University (CMU ARCTIC Corpus - Speaker JMK)',
+    license: 'Free Open License (BSD-style attribution)',
+    duration: 3.2,
+    category: 'CMU ARCTIC (Speech Science)',
+  },
+
+  // 19. KSP - Sentence 4 (Indian English greeting)
+  {
+    id: 'cmu-ksp-4',
+    name: 'Rajesh / KSP (Indian English - Dialogue)',
+    speaker: 'Real Human Male (Indian English Cadence)',
+    gender: 'Male',
+    accent: 'IN',
+    transcript: "Lord, but I'm glad to see you again, Phil.",
+    url: '/samples/cmu_ksp_arctic_a0004.wav',
+    attribution: 'Carnegie Mellon University (CMU ARCTIC Corpus - Speaker KSP)',
+    license: 'Free Open License (BSD-style attribution)',
+    duration: 2.8,
+    category: 'CMU ARCTIC (Speech Science)',
+  },
 ];
 
 // In-memory AudioBuffer cache

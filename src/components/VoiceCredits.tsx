@@ -47,8 +47,8 @@ export const VoiceCredits: React.FC = () => {
               </p>
               <p>
                 <strong className="text-white">Open Speech Repository (OSR)</strong> &mdash; Telchemy Open Speech Repository.
-                Includes standardized IEEE Harvard benchmark sentences read by professional male and female human speakers.
-                Freely available for testing and audio applications with credit.
+                Includes standardized IEEE Harvard benchmark sentences read by professional British English and American male and female human speakers.
+                Freely available for audio applications and speech analysis with credit.
               </p>
               <p className="text-xs text-slate-400">
                 The CMU ARCTIC license requires copyright notices and conditions to be retained. All speech samples in Vocalis are non-AI human recordings.

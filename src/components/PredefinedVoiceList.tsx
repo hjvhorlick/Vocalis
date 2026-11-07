@@ -91,7 +91,7 @@ export const PredefinedVoiceList: React.FC<PredefinedVoiceListProps> = ({
           {[
             { id: 'ALL', label: 'All Speakers' },
             { id: 'US', label: '🇺🇸 US American' },
-            { id: 'UK', label: '🏴󠁧󠁢󠁳󠁣󠁴󠁿 Scottish / UK' },
+            { id: 'UK', label: '🇬🇧 UK & Scottish' },
             { id: 'CA', label: '🇨🇦 Canadian' },
             { id: 'IN', label: '🇮🇳 Indian English' },
             { id: 'Custom', label: '✨ Custom' },
