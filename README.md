@@ -47,6 +47,13 @@ npm run dev
 
 The development server listens on port 3000. `npm run build` type-checks the project and creates the production build.
 
+## Requirements
+
+Node.js **18.18 or newer** (`engines` in `package.json`; Node 20 LTS is what it is developed on)
+and **Python 3**, used by the voice-library installers to unpack archives and cut WAV spans. The
+Python executable is discovered automatically — `python3`, `python` or `py` — so a distribution
+that only provides `python` works without a symlink. Everything else is in `npm install`.
+
 The whole gate, in the order it should be run:
 
 ```sh

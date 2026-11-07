@@ -2,6 +2,9 @@
   "name": "vocalis",
   "private": true,
   "version": "1.0.0",
+  "engines": {
+    "node": ">=18.18"
+  },
   "type": "module",
   "scripts": {
     "dev": "tsx server.ts",

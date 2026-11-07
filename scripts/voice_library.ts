@@ -26,8 +26,8 @@
 import { spawn } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync } from 'node:fs';
 import { homedir } from 'node:os';
-import { resolve } from 'node:path';
-import { pathToFileURL } from 'node:url';
+import { dirname, resolve } from 'node:path';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 
 import {
   INSTALLABLE_VOICES,
@@ -43,7 +43,7 @@ import {
 } from '../src/utils/voiceLibraryPaths';
 import { pythonInstallHint, resolvePythonExecutable } from '../src/utils/pythonRuntime';
 
-const ROOT = resolve(import.meta.dirname, '..');
+const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const VOICE_ROOT = resolve(ROOT, 'public', 'optional-voices');
 const PROGRESS_ROOT = resolve(ROOT, 'var', 'voice-progress');
 
@@ -105,6 +105,11 @@ function printUsage(): void {
         fetch by hand.
 
 The protected base voices (${PROTECTED_VOICE_IDS.join(', ')}) can never be installed, replaced or removed.
+
+Requirements: Node.js 18.18 or newer and Python 3 (the installer is a Python
+script; it is found automatically as python3, python or py).
+Run this from the repository root, and keep the \`--\` before the command:
+  npm run voices -- list --ready
 `);
 }
 
