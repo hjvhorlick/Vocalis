@@ -15,9 +15,21 @@ Read this before changing anything. These rules are binding for every session, h
 - No browser TTS, cloud TTS, neural TTS, statistical parametric voice, voice conversion, voice
   cloning, or downloaded prebuilt voice may be added — not as a default, not as a fallback, not
   as a hidden mode.
-- All improvement happens **around** the base voice: text analysis, pronunciation, prosody,
+- All improvement happens **around** the base voice: text analysis, pronunciation, prosody
+  (the recorded chunks are re-pitched onto one contour by `applyProsody`, see
+  `docs/RECORDED_VOICE_PROSODY.md`),
   duration, unit selection, join smoothing, pitch/duration modification, accent modelling,
   playback, export, evaluation. New speakers arrive as **additional** frozen packs.
+
+### Optional voices are additive
+
+- Voices installed from the library live in `public/optional-voices/<id>/` (never committed),
+  load through `src/utils/optionalVoicePacks.ts`, and are removed one at a time.
+- Never copy an optional pack into `public/voicepacks/cmu-arctic/`, never register one under the
+  id `slt` or `bdl`, and never let a library feature read or write the base packs. The guards for
+  this are `src/utils/voiceLibraryPaths.ts` and the catalogue's `install` recipes.
+- An installed voice speaks **as recorded**: pitch 1, rate 1, no tone shaping. Presets are where
+  transformation happens. See `docs/VOICE_LIBRARY.md`.
 
 Verify before committing anything that touches `public/`, `src/utils/` or the voice presets:
 
@@ -82,8 +94,13 @@ rather than repeating them.
   suites read the real assets in `public/` from disk, so they measure the shipped dictionary and
   the shipped unit packs. A failing check is a blocker in the same sense as a failing contract
   check: fix the code or the claim, never delete the check.
-- Verified call graph with line numbers: `docs/PIPELINE_MAP.md`.
-- What was broken, what was built and every measurement: `docs/PHASE2_PIPELINE_CORRECTION.md`.
+- Verified call graph with line numbers: `docs/PIPELINE_MAP.md`. The transformation stage is
+  `src/utils/voiceTransform.ts`, used by generated speech and by the reference-recording
+  audition alike; there is no second implementation. `npm run test:render` now also measures
+  that stage on known signals (aliasing, pitch accuracy, pace/pitch independence).
+- What was broken, what was built and every measurement: `docs/PHASE2_PIPELINE_CORRECTION.md`,
+  and for the transformation stage (pitch, pace, formants, tone, resonance)
+  `docs/PHASE3_VOICE_TRANSFORM.md`.
 - Known state of the product, finding by finding: `docs/APPLICATION_AUDIT.md`.
 - What to build next, and how each idea will be implemented originally:
   `docs/VOICE_IMPROVEMENT_PLAN.md`.

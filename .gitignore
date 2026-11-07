@@ -9,3 +9,8 @@ __pycache__/
 # npm lockfile generated in environments without bun; the repo pins bun.lock.
 # See docs/APPLICATION_AUDIT.md finding C7 before committing either lockfile.
 package-lock.json
+
+# Optional voice packs are installed locally, never committed
+public/optional-voices/*
+!public/optional-voices/.gitkeep
+var/voice-progress/

@@ -64,12 +64,16 @@ export interface VoiceModelConfig {
   /** Reference recording used by the source audition feature. */
   baseSampleId: string;
   /** Which recorded speaker this voice is built from. */
-  baseVoiceId?: 'slt' | 'bdl';
+  /**
+   * The recorded voice this profile speaks from: `slt`, `bdl`, or the id of a
+   * voice installed from the library. Leave it unset and the gender decides.
+   */
+  baseVoiceId?: string;
   /** 'cmu-arctic' is the product; 'formant' is the preserved experiment. */
   synthesisMethod?: 'cmu-arctic' | 'formant';
-  throatWarmth?: number; // low-band resonance, -10 to +10 dB
-  oralClarity?: number; // mid-band resonance, -10 to +10 dB
-  airPresence?: number; // high-band resonance, -10 to +10 dB
+  throatWarmth?: number; // low-band tilt, -3 to +3 dB (clamped)
+  oralClarity?: number; // mid-band tilt, -3 to +3 dB (clamped)
+  airPresence?: number; // high-band tilt, -3 to +3 dB (clamped)
 }
 
 export { ATTRIBUTION_DETAILS, NATURAL_HUMAN_SAMPLES };
@@ -100,8 +104,8 @@ export const PRESET_VOICE_MODELS: VoiceModelConfig[] = [
     synthesisMethod: 'cmu-arctic',
     baseSampleId: 'cmu-slt-1',
     baseVoiceId: 'slt',
-    throatWarmth: 3,
-    oralClarity: 2,
+    throatWarmth: 2,
+    oralClarity: 1,
     airPresence: 1,
     samplePhrase: 'Author of the danger trail, Philip Steels, etc.',
     avatarColor: '#8b5cf6',
@@ -121,7 +125,7 @@ export const PRESET_VOICE_MODELS: VoiceModelConfig[] = [
     synthesisMethod: 'cmu-arctic',
     baseSampleId: 'cmu-bdl-1',
     baseVoiceId: 'bdl',
-    throatWarmth: 7,
+    throatWarmth: 3,
     oralClarity: -1,
     airPresence: -2,
     samplePhrase: 'Author of the danger trail, Philip Steels, etc.',
@@ -142,7 +146,7 @@ export const PRESET_VOICE_MODELS: VoiceModelConfig[] = [
     synthesisMethod: 'cmu-arctic',
     baseSampleId: 'cmu-bdl-2',
     baseVoiceId: 'bdl',
-    throatWarmth: 4,
+    throatWarmth: 2,
     oralClarity: 2,
     airPresence: 1,
     samplePhrase: 'For the twentieth time that evening the two men shook hands.',
@@ -164,8 +168,8 @@ export const PRESET_VOICE_MODELS: VoiceModelConfig[] = [
     baseSampleId: 'cmu-slt-2',
     baseVoiceId: 'slt',
     throatWarmth: 1,
-    oralClarity: 4,
-    airPresence: 3,
+    oralClarity: 3,
+    airPresence: 2,
     samplePhrase: 'For the twentieth time that evening the two men shook hands.',
     avatarColor: '#ec4899',
   },
@@ -185,8 +189,8 @@ export const PRESET_VOICE_MODELS: VoiceModelConfig[] = [
     baseSampleId: 'cmu-bdl-1',
     baseVoiceId: 'bdl',
     throatWarmth: -1,
-    oralClarity: 5,
-    airPresence: 4,
+    oralClarity: 3,
+    airPresence: 2,
     samplePhrase: 'Author of the danger trail, Philip Steels, etc.',
     avatarColor: '#3b82f6',
   },
@@ -205,9 +209,9 @@ export const PRESET_VOICE_MODELS: VoiceModelConfig[] = [
     synthesisMethod: 'cmu-arctic',
     baseSampleId: 'cmu-slt-1',
     baseVoiceId: 'slt',
-    throatWarmth: -4,
+    throatWarmth: -3,
     oralClarity: 1,
-    airPresence: 8,
+    airPresence: 3,
     samplePhrase: 'Author of the danger trail, Philip Steels, etc.',
     avatarColor: '#84cc16',
   },
@@ -227,8 +231,8 @@ export const PRESET_VOICE_MODELS: VoiceModelConfig[] = [
     baseSampleId: 'cmu-bdl-1',
     baseVoiceId: 'bdl',
     throatWarmth: -3,
-    oralClarity: 6,
-    airPresence: -6,
+    oralClarity: 3,
+    airPresence: -3,
     samplePhrase: 'Author of the danger trail, Philip Steels, etc.',
     avatarColor: '#eab308',
   },
@@ -248,8 +252,8 @@ export const PRESET_VOICE_MODELS: VoiceModelConfig[] = [
     baseSampleId: 'cmu-bdl-1',
     baseVoiceId: 'bdl',
     throatWarmth: 2,
-    oralClarity: -3,
-    airPresence: 4,
+    oralClarity: -2,
+    airPresence: 2,
     samplePhrase: 'Author of the danger trail, Philip Steels, etc.',
     avatarColor: '#06b6d4',
   },
@@ -262,7 +266,8 @@ export const PRESET_VOICE_MODELS: VoiceModelConfig[] = [
 export interface EngineReadiness {
   dictionary: boolean;
   voicePack: boolean;
-  speaker: 'slt' | 'bdl';
+  /** The recorded voice this profile is spoken from: a base id or an installed one. */
+  speaker: string;
 }
 
 let dictionaryReady = false;

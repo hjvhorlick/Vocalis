@@ -28,9 +28,10 @@ through an effects chain, whatever text you type. That single fact explains most
 ## Status after the pipeline correction (2026-11-07)
 
 The P0 wiring defect is closed and the Phase 1 naturalness work is built. Measurements come
-from `tests/renderSpeech.test.ts` (534 checks) and `tests/textAnalysis.test.ts` (212 checks);
+from `tests/renderSpeech.test.ts` (555 checks) and `tests/textAnalysis.test.ts` (212 checks);
 the full before-and-after record is
-[`PHASE2_PIPELINE_CORRECTION.md`](PHASE2_PIPELINE_CORRECTION.md).
+[`PHASE2_PIPELINE_CORRECTION.md`](PHASE2_PIPELINE_CORRECTION.md), and the phase that rebuilt
+the transformation stage is [`PHASE3_VOICE_TRANSFORM.md`](PHASE3_VOICE_TRANSFORM.md).
 
 **Resolved**
 
@@ -49,12 +50,16 @@ the full before-and-after record is
 | F2 | Unsourced "US California"/"US Boston" speaker claims removed; each sample names its recorded speaker and pack. |
 | F3 | `public/samples/LICENSE.txt` added. |
 
-**Resolved for generated speech, still open on the audition path**
+**Closed by the transformation rebuild (2026-11-07)**
 
-| ID | Note |
+| ID | How |
 | --- | --- |
-| A2 | Generated speech resamples for pitch and WSOLA-stretches for rate, with the stretch target measured from the original length so pitch no longer changes duration: rate 1.4 → 2.66 s and rate 0.7 → 5.33 s from a 3.73 s render, while pitch 0.72 moves the duration only by its style's own rate factor. `buildDspGraph` still couples them for the reference-recording audition. |
-| D4 | Export of generated speech is the same sample array as preview, verified by decoding the WAV. The audition's offline render still omits the robot ring-modulation. |
+| A2 | One transformation for everything (`voiceTransform.ts`). Pitch is band-limited resampling (measured aliasing −132 dB re the input, against −11 dB for the old linear interpolation) followed by formant preservation; pace is correlation-aligned overlap-add. Both are independent and neither is secretly re-scaled: pitch 0.72 and 1.4 both render 3.73 s with measured median periods of 131 and 67 samples against 94 natural, and rate 1.4 → 2.66 s, rate 0.7 → 5.33 s at an unchanged period. `buildDspGraph` is gone. |
+| B4 | Pitch-synchronous modification is still future work (it needs pitch marks, i.e. pack v2), but the three defects that made profiles sound metallic are closed: no aliasing when pitching up, phase-aligned grains when changing pace, and formant preservation so a lower register is the same speaker. Measured periodicity at rate 1.4: SLT 0.805 → 0.844, BDL 0.624 → 0.681; at pitch 0.72, SLT 0.851 → 0.875 and BDL 0.688 → 0.743. |
+| B11 | One tone-character implementation. `deep`/`energetic` are resonance shapes, not hidden pitch/pace multipliers (they were 0.92×/1.06× before); `whisper`/`radio`/`robot` live in one function used by both generated speech and the audition, so the character cannot differ by path. |
+| D3 | The audition's Web Audio node graph — and the ring oscillator it never stopped — is deleted. The buffer is transformed on the samples and played through `playRenderedSpeech`. |
+| D4 | The audition's export is the transformed sample array, so it includes the robot character and is byte-identical to what was played. |
+| D10 (partly) | The three static EQ bands are now wide (Q ≈ 1) and clamped to ±3 dB in the engine and in the sliders, so they cannot clip material and cannot sum into a resonance peak. The naming caveat — they are tilts, not vowel-tracking formants — stays open. |
 
 **Partly resolved**
 
@@ -65,9 +70,10 @@ the full before-and-after record is
 | D2 | Generated-speech object URLs are revoked by `releaseSynthesis` / `releaseDialogue`; the library and manipulator still leak theirs. |
 | D8 | `initializeLocalSpeechEngine` preloads the dictionary and the selected pack on mount and on speaker change; there is still no progress UI. |
 
-**Untouched:** B4–B7, B11, C1–C7, D1, D3, D5–D8 (except as noted), D10, E1–E6, F5, G.
-The transformation foundation (B4, B5) is the next phase and is specified in
-[`VOICE_IMPROVEMENT_PLAN.md`](VOICE_IMPROVEMENT_PLAN.md).
+**Untouched:** B5–B7, C1–C7, D1, D5–D8 (except as noted), D10, E1–E6, F5, G.
+The remaining transformation work (B5 joins, per-phone duration and pitch marks) is specified in
+[`VOICE_IMPROVEMENT_PLAN.md`](VOICE_IMPROVEMENT_PLAN.md); what Phase 3 did and did not change is
+in [`PHASE3_VOICE_TRANSFORM.md`](PHASE3_VOICE_TRANSFORM.md).
 
 Four further defects were found while measuring and are fixed: an unanchored currency test
 that could make the tokenizer stop advancing (`I-70` exhausted the heap), a doubled
@@ -334,7 +340,7 @@ base64 audio would exceed it and the user would see nothing but lost data.
 
 **D6. Three contradictory control ranges.** `VoiceDspConfig` comments say pitch 0.5–1.8,
 rate 0.6–1.6, formants ±12 dB. `VoiceManipulator` sliders: pitch 0.5–1.75, rate 0.6–1.5,
-volume 0.2–1.0, formants ±10. `SpeechStudio` sliders: pitch 0.5–1.7, rate 0.6–1.5. The DSP
+volume 0.2–1.0, formant tilt ±3 (the engine clamps it; the sliders now say 3). `SpeechStudio` sliders: pitch 0.5–1.7, rate 0.6–1.5. The DSP
 then clamps the *product* to 0.4–2.5, silently overriding extremes. One shared, published
 range per control.
 
@@ -360,10 +366,12 @@ permission for this path. Per contract §2.2 this must never be presented as, or
 become, a new base voice.
 
 **D10. "Formant" controls are three static EQ bands.** `throatWarmth`/`oralClarity`/
-`airPresence` are peaking biquads fixed at 450 Hz (Q 1.2), 1800 Hz (Q 1.4) and 4200 Hz
-(Q 1.0), ±10 dB, described in code comments as "Formant F1/F2/F3". They do not track vowel
-formants, cannot change vocal-tract length, and at +10 dB on three bands will clip material
-that is already peak-normalised. The labels promise articulatory modelling that is not there.
+`airPresence` are peaking sections fixed at 450 / 1800 / 4200 Hz. *Partly closed by the
+transformation rebuild:* each is now a wide band (bandwidth equal to its centre, Q ≈ 1) clamped
+to **±3 dB** by the engine and by the sliders, and the three of them can no longer sum into a
+resonance (measured: the worst profile used to colour the voice by +10.8 dB in one region, now
++3.0 — see `PHASE3_VOICE_TRANSFORM.md` §3.5). What remains open is the naming: they are tilts,
+not vowel-tracking formants, and they still cannot change vocal-tract length.
 
 ---
 

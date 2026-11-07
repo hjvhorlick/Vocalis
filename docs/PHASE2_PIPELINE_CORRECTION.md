@@ -203,6 +203,8 @@ running it.
   `pitched.length / rate`, so lowering the pitch also slowed the reader: the deep preset spoke
   the reference sentence in 5.85 s at 72 wpm with 20.2 % silence. The stretch target is now
   measured from the original length. The same preset is 3.88 s at 108 wpm with 15.7 % silence.
+  *(Phase 3 moved that arithmetic out of `cmuDiphoneSynthesizer.ts` into `voiceTransform.ts` and
+  replaced the resampler and the stretcher themselves; see `PHASE3_VOICE_TRANSFORM.md`.)*
 - **An unresolved voice was guessed as male.** A model with no `baseVoiceId` and a neutral
   gender resolved to BDL. Only an explicitly male identity now gets the male speaker; everything
   else resolves to SLT.

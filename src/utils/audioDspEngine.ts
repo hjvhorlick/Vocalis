@@ -1,13 +1,14 @@
 import { getSharedAudioContext } from './naturalHumanAudio';
+import { transformRecordedVoice } from './voiceTransform';
 
 export interface VoiceDspConfig {
   pitch: number; // 0.5 to 1.8 (1.0 = normal)
   rate: number; // 0.6 to 1.6 (1.0 = normal)
   volume: number; // 0.1 to 1.0
   toneStyle: 'natural' | 'deep' | 'energetic' | 'whisper' | 'radio' | 'robot';
-  throatWarmth?: number; // -12 to +12 dB (F1 resonance)
-  oralClarity?: number; // -12 to +12 dB (F2 resonance)
-  airPresence?: number; // -12 to +12 dB (F3 resonance)
+  throatWarmth?: number; // -3 to +3 dB (F1 tilt, clamped by voiceTransform)
+  oralClarity?: number; // -3 to +3 dB (F2 tilt, clamped by voiceTransform)
+  airPresence?: number; // -3 to +3 dB (F3 tilt, clamped by voiceTransform)
 }
 
 let activeSourceNode: AudioBufferSourceNode | null = null;
@@ -23,135 +24,57 @@ export function isDspPlaying(): boolean {
 }
 
 /**
- * Configure acoustic DSP nodes (EQ, formants, distortion, ring mod)
+ * Apply the profile's transformation to a whole buffer.
+ *
+ * This is the *same* stage generated speech goes through — band-limited pitch,
+ * formant-preserved register change, correlation-aligned pace, tone character
+ * and the resonance sliders — applied to one real recording. The point of the
+ * A/B feature is to hear what the transformation did, so it would be dishonest
+ * for it to run a second, different processing chain (which is exactly what the
+ * old node graph did: one playback rate drove pitch and tempo together, so the
+ * comparison was against a chipmunk version of the sentence, and the robot
+ * character existed only on playback and never in the exported file).
  */
-function buildDspGraph(
-  ctx: BaseAudioContext,
-  source: AudioBufferSourceNode,
-  config: VoiceDspConfig
-): { finalNode: AudioNode; analyser?: AnalyserNode } {
-  // 1. Pitch & Speed playbackRate
-  const playbackFactor = Math.max(0.4, Math.min(2.5, config.pitch * config.rate));
-  source.playbackRate.value = playbackFactor;
-
-  // 2. Formant Filters (F1: Throat, F2: Oral, F3: Air)
-  const f1Filter = ctx.createBiquadFilter();
-  f1Filter.type = 'peaking';
-  f1Filter.frequency.value = 450;
-  f1Filter.Q.value = 1.2;
-  f1Filter.gain.value = config.throatWarmth ?? 0;
-
-  const f2Filter = ctx.createBiquadFilter();
-  f2Filter.type = 'peaking';
-  f2Filter.frequency.value = 1800;
-  f2Filter.Q.value = 1.4;
-  f2Filter.gain.value = config.oralClarity ?? 0;
-
-  const f3Filter = ctx.createBiquadFilter();
-  f3Filter.type = 'peaking';
-  f3Filter.frequency.value = 4200;
-  f3Filter.Q.value = 1.0;
-  f3Filter.gain.value = config.airPresence ?? 0;
-
-  // Connect base EQ chain
-  source.connect(f1Filter);
-  f1Filter.connect(f2Filter);
-  f2Filter.connect(f3Filter);
-
-  let currentLastNode: AudioNode = f3Filter;
-
-  // 3. Acoustic Character Tone Styles
-  if (config.toneStyle === 'deep') {
-    const bassBoost = ctx.createBiquadFilter();
-    bassBoost.type = 'lowshelf';
-    bassBoost.frequency.value = 160;
-    bassBoost.gain.value = 6;
-    currentLastNode.connect(bassBoost);
-    currentLastNode = bassBoost;
-  } else if (config.toneStyle === 'energetic') {
-    const presenceLift = ctx.createBiquadFilter();
-    presenceLift.type = 'peaking';
-    presenceLift.frequency.value = 3200;
-    presenceLift.Q.value = 1.0;
-    presenceLift.gain.value = 5;
-    currentLastNode.connect(presenceLift);
-    currentLastNode = presenceLift;
-  } else if (config.toneStyle === 'whisper') {
-    const highpass = ctx.createBiquadFilter();
-    highpass.type = 'highpass';
-    highpass.frequency.value = 600;
-    const airLift = ctx.createBiquadFilter();
-    airLift.type = 'highshelf';
-    airLift.frequency.value = 5000;
-    airLift.gain.value = 8;
-    currentLastNode.connect(highpass);
-    highpass.connect(airLift);
-    currentLastNode = airLift;
-  } else if (config.toneStyle === 'radio') {
-    const hp = ctx.createBiquadFilter();
-    hp.type = 'highpass';
-    hp.frequency.value = 450;
-    const lp = ctx.createBiquadFilter();
-    lp.type = 'lowpass';
-    lp.frequency.value = 3200;
-
-    const shaper = ctx.createWaveShaper();
-    (shaper as any).curve = makeVintageSaturationCurve(256);
-    shaper.oversample = '4x';
-
-    currentLastNode.connect(hp);
-    hp.connect(lp);
-    lp.connect(shaper);
-    currentLastNode = shaper;
-  } else if (config.toneStyle === 'robot') {
-    if (ctx instanceof AudioContext) {
-      const ringOsc = ctx.createOscillator();
-      ringOsc.type = 'sine';
-      ringOsc.frequency.value = 60;
-
-      const ringGain = ctx.createGain();
-      ringGain.gain.value = 0.5;
-
-      const carrierGain = ctx.createGain();
-      carrierGain.gain.value = 0.5;
-
-      ringOsc.connect(ringGain.gain);
-      currentLastNode.connect(carrierGain);
-      carrierGain.connect(ringGain);
-      ringOsc.start();
-      currentLastNode = ringGain;
+export function transformBuffer(buffer: AudioBuffer, config: VoiceDspConfig): AudioBuffer {
+  const ctx = getSharedAudioContext();
+  const channels = buffer.numberOfChannels;
+  const settings = {
+    pitch: config.pitch,
+    rate: config.rate,
+    toneStyle: config.toneStyle,
+    throatWarmth: config.throatWarmth,
+    oralClarity: config.oralClarity,
+    airPresence: config.airPresence,
+  };
+  const rendered: Float32Array[] = [];
+  let longest = 1;
+  for (let channel = 0; channel < channels; channel += 1) {
+    const source = Float32Array.from(buffer.getChannelData(channel));
+    const shaped = transformRecordedVoice(source, settings, buffer.sampleRate);
+    rendered.push(shaped);
+    longest = Math.max(longest, shaped.length);
+  }
+  const result = ctx.createBuffer(channels, longest, buffer.sampleRate);
+  rendered.forEach((samples, channel) => result.copyToChannel(Float32Array.from(samples), channel));
+  const level = Math.max(0, Math.min(1.5, config.volume));
+  if (level !== 1) {
+    for (let channel = 0; channel < channels; channel += 1) {
+      const data = result.getChannelData(channel);
+      for (let index = 0; index < data.length; index += 1) {
+        const value = data[index] * level;
+        data[index] = value > 1 ? 1 : value < -1 ? -1 : value;
+      }
     }
   }
-
-  // 4. Master Volume Gain
-  const masterGain = ctx.createGain();
-  masterGain.gain.value = Math.max(0, Math.min(1.5, config.volume));
-  currentLastNode.connect(masterGain);
-
-  let analyser: AnalyserNode | undefined;
-  if (ctx instanceof AudioContext) {
-    analyser = ctx.createAnalyser();
-    analyser.fftSize = 512;
-    masterGain.connect(analyser);
-    analyser.connect(ctx.destination);
-  }
-
-  return { finalNode: masterGain, analyser };
-}
-
-function makeVintageSaturationCurve(samples: number): Float32Array {
-  const curve = new Float32Array(samples);
-  const deg = Math.PI / 180;
-  const k = 45;
-  for (let i = 0; i < samples; ++i) {
-    const x = (i * 2) / samples - 1;
-    curve[i] = ((3 + k) * x * 20 * deg) / (Math.PI + k * Math.abs(x));
-  }
-  return curve;
+  return result;
 }
 
 /**
- * Play transformed voice in real time through user's speakers
+ * Play the transformed reference recording through the user's speakers.
+ *
+ * The buffer is transformed first and then played as ordinary samples, so
+ * playback and export are the same audio and the same code path as generated
+ * speech. Nothing is left running after the render.
  */
 export function playTransformedVoice(
   audioBuffer: AudioBuffer,
@@ -163,29 +86,21 @@ export function playTransformedVoice(
   }
 ): void {
   stopTransformedVoice();
-
   try {
-    const ctx = getSharedAudioContext();
-    const source = ctx.createBufferSource();
-    source.buffer = audioBuffer;
-
-    const { analyser } = buildDspGraph(ctx, source, config);
-    activeAnalyserNode = analyser || null;
-    activeSourceNode = source;
-    isAudioPlaying = true;
-
-    source.onended = () => {
-      isAudioPlaying = false;
-      activeSourceNode = null;
-      if (callbacks?.onEnded) callbacks.onEnded();
-    };
-
-    if (callbacks?.onStart) callbacks.onStart();
-    source.start(0);
+    const transformed = transformBuffer(audioBuffer, config);
+    const samples = Float32Array.from(transformed.getChannelData(0));
+    const playback = playRenderedSpeech(samples, transformed.sampleRate, {
+      onStart: () => callbacks?.onStart?.(),
+      onEnded: () => callbacks?.onEnded?.(),
+      onError: (error) => callbacks?.onError?.(error),
+    });
+    if (!playback) throw new Error('the transformed recording could not be played');
   } catch (err: any) {
     isAudioPlaying = false;
     activeSourceNode = null;
-    if (callbacks?.onError) callbacks.onError(err);
+    const asError = err instanceof Error ? err : new Error(String(err));
+    callbacks?.onError?.(asError);
+    callbacks?.onEnded?.();
   }
 }
 
@@ -309,40 +224,20 @@ export function playRenderedSpeech(
 }
 
 /**
- * Render transformed voice offline into a downloadable 16-bit uncompressed WAV file
+ * Render the transformed reference recording to a downloadable WAV.
+ *
+ * There is no offline audio graph any more: the transform is arithmetic on the
+ * samples, so the file is written from exactly what playback heard — including
+ * the robot character, which the old node-based export silently dropped.
  */
 export async function renderTransformedWav(
   audioBuffer: AudioBuffer,
   config: VoiceDspConfig
 ): Promise<{ wavBlob: Blob; wavUrl: string; duration: number }> {
-  const playbackFactor = Math.max(0.4, Math.min(2.5, config.pitch * config.rate));
-  const renderedDuration = audioBuffer.duration / playbackFactor + 0.3;
-  const sampleRate = audioBuffer.sampleRate;
-  const totalFrames = Math.ceil(renderedDuration * sampleRate);
-
-  const offlineCtx = new OfflineAudioContext(
-    audioBuffer.numberOfChannels,
-    totalFrames,
-    sampleRate
-  );
-
-  const source = offlineCtx.createBufferSource();
-  source.buffer = audioBuffer;
-
-  const { finalNode } = buildDspGraph(offlineCtx, source, config);
-  finalNode.connect(offlineCtx.destination);
-
-  source.start(0);
-
-  const renderedBuffer = await offlineCtx.startRendering();
-  const wavBlob = audioBufferToWavBlob(renderedBuffer);
+  const transformed = transformBuffer(audioBuffer, config);
+  const wavBlob = audioBufferToWavBlob(transformed);
   const wavUrl = URL.createObjectURL(wavBlob);
-
-  return {
-    wavBlob,
-    wavUrl,
-    duration: renderedDuration,
-  };
+  return { wavBlob, wavUrl, duration: transformed.duration };
 }
 
 /**

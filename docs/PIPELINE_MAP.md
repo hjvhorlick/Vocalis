@@ -44,9 +44,16 @@ user types a script and presses Play / Export WAV
         │    │    ├─ segmentUtterance(utterance)                       :1277
         │    │    │    splits at sentence ends and line breaks ONLY
         │    │    ├─ buildWordProsody(utterance, segments)  src/utils/phonemeSynthesizer.ts:347
+        │    │    │    (shapes the mathematical path; the recorded path gets the
+        │    │    │     same contour from applyProsody below)
         │    │    ├─ BRANCH 'cmu-arctic' (the product)                 :603
         │    │    │    └─ renderCmuDiphones(segments, model, fallback, offset)
-        │    │    │         src/utils/cmuDiphoneSynthesizer.ts:460
+        │    │    │         src/utils/cmuDiphoneSynthesizer.ts:659
+        │    │    │         ├─ per chunk: medianChunkPitch            :431
+        │    │    │         ├─ applyProsody(chunks, chunkProsody)     :523
+        │    │    │         │    reference pitch, declination, boundary
+        │    │    │         │    ramp, stress lift, peak match
+        │    │    │         │    see RECORDED_VOICE_PROSODY.md
         │    │    │         ├─ speakerForModel(model)   slt / bdl       :133
         │    │    │         ├─ loadVoicePack(speaker)                   :141
         │    │    │         │    manifest.json + diphones.bin
@@ -68,10 +75,12 @@ user types a script and presses Play / Export WAV
         │    │    │    coarticulation, stress-weighted duration, aspiration,
         │    │    │    frication, stop bursts, F0 declination            :178
         │    │    │    joinPhonesWithOffsets: equal-power crossfade      :308
-        │    │    ├─ processCmuVoice(raw, model)   recorded path only    :736
-        │    │    │    resample(pitch × stylePitch)                      :626
-        │    │    │    wsolaStretch to a target measured from the ORIGINAL length :640
-        │    │    │    applyStyle (whisper / radio / robot)              :711
+        │    │    ├─ processCmuVoice(raw, model)   recorded path only    :637
+        │    │    │    └─ transformRecordedVoice   src/utils/voiceTransform.ts:636
+        │    │    │       shiftPitchBandLimited (windowed-sinc, anti-aliased) :190
+        │    │    │       preserveFormants (measured envelope, ±6 dB, 100–5000 Hz) :449
+        │    │    │       stretchTime (correlation-aligned overlap-add, 20 ms grid) :248
+        │    │    │       applyToneStyle / peakingBand (tone, resonance sliders) :505 / :336
         │    │    ├─ normaliseSamples(combined, volume)                  :399
         │    │    │    make-up gain to the 0.78 ceiling, cap 4×, silence floor 0.02
         │    │    ├─ wordTimingsFrom(utterance, phoneOffsets, …)         :506
@@ -136,7 +145,7 @@ replaces this graph with the shared transformation module.
 | 2 | How is text converted to words and phonemes? | `tokenize` → `spokenFormsOf` → `phonesForWord`: a saved spelling, then the bundled CMU dictionary (124,076 entries from file, 16 annotated lines counted, 0 rejected tokens), then a 21-word lifeboat, then Vocalis's own grapheme rules — and a word that needed the rules is listed in `diagnostics.guessedWords` and still gets a measured timing. `applyAccentTokens` then runs over the whole phone stream. |
 | 3 | How are phonemes matched to recorded material? | `speakerForModel` picks SLT or BDL (explicitly on every preset; an unresolved voice resolves to SLT). Stress is carried on every `PhoneToken`; `packPhone` normalises the symbol for the *index* only (`AX`→`AH`, stress digit stripped). A pair that was never recorded is covered by two half units of the **same** speaker, ranked by phone class and by how close the unit's own length is to the corpus mean. |
 | 4 | How are units assembled? | Per **segment** (a sentence), not per word: a lead, one chunk per joint, a tail, joined by `crossfadeJoinWithOffsets`, which reports where every boundary landed. Silence exists at sentence ends and line breaks. Measured: 9.1–15.7 % of a render, against 38 % when every word was wrapped in pauses. |
-| 5 | Where is voice transformation applied? | Generated speech: `processCmuVoice` — resample for pitch, WSOLA to a target measured from the original length for rate, `applyStyle` for the tone character. Pitch and rate are independent: rate 1.4 → 2.66 s and rate 0.7 → 5.33 s from a 3.73 s render, while pitch 0.72 changes the duration only by the style's own 0.92 rate factor. The audition path still uses `buildDspGraph`. |
+| 5 | Where is voice transformation applied? | Generated speech: `processCmuVoice` → `transformRecordedVoice` (`voiceTransform.ts`) — band-limited pitch resampling, a five-band timbre correction, correlation-aligned overlap-add for pace, then the tone character and the three resonance sliders — each character filter capped at 3 dB and a wide band, because the measured failure of the first version was the *sum* of them (see PHASE3 §3.5). Pitch and rate are independent and neither is secretly re-scaled: pitch 0.72 and 1.4 both render 3.73 s of the reference sentence (measured median period 131 and 67 samples against 94 natural), while rate 1.4 → 2.66 s and rate 0.7 → 5.33 s at the same period. The reference-recording audition runs the same function over the recording, so the A/B compares one transformation, not two. |
 | 6 | How is final audio produced? | `normaliseSamples` (make-up gain to the 0.78 ceiling, then the profile volume) and `encodeWav` (16 kHz mono 16-bit RIFF) produce one blob and one sample array. Playback wraps that same array in an `AudioBuffer`. |
 | 7 | How do Speech Studio and Dialogue Studio access the engine? | Through `naturalVoiceEngine`: `speakText`, `renderSpeech`, `playRender`, `renderDialogue`, `playDialogueRender`, `stopSpeaking`, `releaseSynthesis`, `releaseDialogue`. There is exactly one playback implementation for generated speech (`playRenderedSpeech`). |
 | 8 | Does WAV export use the same audio as playback? | Yes, byte-identically. The suite decodes the exported WAV and compares it sample by sample with the preview: maximum difference 0, inside a one-quantisation-step tolerance. Repeated renders of the same text and settings are also byte-identical, and Speech Studio reuses the existing render instead of regenerating it when nothing changed. |
@@ -149,9 +158,18 @@ replaces this graph with the shared transformation module.
 | --- | --- | --- |
 | `utils/textAnalysis.ts` | 1,321 | **New.** The text/pronunciation front end, extracted from `phonemeSynthesizer.ts` and rebuilt. 212 checks. |
 | `utils/phonemeSynthesizer.ts` | 710 | **Rebuilt around segments.** Orchestrator, timings, normalisation and WAV encoding are new; the formant synthesizer (`getFormants` … `buildPhoneSamples`) and `buildWordProsody` are the preserved originals. |
-| `utils/cmuDiphoneSynthesizer.ts` | 752 | **Head rebuilt, tail preserved.** Pack loading and indexing kept; assembly, half-unit backoff and offsets are new; `resample`, `wsolaStretch`, `applyStyle` kept, with the pitch/duration fix in `processCmuVoice`. |
+| `utils/cmuDiphoneSynthesizer.ts` | 862 | **Head rebuilt, tail moved out, contour added.** Pack loading, indexing, assembly, half-unit backoff and offsets unchanged; the pitch/rate/character tail delegates to `voiceTransform.ts`; `applyProsody` gives the joined chunks one pitch line (`RECORDED_VOICE_PROSODY.md`). |
 | `utils/naturalVoiceEngine.ts` | 753 | **Rewired.** One entry point, one dialogue timeline, presets that state their method and speaker, engine warm-up, and the audition feature kept as a labelled separate thing. |
-| `utils/audioDspEngine.ts` | 395 | **Extended.** `samplesToAudioBuffer` + `playRenderedSpeech` are the single playback path for generated speech; `stopTransformedVoice` releases the analyser and no longer fires `onended`. `buildDspGraph` remains for the audition path and is Phase 3's replacement target. |
+| `utils/audioDspEngine.ts` | 290 | **Extended.** `samplesToAudioBuffer` + `playRenderedSpeech` are the single playback path for generated speech; `stopTransformedVoice` releases the analyser and no longer fires `onended`. The Web Audio node graph is gone: the audition transforms its buffer with `transformRecordedVoice` and plays the resulting samples, so playback and export of the reference recording are the same audio (D3 and D4 closed). |
+| `data/voiceCatalogue.ts` | 2,795 | **New.** The 105 recorded voices investigated for the library, with sources, licences, compatibility classes and install recipes. Data only; see `VOICE_LIBRARY.md`. |
+| `utils/optionalVoicePacks.ts` | 132 | **New.** The registry the engine resolves installed voices through. Refuses the two protected ids, so a library voice can never take the place of SLT or BDL. |
+| `utils/voiceLibraryPaths.ts` | 62 | **New.** The id and path guard shared by the server and the tests. |
+| `utils/voiceLibrary.ts` | 232 | **New.** Library client: state, install/remove calls, filters, sorting and the neutral profile an installed voice speaks through. |
+| `components/RecordedVoiceLibrary.tsx` | 452 | **New.** The library UI. |
+| `scripts/voice_library.ts` | 355 | **New.** The library from a terminal: `npm run voices -- list / install / remove / urls`. Resolves ids through the catalogue and runs the same installer as the server. |
+| `scripts/install_voice.py` | 345 | **New.** Download → convert → validate → atomic install, with progress for the UI. |
+| `scripts/import_festival_diphone.py` | 245 | **New.** Festival EST diphone database → Vocalis pack, audio copied unchanged. |
+| `utils/voiceTransform.ts` | 676 | **New.** The voice transformation stage: band-limited pitch resampling, five-band timbre correction, correlation-aligned pace change, tone character, resonance sliders under a 3 dB colour budget. Original code; see `PHASE3_VOICE_TRANSFORM.md` for the measurements. |
 | `utils/naturalHumanAudio.ts` | 121 | **Retained, corrected.** Shared context and decode helpers unchanged; licence wording and speaker provenance fixed; each sample names its recorded speaker's pack. |
 | `components/SpeechStudio.tsx` | 866 | **Rebuilt.** Script field, measured word highlighting, render reuse for export, a diagnostics panel, labelled audition. |
 | `components/DialogueStudio.tsx` | 538 | **Rebuilt.** One timeline, per-line audition, turn-taking gap control, same-voice warning, render report. |
@@ -168,14 +186,14 @@ replaces this graph with the shared transformation module.
 
 | Control | What it is now | What it needs to become |
 | --- | --- | --- |
-| Pitch | `resample` by a factor, then WSOLA back to the original duration. Duration-neutral, but formants move with pitch. | Independent F0 modification from pitch marks (pitch-synchronous overlap-add) with formant preservation |
-| Rate | WSOLA over the whole utterance to `length / rate`, plus per-style rate factors | Per-phone target durations from a duration model, achieved by period duplication/skipping |
+| Pitch | Band-limited (windowed-sinc) resampling, then the pace stage restores duration. Two thirds of the spectral envelope is put back, so a lower register sounds like the same speaker. | Independent F0 modification from pitch marks (pitch-synchronous overlap-add), with the envelope restored per phone rather than per render |
+| Rate | Correlation-aligned overlap-add on a 20 ms grid to `length / rate`. Pitch is measured unchanged (period 70 samples at 1.4× and 0.7× against 73 at rest). | Per-phone target durations from a duration model, achieved by period duplication/skipping |
 | Duration | The recorded units' own lengths; no model. The reference sentence takes 3.73 s against 3.00 s of speech in the original SLT recording | Target durations per phone from stress, position and boundary, with each half-phone time-scaled independently |
-| "Formants" F1/F2/F3 | Three static peaking EQs at 450 / 1800 / 4200 Hz on the audition path only | Real vocal-tract scaling: shift formant frequencies and bandwidths by a tract-length factor, preserving vowel identity |
+| "Formants" F1/F2/F3 | Three peaking bands at 450 / 1800 / 4200 Hz, applied to generated speech *and* the audition, with the band centres following the pitch shift by the un-preserved part of the tract scale | Real vocal-tract scaling: shift formant frequencies and bandwidths by a tract-length factor, preserving vowel identity per phone |
 | Joins | Equal-length crossfades at every joint, sized by unit kind | Splice search at minimum energy or a zero crossing, RMS equalisation across the join, equal-power fades sized by voiced/unvoiced/silence, no fade across a stop burst |
 | Coverage | 79.5 % of the pairs a passage needs; misses covered by same-speaker half units, ranked by class and length, and counted (0 mathematical stand-ins measured) | Pack v2: the internal phone boundary, pitch marks, several candidates per pair, and cost-based selection (target + join cost) over a pruned lattice |
 | Articulation | None. Effects apply to the whole signal, consonants included | Voiced/unvoiced separation so sibilants, plosives and fricatives are protected |
-| Prosody | `buildWordProsody` shapes the experimental path; the recorded path uses the units' own prosody, with segment-level pauses and dialogue gaps | Stress-driven duration, F0 and energy on the recorded path; declination, boundary tones, question rise |
+| Prosody | `applyProsody` re-pitches every recorded chunk onto one contour — declination +1.2 → −1.8 st, question rise 2.4 st, statement fall 1.2 st ramped over the last third, stress +0.6 st, bounded reference normalisation; frame-to-frame F0 movement 0.964 → 0.745 st (recording 0.391) | Pitch accents with rise-falls *inside* syllables, a duration model, phrase-final lengthening, boundary tones per intermediate phrase |
 | Loudness | Peak-normalise to 0.78, make-up gain capped at 4×, then the profile volume | Loudness-consistent normalisation, click/pop detection at joins, de-harshing |
 | Profiles | `VoiceModelConfig`, unversioned: pitch, rate, volume, toneStyle, accent, gender, three EQ numbers, method, speaker | One versioned profile schema covering source / tract / resonance / texture / articulation / prosody, reproducible byte-for-byte |
 
@@ -201,6 +219,7 @@ Phase 3  Voice transformation foundation           ← next
          3.4  vocal-tract stage: formant frequency and bandwidth scaling
          3.5  voiced/unvoiced separation to protect consonants
          3.6  join smoothing: splice search, energy equalisation, equal-power fades
+         3.7  prosody on the recorded path ✅ done — RECORDED_VOICE_PROSODY.md
          Gate: copy synthesis of a corpus sentence is indistinguishable from the original;
                pitch ±5 semitones at constant rate keeps vowels recognisable.
 

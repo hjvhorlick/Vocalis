@@ -464,7 +464,7 @@ export interface WordTiming {
 
 export interface SynthesisDiagnostics {
   method: SynthesisMethod;
-  speaker: 'slt' | 'bdl' | null;
+  speaker: string | null;
   words: number;
   phones: number;
   segments: number;
@@ -594,7 +594,7 @@ export async function synthesizeText(text: string, model: VoiceModelConfig): Pro
 
   let raw: Float32Array;
   let phoneOffsets: number[];
-  let speaker: 'slt' | 'bdl' | null = null;
+  let speaker: string | null = null;
   let exactUnits = 0;
   let backoffUnits = 0;
   let fallbackPhones = 0;
@@ -602,7 +602,10 @@ export async function synthesizeText(text: string, model: VoiceModelConfig): Pro
 
   if (method === 'cmu-arctic') {
     const rendered = await renderCmuDiphones(
-      segments.map((segment) => ({ phones: segment.phones })),
+      segments.map((segment) => ({
+        phones: segment.phones,
+        terminal: segment.terminal,
+      })),
       model,
       (phone, offset) => mathematicalPhone(phone, '0', offset, NEUTRAL_PROSODY),
       0,

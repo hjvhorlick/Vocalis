@@ -3,7 +3,7 @@ import {
   Sliders,
   Mic2,
   Users,
-  BookmarkCheck,
+  Library,
   Plus,
   Sparkles,
   Volume2,
@@ -70,7 +70,7 @@ export const VoiceNavbar: React.FC<VoiceNavbarProps> = ({
   const tabs = [
     { id: 'studio', label: 'Voice Hub & Studio', icon: Sliders, desc: 'Predefined Voices & Live Synthesizer' },
     { id: 'dialogue', label: 'Dialogue Screenplay', icon: Users, desc: 'Two Voices in Conversation' },
-    { id: 'library', label: 'Takes Vault', icon: BookmarkCheck, desc: 'Generated Audio Archive' },
+    { id: 'library', label: 'Voice Library', icon: Library, desc: 'Recorded Voices & Saved Takes' },
   ] as const;
 
   return (

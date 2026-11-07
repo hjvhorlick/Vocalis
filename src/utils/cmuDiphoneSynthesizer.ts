@@ -34,6 +34,8 @@
  * extraction tool is `scripts/build_cmu_voicepack.py`.
  */
 import type { VoiceModelConfig } from './naturalVoiceEngine';
+import { isBaseVoiceId, getOptionalVoiceSource } from './optionalVoicePacks';
+import { transformRecordedVoice } from './voiceTransform';
 
 const SAMPLE_RATE = 16000;
 
@@ -99,7 +101,9 @@ export interface RenderDiagnostics {
 
 /** One sentence-worth of phones. Silence may only appear between segments. */
 export interface SegmentInput {
-  phones: Array<{ phone: string }>;
+  phones: Array<{ phone: string; stress?: string | number }>;
+  /** The punctuation that ended this phrase, or '' when the text simply stopped. */
+  terminal?: string;
 }
 
 /**
@@ -110,7 +114,7 @@ export type FallbackPhone = (phone: string, absoluteOffset: number) => Float32Ar
 
 export interface DiphoneRender {
   samples: Float32Array;
-  speaker: 'slt' | 'bdl';
+  speaker: string;
   diagnostics: RenderDiagnostics;
   /**
    * Sample offset of every phone's midpoint, indexed to match the concatenated
@@ -121,7 +125,7 @@ export interface DiphoneRender {
   segmentPhoneCounts: number[];
 }
 
-const packs = new Map<'slt' | 'bdl', Promise<VoicePack>>();
+const packs = new Map<string, Promise<VoicePack>>();
 
 /**
  * Which recorded speaker a profile is built from.
@@ -130,18 +134,30 @@ const packs = new Map<'slt' | 'bdl', Promise<VoicePack>>();
  * what let a Neutral profile silently become a female voice; the label is only a
  * fallback for profiles that predate the field.
  */
-export function speakerForModel(model: VoiceModelConfig): 'slt' | 'bdl' {
-  if (model.baseVoiceId === 'slt' || model.baseVoiceId === 'bdl') return model.baseVoiceId;
+export function speakerForModel(model: VoiceModelConfig): string {
+  // Any installed optional voice is addressed by its own id; the two protected
+  // base voices keep their names and their loaders.
+  if (model.baseVoiceId) return model.baseVoiceId;
   // A voice that never says which recording it comes from still has to come from
   // one. Only an explicitly male identity is given the male speaker; everything
   // else, including a neutral one, resolves to SLT rather than being guessed at.
   return model.gender === 'Male' ? 'bdl' : 'slt';
 }
 
-async function loadVoicePack(speaker: 'slt' | 'bdl'): Promise<VoicePack> {
+async function loadVoicePack(speaker: string): Promise<VoicePack> {
   const cached = packs.get(speaker);
   if (cached) return cached;
   const request = (async () => {
+    const optional = isBaseVoiceId(speaker) ? undefined : getOptionalVoiceSource(speaker);
+    if (!isBaseVoiceId(speaker) && !optional) {
+      throw new Error(
+        `The voice "${speaker}" is not installed. Install it from the voice library first.`,
+      );
+    }
+    if (optional) {
+      const { manifest, audio } = await optional.loadPack();
+      return indexPack(manifest as unknown as DiphoneManifest, audio, speaker);
+    }
     const root = `/voicepacks/cmu-arctic/${speaker}`;
     const [manifestResponse, audioResponse] = await Promise.all([
       fetch(`${root}/manifest.json`),
@@ -152,6 +168,24 @@ async function loadVoicePack(speaker: 'slt' | 'bdl'): Promise<VoicePack> {
     }
     const manifest = (await manifestResponse.json()) as DiphoneManifest;
     const buffer = await audioResponse.arrayBuffer();
+    return indexPack(manifest, buffer, speaker);
+  })();
+  packs.set(speaker, request);
+  try {
+    return await request;
+  } catch (error) {
+    // A failed load must not stay cached, so a later render can try again.
+    packs.delete(speaker);
+    throw error;
+  }
+}
+
+/**
+ * Validate a manifest against its audio and build the lookup tables the
+ * assembler needs. Shared by the compiled-in packs and every optional voice, so
+ * an installed voice is held to the same integrity rules as a base voice.
+ */
+function indexPack(manifest: DiphoneManifest, buffer: ArrayBuffer, speaker: string): VoicePack {
     if (!manifest.units || !Object.keys(manifest.units).length) {
       throw new Error(`The CMU ARCTIC ${speaker.toUpperCase()} voice pack has no unit index.`);
     }
@@ -185,15 +219,6 @@ async function loadVoicePack(speaker: 'slt' | 'bdl'): Promise<VoicePack> {
       else byRight.set(right, [key]);
     }
     return { manifest, samples: new Int16Array(buffer), byLeft, byRight };
-  })();
-  packs.set(speaker, request);
-  try {
-    return await request;
-  } catch (error) {
-    // A failed load must not stay cached, so a later render can try again.
-    packs.delete(speaker);
-    throw error;
-  }
 }
 
 /** Load a speaker's pack ahead of the first render, so playback does not stall. */
@@ -203,6 +228,14 @@ export function prepareCmuVoice(model: VoiceModelConfig): Promise<void> {
 
 export function isVoicePackLoaded(model: VoiceModelConfig): boolean {
   return packs.has(speakerForModel(model));
+}
+
+/**
+ * Drop a voice's audio and index from memory. Used when switching away from an
+ * optional voice so the application never holds several packs at once.
+ */
+export function releaseVoicePack(speaker: string): void {
+  packs.delete(speaker);
 }
 
 // ---------------------------------------------------------------------------
@@ -385,6 +418,202 @@ function concat(parts: Float32Array[]): Float32Array {
 }
 
 // ---------------------------------------------------------------------------
+// Prosody for the recorded-unit path
+// ---------------------------------------------------------------------------
+
+/**
+ * What the recorded-unit path is allowed to do about intonation.
+ *
+ * Every unit in the packs was cut from a different sentence, so each one carries
+ * whatever pitch and timing its own sentence had. Glued together, those pitches
+ * jump at random from unit to unit: measured on the reference sentence, the
+ * finished render moves 0.89 semitones between neighbouring analysis frames
+ * where the source recording moves 0.39 — twice the instability of a person,
+ * before any profile touches it. That is heard as a waver, and it is why capping
+ * the tone filters helped but did not cure the sound.
+ *
+ * So the units are re-pitched onto one smooth contour: each chunk is brought to a
+ * common reference pitch (the median of its own voiced frames, so its internal
+ * shape is kept) and then offset by an intended phrase contour — a gentle
+ * declination, and a boundary tone that falls at a full stop and rises at a
+ * question mark. Timing is not touched: every chunk is resampled and then
+ * stretched back to exactly the length it had, so joins, word timings and the
+ * render's duration are unchanged to the sample.
+ */
+const DECLINATION_START_ST = 1.2;
+const DECLINATION_END_ST = -1.8;
+const QUESTION_RISE_ST = 2.4;
+const FINAL_FALL_ST = -0.8;
+/** The most any chunk may move in total: about +/-4 semitones. */
+const MIN_PROSODY_RATIO = 0.75;
+const MAX_PROSODY_RATIO = 1.3;
+/** Below a fifth of a semitone nothing is audible, and nothing is processed. */
+const PROSODY_DEADBAND = 0.008;
+
+/**
+ * Median F0 of one chunk, from its own voiced frames, or 0 when it has none.
+ *
+ * Autocorrelation per 32 ms frame on 512-sample hops, frames below a floor
+ * skipped so a pause unit reports "unvoiced" rather than dividing by noise. The
+ * shortest lag within 95 % of the best wins, which is the usual guard against
+ * locking onto a sub-octave.
+ */
+function medianChunkPitch(samples: Float32Array): number {
+  const frame = 512;
+  const shortest = Math.round(SAMPLE_RATE / 400);
+  const longest = Math.round(SAMPLE_RATE / 70);
+  const values: number[] = [];
+  for (let start = 0; start + frame + longest <= samples.length; start += 512) {
+    let energy = 0;
+    for (let index = 0; index < frame; index += 1) energy += samples[start + index] * samples[start + index];
+    if (energy / frame < 0.003) continue;
+    let bestLag = 0;
+    let bestScore = 0;
+    for (let lag = shortest; lag <= longest; lag += 1) {
+      let dot = 0;
+      let left = 0;
+      let right = 0;
+      for (let index = 0; index + lag < frame; index += 1) {
+        const a = samples[start + index];
+        const b = samples[start + index + lag];
+        dot += a * b;
+        left += a * a;
+        right += b * b;
+      }
+      const score = left > 0 && right > 0 ? dot / Math.sqrt(left * right) : 0;
+      if (score > bestScore) {
+        bestScore = score;
+        bestLag = lag;
+      }
+    }
+    if (bestLag === 0 || bestScore < 0.45) continue;
+    for (let lag = shortest; lag < bestLag; lag += 1) {
+      let dot = 0;
+      let left = 0;
+      let right = 0;
+      for (let index = 0; index + lag < frame; index += 1) {
+        const a = samples[start + index];
+        const b = samples[start + index + lag];
+        dot += a * b;
+        left += a * a;
+        right += b * b;
+      }
+      const score = left > 0 && right > 0 ? dot / Math.sqrt(left * right) : 0;
+      if (score >= bestScore * 0.95) {
+        bestLag = lag;
+        break;
+      }
+    }
+    values.push(SAMPLE_RATE / bestLag);
+  }
+  if (!values.length) return 0;
+  values.sort((a, b) => a - b);
+  return values[Math.floor(values.length / 2)];
+}
+
+/**
+ * Give `shaped` the peak of `reference`, so a processing pass changes the shape
+ * of a chunk and not its level.
+ */
+function matchPeak(reference: Float32Array, shaped: Float32Array): Float32Array {
+  let before = 0;
+  let after = 0;
+  for (let index = 0; index < reference.length; index += 1) {
+    const magnitude = Math.abs(reference[index]);
+    if (magnitude > before) before = magnitude;
+  }
+  for (let index = 0; index < shaped.length; index += 1) {
+    const magnitude = Math.abs(shaped[index]);
+    if (magnitude > after) after = magnitude;
+  }
+  if (before <= 0 || after <= 0) return shaped;
+  const scale = before / after;
+  if (Math.abs(scale - 1) < 1e-4) return shaped;
+  const output = new Float32Array(shaped.length);
+  for (let index = 0; index < shaped.length; index += 1) output[index] = shaped[index] * scale;
+  return output;
+}
+
+/** Where a chunk sits in its phrase, and what the phrase did at its end. */
+interface ChunkProsody {
+  /** 0 at the start of the phrase, 1 at its end. */
+  position: number;
+  final: boolean;
+  question: boolean;
+  /** 1 for a stressed vowel, 0 otherwise: stress gets a small lift of its own. */
+  stress: number;
+}
+
+/**
+ * Put every chunk on one contour.
+ *
+ * Chunks with no voiced frames (a pause unit, a lone fricative) are passed
+ * through untouched and simply do not vote on the reference pitch.
+ */
+function applyProsody(chunks: Float32Array[], prosody: ChunkProsody[]): Float32Array[] {
+  const pitches = chunks.map((chunk) => medianChunkPitch(chunk));
+  const voiced = pitches.filter((pitch) => pitch > 0).sort((a, b) => a - b);
+  if (!voiced.length) return chunks;
+  const reference = voiced[Math.floor(voiced.length / 2)];
+
+  // The boundary tone belongs to the last *voiced* chunk of a phrase. The tail
+  // unit is the last phone fading into silence, and its median pitch is often
+  // unavailable — the phrase then ended with no tone at all, which is how a
+  // question could come out flat. Move the flag back to the last chunk that can
+  // carry a pitch.
+  for (let index = 0; index < chunks.length; index += 1) {
+    if (!prosody[index]?.final) continue;
+    let carrier = index;
+    while (carrier > 0 && (pitches[carrier] <= 0 || !prosody[carrier])) {
+      if (prosody[carrier - 1]?.final) break;
+      carrier -= 1;
+    }
+    if (carrier !== index && prosody[carrier]) {
+      prosody[carrier] = { ...prosody[carrier], final: true, question: prosody[index].question };
+      prosody[index] = { ...prosody[index], final: false };
+    }
+  }
+  return chunks.map((chunk, index) => {
+    const measured = pitches[index];
+    const meta = prosody[index];
+    if (measured <= 0 || !meta) return chunk;
+    let semitones = DECLINATION_START_ST + (DECLINATION_END_ST - DECLINATION_START_ST) * meta.position;
+    semitones += 0.6 * meta.stress;
+    // The boundary tone is not a step on the last unit: a rise or a fall in real
+    // speech is carried by the last part of the phrase. Spreading it over the
+    // final third also puts it where the ear expects it — on the last stressed
+    // syllable — instead of on the 40 ms of vowel that happens to sit in the
+    // closing unit.
+    const boundaryRamp = meta.final ? 1 : Math.max(0, (meta.position - 0.68) / 0.32);
+    semitones += boundaryRamp * (meta.question ? QUESTION_RISE_ST : FINAL_FALL_ST);
+    // Two stages, because they fail differently. Bringing a unit onto the
+    // reference pitch has to be bounded or a badly-matched unit would be moved a
+    // fourth; the contour offset is small on purpose and must survive that bound,
+    // otherwise a question ends exactly like a statement whenever its last unit
+    // happens to sit far from the reference — which is what the first version of
+    // this did.
+    const normalise = Math.min(1.18, Math.max(0.85, reference / measured));
+    const contour = Math.pow(2, semitones / 12);
+    const factor = Math.min(MAX_PROSODY_RATIO, Math.max(MIN_PROSODY_RATIO, normalise * contour));
+    if (Math.abs(factor - 1) < PROSODY_DEADBAND) return chunk;
+    // Pitch, then length back to exactly what the join expects. Formant
+    // preservation keeps the speaker's own vowel space instead of sliding it
+    // with the pitch, which at these small ratios is the difference between
+    // "the same person, speaking" and "a slightly different person".
+    const shaped = transformRecordedVoice(
+      chunk,
+      { pitch: factor, rate: 1, toneStyle: 'natural', formantPreservation: 0.7 },
+      SAMPLE_RATE,
+    );
+    // Re-pitching raises the crest factor a little. Left alone, the render's
+    // peak normaliser would answer that by turning the whole voice down, which
+    // is a change of volume nobody asked a contour for. Matching the chunk's own
+    // peak keeps "the same audio, a different pitch".
+    return matchPeak(chunk, shaped);
+  });
+}
+
+// ---------------------------------------------------------------------------
 // Joining, with the position of every phone reported
 // ---------------------------------------------------------------------------
 
@@ -473,6 +702,9 @@ export async function renderCmuDiphones(
   };
   const phoneOffsets: number[] = [];
   const segmentPhoneCounts: number[] = [];
+  // Prosody metadata, one entry per assembled chunk, used after assembly to put
+  // every unit on one contour.
+  const chunkProsody: ChunkProsody[] = [];
 
   const allPhones: string[] = [];
   for (const segment of segments) {
@@ -537,6 +769,7 @@ export async function renderCmuDiphones(
   for (const segment of segments) {
     const phones = segment.phones.map((token) => packPhone(token.phone));
     if (!phones.length) continue;
+    const question = segment.terminal === '?';
 
     // Lead: the first half of the segment's first phone, on a recorded pause
     // unit when one exists.
@@ -562,11 +795,18 @@ export async function renderCmuDiphones(
       }
     }
     const leadIndex = chunks.length - 1;
+    chunkProsody.push({ position: 0, final: false, question, stress: 0 });
     cursor += chunks[leadIndex].length;
 
     // Joints between the segment's phones.
     for (let index = 1; index < phones.length; index += 1) {
       chunks.push(joint(phones[index - 1], phones[index], cursor));
+      chunkProsody.push({
+        position: index / phones.length,
+        final: false,
+        question,
+        stress: Number(segment.phones[index]?.stress ?? 0) > 0 ? 1 : 0,
+      });
       cursor += chunks[chunks.length - 1].length;
     }
 
@@ -594,13 +834,14 @@ export async function renderCmuDiphones(
         );
       }
     }
+    chunkProsody.push({ position: 1, final: true, question, stress: 0 });
     cursor += chunks[chunks.length - 1].length;
 
     // Remember where this segment's chunks began, to map midpoints afterwards.
     segmentStarts.push({ chunkIndex: leadIndex, phoneCount: phones.length });
   }
 
-  const joined = crossfadeJoinWithOffsets(chunks);
+  const joined = crossfadeJoinWithOffsets(applyProsody(chunks, chunkProsody));
   // Chunk i begins on the midpoint of phone i-1 within its segment, so the
   // offsets of a segment's phones are the starts of the chunks after its lead.
   for (const { chunkIndex, phoneCount } of segmentStarts) {
@@ -623,130 +864,29 @@ export async function renderCmuDiphones(
 // Pitch, rate and character
 // ---------------------------------------------------------------------------
 
-function resample(input: Float32Array, pitchFactor: number): Float32Array {
-  const factor = Math.max(0.5, Math.min(2, pitchFactor));
-  const length = Math.max(1, Math.floor(input.length / factor));
-  const output = new Float32Array(length);
-  for (let i = 0; i < length; i++) {
-    const position = i * factor;
-    const left = Math.floor(position);
-    const right = Math.min(input.length - 1, left + 1);
-    const fraction = position - left;
-    output[i] = input[left] * (1 - fraction) + input[right] * fraction;
-  }
-  return output;
-}
-
-function wsolaStretch(input: Float32Array, targetLength: number): Float32Array {
-  const outputLength = Math.max(1, targetLength);
-  if (input.length < 512 || Math.abs(outputLength / input.length - 1) < 0.035) {
-    const direct = new Float32Array(outputLength);
-    for (let i = 0; i < outputLength; i++) {
-      const position = i * input.length / outputLength;
-      const left = Math.min(input.length - 1, Math.floor(position));
-      const right = Math.min(input.length - 1, left + 1);
-      const fraction = position - left;
-      direct[i] = input[left] * (1 - fraction) + input[right] * fraction;
-    }
-    return direct;
-  }
-
-  const windowSize = 640;
-  const synthesisHop = 320;
-  const overlap = windowSize - synthesisHop;
-  const stretch = outputLength / input.length;
-  const analysisHop = synthesisHop / stretch;
-  const searchRadius = 96;
-  const output = new Float32Array(outputLength + windowSize);
-  const weights = new Float32Array(output.length);
-  let sourceStart = 0;
-  let outputStart = 0;
-
-  while (outputStart < outputLength) {
-    if (outputStart === 0) {
-      sourceStart = 0;
-    } else {
-      const expected = Math.round(sourceStart + analysisHop);
-      const compareLength = Math.min(overlap, outputStart, input.length - expected);
-      let best = Math.max(0, Math.min(input.length - windowSize, expected));
-      let bestScore = -Infinity;
-      const searchStart = Math.max(0, expected - searchRadius);
-      const searchEnd = Math.min(input.length - windowSize, expected + searchRadius);
-      const step = 8;
-      for (let candidate = searchStart; candidate <= searchEnd; candidate += step) {
-        let dot = 0;
-        let normA = 0;
-        let normB = 0;
-        const outBase = outputStart;
-        for (let j = 0; j < compareLength; j += 4) {
-          const a = output[outBase + j];
-          const b = input[candidate + j];
-          dot += a * b;
-          normA += a * a;
-          normB += b * b;
-        }
-        const score = dot / Math.sqrt(normA * normB + 1e-9);
-        if (score > bestScore) {
-          bestScore = score;
-          best = candidate;
-        }
-      }
-      sourceStart = best;
-    }
-
-    const available = Math.min(windowSize, input.length - sourceStart, output.length - outputStart);
-    for (let i = 0; i < available; i++) {
-      const fade = i < overlap && outputStart > 0 ? i / overlap : 1;
-      output[outputStart + i] += input[sourceStart + i] * fade;
-      weights[outputStart + i] += fade;
-    }
-    outputStart += synthesisHop;
-  }
-
-  const trimmed = new Float32Array(outputLength);
-  for (let i = 0; i < outputLength; i++) trimmed[i] = weights[i] ? output[i] / weights[i] : 0;
-  return trimmed;
-}
-
-function applyStyle(input: Float32Array, style: VoiceModelConfig['toneStyle']): Float32Array {
-  if (style === 'natural' || style === 'deep' || style === 'energetic') return input;
-  const output = new Float32Array(input.length);
-  let previous = 0;
-  let phase = 0;
-  for (let i = 0; i < input.length; i++) {
-    const sample = input[i];
-    if (style === 'radio') {
-      const highPassed = sample - previous * 0.91;
-      previous = sample;
-      output[i] = Math.tanh(highPassed * 5) * 0.75;
-    } else if (style === 'robot') {
-      output[i] = sample * (0.72 + 0.28 * Math.sin(phase));
-      phase += 2 * Math.PI * 34 / SAMPLE_RATE;
-    } else {
-      // A softened, brighter and quieter timbre; unlike a true whispered
-      // recording this is a post-processed speaking voice, not breath synthesis.
-      const highPassed = sample - previous * 0.96;
-      previous = sample;
-      output[i] = sample * 0.42 + highPassed * 0.42;
-    }
-  }
-  return output;
-}
-
+/**
+ * Apply the profile to the assembled recordings.
+ *
+ * The transform itself lives in `voiceTransform.ts`: band-limited pitch
+ * resampling, formant preservation, correlation-aligned pace change, tone
+ * character and the resonance sliders. Keeping it out of this file is the point
+ * — the recorded-unit assembly above is the base voice and stays untouched,
+ * while everything that shapes a *profile* is one reviewable stage with its own
+ * numbers.
+ */
 export function processCmuVoice(samples: Float32Array, model: VoiceModelConfig): Float32Array {
-  const stylePitch = model.toneStyle === 'deep' ? 0.92 : model.toneStyle === 'energetic' ? 1.06 : 1;
-  const pitchFactor = Math.max(0.25, Math.min(4, model.pitch * stylePitch));
-  const pitched = resample(samples, pitchFactor);
-  const rateStyle = model.toneStyle === 'deep' ? 0.92 : model.toneStyle === 'energetic' ? 1.1 : 1;
-  // Resampling moves pitch and duration together, so a pitch control that also
-  // slowed the reader down would not be a pitch control: at 0.72 the deep preset
-  // spoke at 68 words a minute and a quarter of its render was silence. The
-  // stretch target is measured from the ORIGINAL length, which puts the duration
-  // back where the recording had it and leaves `rate` as the only thing that
-  // changes how long the speaking takes.
-  const targetLength = Math.max(1, Math.floor(samples.length / Math.max(0.55, model.rate * rateStyle)));
-  const stretch = wsolaStretch(pitched, targetLength);
-  return applyStyle(stretch, model.toneStyle);
+  return transformRecordedVoice(
+    samples,
+    {
+      pitch: model.pitch,
+      rate: model.rate,
+      toneStyle: model.toneStyle,
+      throatWarmth: model.throatWarmth,
+      oralClarity: model.oralClarity,
+      airPresence: model.airPresence,
+    },
+    SAMPLE_RATE,
+  );
 }
 
 export const CMU_SAMPLE_RATE = SAMPLE_RATE;

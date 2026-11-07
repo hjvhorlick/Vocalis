@@ -14,7 +14,9 @@ The rule, its enforcement and the data inventory are in [`docs/BASE_VOICE_CONTRA
 
 The recorded-unit engine **is the product**: Speech Studio speaks the text you type, Dialogue Studio renders a conversation as one timeline, and the exported WAV is byte-identical to the preview. Nothing calls a server, a browser voice or a model.
 
-Measured on the current tree by `npm run test:render` (534 checks) over ten passages and a 326-word passage: 573 exact recorded units plus 8 adaptations of the same speaker's own audio, **0 mathematical stand-ins**, 92.5–100 % recorded coverage, 9.1–15.7 % silence, 91–152 words per minute, peak exactly 0.78 with nothing clipped, and every letter of the source text covered by a measured word span. The full record, including what is still rough, is [`docs/PHASE2_PIPELINE_CORRECTION.md`](docs/PHASE2_PIPELINE_CORRECTION.md); the verified call graph is [`docs/PIPELINE_MAP.md`](docs/PIPELINE_MAP.md); every discrepancy found in a full investigation of the tree is listed in [`docs/APPLICATION_AUDIT.md`](docs/APPLICATION_AUDIT.md).
+Measured on the current tree by `npm run test:render` (555 checks) over ten passages and a 326-word passage: 573 exact recorded units plus 8 adaptations of the same speaker's own audio, **0 mathematical stand-ins**, 92.5–100 % recorded coverage, 10.1–17.0 % silence, 91–152 words per minute, peak exactly 0.78 with nothing clipped, every letter of the source text covered by a measured word span, and every profile's transformation measured on known signals (pitch lands on its shifted frequency with 99.99 % of the energy in a five-bin window, nothing folds back over Nyquist, and a 1.4× or 0.7× pace change leaves the pitch where it was). The full record, including what is still rough, is [`docs/PHASE2_PIPELINE_CORRECTION.md`](docs/PHASE2_PIPELINE_CORRECTION.md); how the joined units are given one pitch line, and what that is still not, is [`docs/RECORDED_VOICE_PROSODY.md`](docs/RECORDED_VOICE_PROSODY.md); the verified call graph is [`docs/PIPELINE_MAP.md`](docs/PIPELINE_MAP.md); every discrepancy found in a full investigation of the tree is listed in [`docs/APPLICATION_AUDIT.md`](docs/APPLICATION_AUDIT.md).
+
+Beyond the two protected voices there is a **recorded voice library**: 105 human-recorded, non-neural databases were investigated, and 7 of them have a working installer — five CMU ARCTIC speakers whose phone labels FestVox actually publishes (AWB, CLB, JMK, KSP, RMS), the CMU KAL diphone database (proved end to end: installed, spoken, removed) and CSTR RAB — each installed, auditioned and removed on its own, as recorded and with no transformation. Eleven more ARCTIC speakers are catalogued but not installable: FestVox ships them as waveforms plus transcription with no phone labels, which the first real download (LJM) proved — 593 waveforms, 0 label files — so they are class C rather than a download that fails at the end. Run `npm run voices -- inspect <id>` to see what any archive really contains before installing it. The findings, the licences and the exclusions are in [`docs/VOICE_LIBRARY.md`](docs/VOICE_LIBRARY.md).
 
 A second, smaller path transforms one pre-recorded reference sentence for A/B comparison. It is labelled "Audition source recording" in the interface and it is not what Play or Export use.
 
@@ -22,11 +24,11 @@ A second, smaller path transforms one pre-recorded reference sentence for A/B co
 
 1. **Text preparation:** words and numbers are tokenized with exact character offsets; money, years, times, ordinals, percentages, signs, abbreviations, acronyms and single letters are expanded into the words a reader would say; a phone stream is built for the whole utterance and split into segments at sentence ends and line breaks only, so silence exists where a reader would breathe and nowhere else.
 2. **Pronunciation:** Vocalis looks up words in the bundled CMU Pronouncing Dictionary (124,076 entries), preserves vowel stress, and applies local spelling-to-sound rules when a word is not found. Users can store pronunciation hints in browser storage.
-3. **Default recorded voice:** the phoneme sequence selects compact units extracted from CMU ARCTIC 0.95 recordings. Vocalis joins the recorded waveform segments locally and applies pitch/rate processing. The default selectable bases are BDL (male US English) and SLT (female US English); these are the only actual recorded speakers in the app.
+3. **Default recorded voice:** the phoneme sequence selects compact units extracted from CMU ARCTIC 0.95 recordings. Vocalis joins the recorded waveform segments locally and then applies the profile: band-limited pitch resampling, a five-band timbre correction so a lower register is the same speaker, correlation-aligned pace change, tone character and three wide resonance bands. Every character filter is capped at 3 dB, because the measured failure of the previous version was the *sum* of them: a deep profile carried +13 dB through 315–500 Hz. The default selectable bases are BDL (male US English) and SLT (female US English); these are the only actual recorded speakers in the app.
 4. **Experimental mathematical voice:** alternatively, phonemes are generated locally from shaped glottal-flow pulses and time-varying formant resonators, with modeled consonant noise and release bursts. This is synthetic speech, not a human recording, and it is still experimental.
 5. **Playback and export:** one render feeds everything. `playRenderedSpeech` is the only playback path for generated speech, the WAV is encoded from the same sample array, and word highlighting is scheduled from that render's measured timings — a diphone join lands on a phone midpoint, so a word's position is measured rather than estimated. Every render reports its own diagnostics: exact units, same-speaker adaptations, stand-ins, coverage, guessed words, anything not spoken, the missing unit pairs and the dictionary actually used. No audio is sent to a server.
 
-The recorded-unit method can still sound rough: the compact packs hold one selected candidate per diphone (1,337 BDL and 1,324 SLT units at 16 kHz, covering 79.5 % of the pairs a passage needs), the joins are equal-length crossfades with no splice search, and there is no duration model — units keep the length they were recorded at. A pair that was never recorded is covered by two half units of the same speaker and counted in the render report, never by a synthesised stand-in. Vocalis should not call the output quality-proven until listeners evaluate it. UK and Australian settings are rule-based approximations to US-English recordings, not authentic regional recordings.
+The recorded-unit method can still sound rough: the compact packs hold one selected candidate per diphone (1,337 BDL and 1,324 SLT units at 16 kHz, covering 79.5 % of the pairs a passage needs), the joins are equal-length crossfades with no splice search, and there is no duration model — units keep the length they were recorded at. The transformation stage around them no longer adds to that: [`docs/PHASE3_VOICE_TRANSFORM.md`](docs/PHASE3_VOICE_TRANSFORM.md) records what it used to do to a voice and what it does now, with the measurements. A pair that was never recorded is covered by two half units of the same speaker and counted in the render report, never by a synthesised stand-in. Vocalis should not call the output quality-proven until listeners evaluate it. UK and Australian settings are rule-based approximations to US-English recordings, not authentic regional recordings.
 
 ## Voice profiles
 
@@ -45,12 +47,24 @@ npm run dev
 
 The development server listens on port 3000. `npm run build` type-checks the project and creates the production build.
 
+## Requirements
+
+Node.js **18.18 or newer** (`engines` in `package.json`; Node 20 LTS is what it is developed on)
+and **Python 3**, used by the voice-library installers to unpack archives and cut WAV spans. The
+Python executable is discovered automatically — `python3`, `python` or `py` — so a distribution
+that only provides `python` works without a symlink. Everything else is in `npm install`.
+
 The whole gate, in the order it should be run:
 
 ```sh
 npm run lint                # type-check src
 npm run test:engine         # 212 checks: text analysis against the real bundled dictionary
-npm run test:render         # 534 checks: rendered audio, timings, silence, pace, determinism, export
+npm run test:render         # 555 checks: rendered audio, timings, silence, pace, determinism, export,
+                            #   and the transformation itself measured on known signals
+npm run test:voices         # 118 checks: the recorded voice library — catalogue, guards, conversion,
+                            #   install/remove, the terminal command, and a voice actually speaking
+npm run voices -- list      # the library from a terminal: list / install / inspect / remove / urls
+                            #   e.g. npm run voices -- install arctic-awb
 npm run verify:base-voice   # frozen fingerprints, pack integrity, engine presence, no foreign code or TTS
 npm run audit               # type-check plus the contract check
 ```
@@ -65,6 +79,7 @@ Both suites read the real assets in `public/` from disk through a small fetch sh
 | [`docs/BASE_VOICE_CONTRACT.md`](docs/BASE_VOICE_CONTRACT.md) | The permanent base voice, what may never change, and what may |
 | [`docs/PIPELINE_MAP.md`](docs/PIPELINE_MAP.md) | The verified call graph, module by module, with line numbers |
 | [`docs/PHASE2_PIPELINE_CORRECTION.md`](docs/PHASE2_PIPELINE_CORRECTION.md) | What was broken, what was built, and every measurement |
+| [`docs/PHASE3_VOICE_TRANSFORM.md`](docs/PHASE3_VOICE_TRANSFORM.md) | The pitch/pace/resonance stage: why profiles sounded metallic and what replaced it |
 | [`docs/APPLICATION_AUDIT.md`](docs/APPLICATION_AUDIT.md) | Full investigation of the tree: discrepancies with measurements |
 | [`docs/VOICE_IMPROVEMENT_PLAN.md`](docs/VOICE_IMPROVEMENT_PLAN.md) | Research-informed improvements, each specified as original Vocalis work |
 | [`docs/VOICE_SYNTHESIS_RESEARCH.md`](docs/VOICE_SYNTHESIS_RESEARCH.md) | Evidence behind the synthesis design choices |
