@@ -12,6 +12,15 @@ using them outside MBROLA.** Every one of the 105 is in the catalogue on screen,
 with its licence and its reason, so a user can see what exists rather than trusting
 a claim.
 
+**What is proven, and what is not.** One of the 18 has been installed and spoken end
+to end on a real archive: `cmu-kal`. The other 17 (the 16 ARCTIC speakers and CSTR
+RAB) are supported by an installer whose conversion is proven on an archive built in
+the documented layout, but the first real ARCTIC download — `cmu_us_ljm_arctic` — was
+refused by the converter because it contained no phone labels, which is exactly the
+failure the guard exists for. That download is why `inspect` exists: it reports what
+an archive actually contains without installing anything. Until an archive passes it,
+this document does not claim the voice works.
+
 Two voices are special and are not in that count: **CMU ARCTIC BDL and SLT are
 protected base voices**. Nothing here can install, replace, modify or remove them
 (see [`BASE_VOICE_CONTRACT.md`](BASE_VOICE_CONTRACT.md)).
@@ -54,7 +63,17 @@ The corpus that BDL and SLT come from has 18 speakers, all recorded the same way
 terms (free for any purpose, commercial included, with the notice retained and
 modifications marked). Vocalis already ships a builder for exactly this layout —
 `scripts/build_cmu_voicepack.py`, the script that produced the base packs — so these
-are the cleanest additions available:
+are the cleanest additions available — *if the published archives really carry those
+labels*. The first real one tried here did not: `cmu_us_ljm_arctic.tar.bz2`
+downloaded and unpacked correctly and then produced zero units, because the archive
+held waveforms and `etc/` but no `.lab` files (the ARCTIC build script labels the
+corpus itself with `build_cg_rfs_voice`, so a clustergen distribution need not ship
+labels at all). The installer now refuses such an archive with an explanation instead
+of writing an empty pack, and `npm run voices -- inspect <id>` prints the inventory
+before anything is installed. **Run it on your machine before trusting the class-A
+rating of any ARCTIC voice**; if none of the archives carry labels these 16 are class
+C (they need forced alignment), not class A, and the catalogue will be corrected to
+say so.
 
 | id | accent | gender | archive |
 |---|---|---|---|
@@ -196,6 +215,8 @@ uses the same catalogue, the same installer and the same guards:
 | `npm run voices -- install arctic-awb` | download, unpack, convert, validate, install |
 | `npm run voices -- install --class A` | all 17 ready voices, one at a time |
 | `npm run voices -- install cmu-kal --from ~/Downloads/kal.tar.gz` | install from an archive you already have |
+| `npm run voices -- inspect arctic-ljm` | download an archive, report what is inside it, install nothing |
+| `npm run voices -- inspect arctic-ljm --from ~/Downloads/ljm.tar.bz2` | the same, for an archive you already have |
 | `npm run voices -- remove arctic-awb` | delete that voice and its metadata |
 | `npm run voices -- status` | what is installed, and how much disk it uses |
 | `npm run voices -- urls --class A` | the `curl` commands, for fetching by hand |
@@ -217,6 +238,40 @@ any `--from` path containing spaces, and prefer a real Python from python.org or
 `winget install Python.Python.3.12` over the Store alias. `--from` is what
 makes the command useful on a machine that cannot reach festvox.org: fetch the
 archive however you like (browser, `curl`, a mirror), then install it locally.
+
+### When an install reports that the pack has no units
+
+`✗ the pack has only 0 units` means the download and unpack worked and the
+conversion did not: the archive did not contain what the recipe expects. Do not
+retry it — find out what it does contain:
+
+```sh
+npm run voices -- inspect arctic-ljm
+```
+
+`inspect` downloads (or takes `--from`), unpacks into a temporary directory, and
+prints a short inventory: the top level, how many waveforms, label files and text
+files there are, any nested archives, the first paths, and a sample of the labels or
+transcription. It installs nothing and leaves the voice library unchanged, so it is
+safe to run on a voice you already have installed.
+
+What the inventory usually means:
+
+* **0 label files** — the archive is waveforms plus transcription, not phone labels.
+  A diphone pack is cut per phone transition, so there is nothing to cut; this voice
+  needs forced alignment first. The installer refuses it and says so rather than
+  writing an empty pack. (This is what happened with the real `cmu_us_ljm_arctic`.)
+* **a nested archive** — the audio is inside a second tarball, and this recipe does
+  not unpack twice. Unpack it by hand and install from the directory.
+* **label files somewhere unexpected** — the converter looks in `lab/`, then
+  `labels/`/`labelled/`/`labeled/`, then anywhere with `.lab` files. If it still picks
+  the wrong directory, pass it explicitly:
+  `python3 scripts/build_cmu_voicepack.py --source <dir> --output <dir> --speaker-id
+  <id> --display-name <name> --accent <accent> --gender <gender> --lab-dir <labels>`.
+  A `--lab-dir` with no `.lab` files is refused.
+* **different lab and wav counts, or names that do not match** — the converter stops
+  with both counts and an example pair instead of building from a fraction of the
+  corpus.
 
 If you would rather do it entirely by hand:
 
@@ -246,7 +301,7 @@ they cannot drift from the data.
 
 ## 8. Testing
 
-`npm run test:voices` — **84 checks**, all passing, no network access:
+`npm run test:voices` — **104 checks**, all passing, no network access:
 
 * catalogue: unique ids, ≥80 candidates, no protected id offered, every entry has a
   source URL, licence, attribution, class and a reason; nothing class D installable;
@@ -268,6 +323,13 @@ they cannot drift from the data.
   goes through `install_voice.py --kind arctic-archive`, is cut by
   `build_cmu_voicepack.py`, validates, and reports `done` — the same path the 16
   speakers use, exercised on a fixture because the real host is unreachable here
+* label discovery and honest failure: labels found under `labels/` instead of `lab/`
+  install; an archive with no labels at all is refused with the inventory in the
+  message, writes no pack, and reports `failed` to the UI; labels whose names do not
+  match the waveforms are refused with both counts; `--lab-dir` is honoured, and a
+  `--lab-dir` with no `.lab` files is refused
+* `--inspect`: reports the waveforms and the absence of labels from an archive, exits
+  0, and writes nothing into the voice root — including for an already-installed id
 * the terminal command: `list --ready`, `urls --class A` and `install slt` (refused,
   with the reason) run as subprocesses and are checked on their output and exit code
 * the runtime: a Python 3 is found on this machine, the candidate list covers every

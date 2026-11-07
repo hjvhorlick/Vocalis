@@ -172,6 +172,41 @@ def validate_pack(pack_dir: Path) -> dict:
     return {"units": len(units), "bytes": audio_size}
 
 
+def inventory(root: Path) -> str:
+    """What is actually inside the archive — the first thing to know when a
+    conversion produces nothing."""
+    wavs = sorted(root.rglob("*.wav"))
+    labs = sorted(root.rglob("*.lab"))
+    texts = sorted(root.rglob("*.txt")) + sorted(root.rglob("*.data"))
+    top = sorted(entry.name for entry in root.iterdir())[:10]
+    lines = [
+        f"top level: {', '.join(top)}",
+        f"{len(wavs)} waveforms, {len(labs)} label files, {len(texts)} text files",
+    ]
+    nested = [
+        path for path in root.rglob("*")
+        if path.is_file() and path.name.lower().endswith((".tar.gz", ".tgz", ".tar.bz2", ".zip"))
+    ]
+    if nested:
+        lines.append("nested archives: " + ", ".join(str(path.relative_to(root)) for path in nested[:5]))
+    if wavs:
+        lines.append(f"first waveform: {wavs[0].relative_to(root)}")
+    if labs:
+        lines.append(f"first labels:   {labs[0].relative_to(root)}")
+        try:
+            sample = labs[0].read_text(encoding="utf-8", errors="replace").splitlines()[:3]
+            lines.append("label sample:   " + " | ".join(sample))
+        except OSError:
+            pass
+    elif texts:
+        try:
+            sample = texts[0].read_text(encoding="utf-8", errors="replace").splitlines()[:2]
+            lines.append("text sample:    " + " | ".join(sample))
+        except OSError:
+            pass
+    return "\n".join(lines)
+
+
 def find_one(root: Path, pattern: str) -> Path:
     matches = sorted(root.rglob(pattern))
     if not matches:
@@ -283,12 +318,30 @@ def main() -> int:
     parser.add_argument("--source-url", default="")
     parser.add_argument("--attribution", default="")
     parser.add_argument("--licence", default="")
+    parser.add_argument(
+        "--inspect",
+        action="store_true",
+        help="Download and unpack, report what the archive contains, install nothing.",
+    )
     args = parser.parse_args()
 
     progress = args.progress
     try:
         voice_id = sanitise_id(args.id)
         out_root = args.out_root.resolve()
+
+        if args.inspect:
+            with tempfile.TemporaryDirectory(prefix=f"vocalis-inspect-{voice_id}-") as temporary:
+                work = Path(temporary)
+                archive = work / "source.archive"
+                download(args.url, archive, progress, args.display_name)
+                unpacked = work / "unpacked"
+                extract_archive(archive, unpacked, progress)
+                report = inventory(unpacked)
+            write_progress(progress, stage="done", percent=100, message="Inspection complete.")
+            print(report)
+            return 0
+
         target = out_root / voice_id
         if target.exists():
             # Never silently replace an installed voice.

@@ -99,7 +99,7 @@ export const VOICE_CATALOGUE: VoiceCandidate[] = [
       attribution: "Carnegie Mellon University, John Kominek and Alan W. Black, CMU ARCTIC speaker <ID>, Copyright (c) 2003",
     },
     compatibility: "A",
-    compatibilityNote: "Same corpus, same labelling and same 16 kHz recordings as the base voices. Vocalis cuts it with scripts/build_cmu_voicepack.py, the builder used for BDL and SLT.",
+    compatibilityNote: "Same corpus, same labelling and same 16 kHz recordings as the base voices. Vocalis cuts it with scripts/build_cmu_voicepack.py, the builder used for BDL and SLT. Not proved on a real archive yet: the first ARCTIC download tried here (LJM) contained no phone labels and was refused, so run `npm run voices -- inspect <id>` before installing — 0 label files means this voice needs forced alignment, not an installer.",
     install: {
       kind: "arctic-archive",
       url: "http://festvox.org/cmu_arctic/packed/cmu_us_aew_arctic.tar.bz2",
@@ -127,7 +127,7 @@ export const VOICE_CATALOGUE: VoiceCandidate[] = [
       attribution: "Carnegie Mellon University, John Kominek and Alan W. Black, CMU ARCTIC speaker <ID>, Copyright (c) 2003",
     },
     compatibility: "A",
-    compatibilityNote: "Same corpus, same labelling and same 16 kHz recordings as the base voices. Vocalis cuts it with scripts/build_cmu_voicepack.py, the builder used for BDL and SLT.",
+    compatibilityNote: "Same corpus, same labelling and same 16 kHz recordings as the base voices. Vocalis cuts it with scripts/build_cmu_voicepack.py, the builder used for BDL and SLT. Not proved on a real archive yet: the first ARCTIC download tried here (LJM) contained no phone labels and was refused, so run `npm run voices -- inspect <id>` before installing — 0 label files means this voice needs forced alignment, not an installer.",
     install: {
       kind: "arctic-archive",
       url: "http://festvox.org/cmu_arctic/packed/cmu_us_ahw_arctic.tar.bz2",
@@ -155,7 +155,7 @@ export const VOICE_CATALOGUE: VoiceCandidate[] = [
       attribution: "Carnegie Mellon University, John Kominek and Alan W. Black, CMU ARCTIC speaker <ID>, Copyright (c) 2003",
     },
     compatibility: "A",
-    compatibilityNote: "Same corpus, same labelling and same 16 kHz recordings as the base voices. Vocalis cuts it with scripts/build_cmu_voicepack.py, the builder used for BDL and SLT.",
+    compatibilityNote: "Same corpus, same labelling and same 16 kHz recordings as the base voices. Vocalis cuts it with scripts/build_cmu_voicepack.py, the builder used for BDL and SLT. Not proved on a real archive yet: the first ARCTIC download tried here (LJM) contained no phone labels and was refused, so run `npm run voices -- inspect <id>` before installing — 0 label files means this voice needs forced alignment, not an installer.",
     install: {
       kind: "arctic-archive",
       url: "http://festvox.org/cmu_arctic/packed/cmu_us_aup_arctic.tar.bz2",
@@ -183,7 +183,7 @@ export const VOICE_CATALOGUE: VoiceCandidate[] = [
       attribution: "Carnegie Mellon University, John Kominek and Alan W. Black, CMU ARCTIC speaker <ID>, Copyright (c) 2003",
     },
     compatibility: "A",
-    compatibilityNote: "Same corpus, same labelling and same 16 kHz recordings as the base voices. Vocalis cuts it with scripts/build_cmu_voicepack.py, the builder used for BDL and SLT.",
+    compatibilityNote: "Same corpus, same labelling and same 16 kHz recordings as the base voices. Vocalis cuts it with scripts/build_cmu_voicepack.py, the builder used for BDL and SLT. Not proved on a real archive yet: the first ARCTIC download tried here (LJM) contained no phone labels and was refused, so run `npm run voices -- inspect <id>` before installing — 0 label files means this voice needs forced alignment, not an installer.",
     install: {
       kind: "arctic-archive",
       url: "http://festvox.org/cmu_arctic/packed/cmu_us_awb_arctic.tar.bz2",
@@ -211,7 +211,7 @@ export const VOICE_CATALOGUE: VoiceCandidate[] = [
       attribution: "Carnegie Mellon University, John Kominek and Alan W. Black, CMU ARCTIC speaker <ID>, Copyright (c) 2003",
     },
     compatibility: "A",
-    compatibilityNote: "Same corpus, same labelling and same 16 kHz recordings as the base voices. Vocalis cuts it with scripts/build_cmu_voicepack.py, the builder used for BDL and SLT.",
+    compatibilityNote: "Same corpus, same labelling and same 16 kHz recordings as the base voices. Vocalis cuts it with scripts/build_cmu_voicepack.py, the builder used for BDL and SLT. Not proved on a real archive yet: the first ARCTIC download tried here (LJM) contained no phone labels and was refused, so run `npm run voices -- inspect <id>` before installing — 0 label files means this voice needs forced alignment, not an installer.",
     install: {
       kind: "arctic-archive",
       url: "http://festvox.org/cmu_arctic/packed/cmu_us_axb_arctic.tar.bz2",
@@ -239,7 +239,7 @@ export const VOICE_CATALOGUE: VoiceCandidate[] = [
       attribution: "Carnegie Mellon University, John Kominek and Alan W. Black, CMU ARCTIC speaker <ID>, Copyright (c) 2003",
     },
     compatibility: "A",
-    compatibilityNote: "Same corpus, same labelling and same 16 kHz recordings as the base voices. Vocalis cuts it with scripts/build_cmu_voicepack.py, the builder used for BDL and SLT.",
+    compatibilityNote: "Same corpus, same labelling and same 16 kHz recordings as the base voices. Vocalis cuts it with scripts/build_cmu_voicepack.py, the builder used for BDL and SLT. Not proved on a real archive yet: the first ARCTIC download tried here (LJM) contained no phone labels and was refused, so run `npm run voices -- inspect <id>` before installing — 0 label files means this voice needs forced alignment, not an installer.",
     install: {
       kind: "arctic-archive",
       url: "http://festvox.org/cmu_arctic/packed/cmu_us_clb_arctic.tar.bz2",
@@ -267,7 +267,7 @@ export const VOICE_CATALOGUE: VoiceCandidate[] = [
       attribution: "Carnegie Mellon University, John Kominek and Alan W. Black, CMU ARCTIC speaker <ID>, Copyright (c) 2003",
     },
     compatibility: "A",
-    compatibilityNote: "Same corpus, same labelling and same 16 kHz recordings as the base voices. Vocalis cuts it with scripts/build_cmu_voicepack.py, the builder used for BDL and SLT.",
+    compatibilityNote: "Same corpus, same labelling and same 16 kHz recordings as the base voices. Vocalis cuts it with scripts/build_cmu_voicepack.py, the builder used for BDL and SLT. Not proved on a real archive yet: the first ARCTIC download tried here (LJM) contained no phone labels and was refused, so run `npm run voices -- inspect <id>` before installing — 0 label files means this voice needs forced alignment, not an installer.",
     install: {
       kind: "arctic-archive",
       url: "http://festvox.org/cmu_arctic/packed/cmu_us_eey_arctic.tar.bz2",
@@ -295,7 +295,7 @@ export const VOICE_CATALOGUE: VoiceCandidate[] = [
       attribution: "Carnegie Mellon University, John Kominek and Alan W. Black, CMU ARCTIC speaker <ID>, Copyright (c) 2003",
     },
     compatibility: "A",
-    compatibilityNote: "Same corpus, same labelling and same 16 kHz recordings as the base voices. Vocalis cuts it with scripts/build_cmu_voicepack.py, the builder used for BDL and SLT.",
+    compatibilityNote: "Same corpus, same labelling and same 16 kHz recordings as the base voices. Vocalis cuts it with scripts/build_cmu_voicepack.py, the builder used for BDL and SLT. Not proved on a real archive yet: the first ARCTIC download tried here (LJM) contained no phone labels and was refused, so run `npm run voices -- inspect <id>` before installing — 0 label files means this voice needs forced alignment, not an installer.",
     install: {
       kind: "arctic-archive",
       url: "http://festvox.org/cmu_arctic/packed/cmu_us_fem_arctic.tar.bz2",
@@ -323,7 +323,7 @@ export const VOICE_CATALOGUE: VoiceCandidate[] = [
       attribution: "Carnegie Mellon University, John Kominek and Alan W. Black, CMU ARCTIC speaker <ID>, Copyright (c) 2003",
     },
     compatibility: "A",
-    compatibilityNote: "Same corpus, same labelling and same 16 kHz recordings as the base voices. Vocalis cuts it with scripts/build_cmu_voicepack.py, the builder used for BDL and SLT.",
+    compatibilityNote: "Same corpus, same labelling and same 16 kHz recordings as the base voices. Vocalis cuts it with scripts/build_cmu_voicepack.py, the builder used for BDL and SLT. Not proved on a real archive yet: the first ARCTIC download tried here (LJM) contained no phone labels and was refused, so run `npm run voices -- inspect <id>` before installing — 0 label files means this voice needs forced alignment, not an installer.",
     install: {
       kind: "arctic-archive",
       url: "http://festvox.org/cmu_arctic/packed/cmu_us_gka_arctic.tar.bz2",
@@ -351,7 +351,7 @@ export const VOICE_CATALOGUE: VoiceCandidate[] = [
       attribution: "Carnegie Mellon University, John Kominek and Alan W. Black, CMU ARCTIC speaker <ID>, Copyright (c) 2003",
     },
     compatibility: "A",
-    compatibilityNote: "Same corpus, same labelling and same 16 kHz recordings as the base voices. Vocalis cuts it with scripts/build_cmu_voicepack.py, the builder used for BDL and SLT.",
+    compatibilityNote: "Same corpus, same labelling and same 16 kHz recordings as the base voices. Vocalis cuts it with scripts/build_cmu_voicepack.py, the builder used for BDL and SLT. Not proved on a real archive yet: the first ARCTIC download tried here (LJM) contained no phone labels and was refused, so run `npm run voices -- inspect <id>` before installing — 0 label files means this voice needs forced alignment, not an installer.",
     install: {
       kind: "arctic-archive",
       url: "http://festvox.org/cmu_arctic/packed/cmu_us_jmk_arctic.tar.bz2",
@@ -379,7 +379,7 @@ export const VOICE_CATALOGUE: VoiceCandidate[] = [
       attribution: "Carnegie Mellon University, John Kominek and Alan W. Black, CMU ARCTIC speaker <ID>, Copyright (c) 2003",
     },
     compatibility: "A",
-    compatibilityNote: "Same corpus, same labelling and same 16 kHz recordings as the base voices. Vocalis cuts it with scripts/build_cmu_voicepack.py, the builder used for BDL and SLT.",
+    compatibilityNote: "Same corpus, same labelling and same 16 kHz recordings as the base voices. Vocalis cuts it with scripts/build_cmu_voicepack.py, the builder used for BDL and SLT. Not proved on a real archive yet: the first ARCTIC download tried here (LJM) contained no phone labels and was refused, so run `npm run voices -- inspect <id>` before installing — 0 label files means this voice needs forced alignment, not an installer.",
     install: {
       kind: "arctic-archive",
       url: "http://festvox.org/cmu_arctic/packed/cmu_us_ksp_arctic.tar.bz2",
@@ -407,7 +407,7 @@ export const VOICE_CATALOGUE: VoiceCandidate[] = [
       attribution: "Carnegie Mellon University, John Kominek and Alan W. Black, CMU ARCTIC speaker <ID>, Copyright (c) 2003",
     },
     compatibility: "A",
-    compatibilityNote: "Same corpus, same labelling and same 16 kHz recordings as the base voices. Vocalis cuts it with scripts/build_cmu_voicepack.py, the builder used for BDL and SLT.",
+    compatibilityNote: "Same corpus, same labelling and same 16 kHz recordings as the base voices. Vocalis cuts it with scripts/build_cmu_voicepack.py, the builder used for BDL and SLT. Not proved on a real archive yet: the first ARCTIC download tried here (LJM) contained no phone labels and was refused, so run `npm run voices -- inspect <id>` before installing — 0 label files means this voice needs forced alignment, not an installer.",
     install: {
       kind: "arctic-archive",
       url: "http://festvox.org/cmu_arctic/packed/cmu_us_ljm_arctic.tar.bz2",
@@ -435,7 +435,7 @@ export const VOICE_CATALOGUE: VoiceCandidate[] = [
       attribution: "Carnegie Mellon University, John Kominek and Alan W. Black, CMU ARCTIC speaker <ID>, Copyright (c) 2003",
     },
     compatibility: "A",
-    compatibilityNote: "Same corpus, same labelling and same 16 kHz recordings as the base voices. Vocalis cuts it with scripts/build_cmu_voicepack.py, the builder used for BDL and SLT.",
+    compatibilityNote: "Same corpus, same labelling and same 16 kHz recordings as the base voices. Vocalis cuts it with scripts/build_cmu_voicepack.py, the builder used for BDL and SLT. Not proved on a real archive yet: the first ARCTIC download tried here (LJM) contained no phone labels and was refused, so run `npm run voices -- inspect <id>` before installing — 0 label files means this voice needs forced alignment, not an installer.",
     install: {
       kind: "arctic-archive",
       url: "http://festvox.org/cmu_arctic/packed/cmu_us_lnh_arctic.tar.bz2",
@@ -463,7 +463,7 @@ export const VOICE_CATALOGUE: VoiceCandidate[] = [
       attribution: "Carnegie Mellon University, John Kominek and Alan W. Black, CMU ARCTIC speaker <ID>, Copyright (c) 2003",
     },
     compatibility: "A",
-    compatibilityNote: "Same corpus, same labelling and same 16 kHz recordings as the base voices. Vocalis cuts it with scripts/build_cmu_voicepack.py, the builder used for BDL and SLT.",
+    compatibilityNote: "Same corpus, same labelling and same 16 kHz recordings as the base voices. Vocalis cuts it with scripts/build_cmu_voicepack.py, the builder used for BDL and SLT. Not proved on a real archive yet: the first ARCTIC download tried here (LJM) contained no phone labels and was refused, so run `npm run voices -- inspect <id>` before installing — 0 label files means this voice needs forced alignment, not an installer.",
     install: {
       kind: "arctic-archive",
       url: "http://festvox.org/cmu_arctic/packed/cmu_us_rms_arctic.tar.bz2",
@@ -491,7 +491,7 @@ export const VOICE_CATALOGUE: VoiceCandidate[] = [
       attribution: "Carnegie Mellon University, John Kominek and Alan W. Black, CMU ARCTIC speaker <ID>, Copyright (c) 2003",
     },
     compatibility: "A",
-    compatibilityNote: "Same corpus, same labelling and same 16 kHz recordings as the base voices. Vocalis cuts it with scripts/build_cmu_voicepack.py, the builder used for BDL and SLT.",
+    compatibilityNote: "Same corpus, same labelling and same 16 kHz recordings as the base voices. Vocalis cuts it with scripts/build_cmu_voicepack.py, the builder used for BDL and SLT. Not proved on a real archive yet: the first ARCTIC download tried here (LJM) contained no phone labels and was refused, so run `npm run voices -- inspect <id>` before installing — 0 label files means this voice needs forced alignment, not an installer.",
     install: {
       kind: "arctic-archive",
       url: "http://festvox.org/cmu_arctic/packed/cmu_us_rxr_arctic.tar.bz2",
@@ -519,7 +519,7 @@ export const VOICE_CATALOGUE: VoiceCandidate[] = [
       attribution: "Carnegie Mellon University, John Kominek and Alan W. Black, CMU ARCTIC speaker <ID>, Copyright (c) 2003",
     },
     compatibility: "A",
-    compatibilityNote: "Same corpus, same labelling and same 16 kHz recordings as the base voices. Vocalis cuts it with scripts/build_cmu_voicepack.py, the builder used for BDL and SLT.",
+    compatibilityNote: "Same corpus, same labelling and same 16 kHz recordings as the base voices. Vocalis cuts it with scripts/build_cmu_voicepack.py, the builder used for BDL and SLT. Not proved on a real archive yet: the first ARCTIC download tried here (LJM) contained no phone labels and was refused, so run `npm run voices -- inspect <id>` before installing — 0 label files means this voice needs forced alignment, not an installer.",
     install: {
       kind: "arctic-archive",
       url: "http://festvox.org/cmu_arctic/packed/cmu_us_slp_arctic.tar.bz2",

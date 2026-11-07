@@ -28,6 +28,7 @@ import {
   existsSync,
   mkdirSync,
   mkdtempSync,
+  renameSync,
   readFileSync,
   readdirSync,
   rmSync,
@@ -340,15 +341,24 @@ const baseBefore = sha256(basePackPath);
 rmSync(join(installRoot, 'fixture-two'), { recursive: true, force: true });
 check('the protected base pack is untouched by library removals', sha256(basePackPath) === baseBefore);
 
-// The other install recipe: a CMU ARCTIC distribution. The real archives are on
-// festvox.org, which this environment cannot reach, so the *conversion* is proved
-// here against an archive built in the same layout (wav/ + lab/ + COPYING) from
-// generated audio. If the layout is wrong, this fails — which is the point.
-{
-  const speakerDir = join(workDir, 'arctic', 'cmu_us_fix_arctic');
-  mkdirSync(join(speakerDir, 'wav'), { recursive: true });
-  mkdirSync(join(speakerDir, 'lab'), { recursive: true });
+// CMU ARCTIC distributions all carry the same shape: a speaker directory with
+// 16 kHz waveforms and one phone-label file per utterance, packed as a tarball.
+// The label directory is not always called `lab`, and some distributions ship no
+// labels at all — so the builder below can place them anywhere, or omit them.
+function buildArcticSpeaker(
+  root: string,
+  options: { speaker?: string; labelDir?: string; labels?: boolean } = {},
+): { speakerDir: string; wavDir: string; labelDir: string | null } {
+  const speaker = options.speaker ?? 'fix';
+  const wantLabels = options.labels ?? true;
+  const speakerDir = join(root, `cmu_us_${speaker}_arctic`);
+  const wavDir = join(speakerDir, 'wav');
+  const labelDir = wantLabels ? join(speakerDir, options.labelDir ?? 'lab') : join(speakerDir, 'etc');
+  mkdirSync(wavDir, { recursive: true });
+  mkdirSync(labelDir, { recursive: true });
   writeFileSync(join(speakerDir, 'COPYING'), 'Fixture speaker for the installer test.');
+  // A short spelling of "this distribution labels from `etc/` or not at all".
+  if (!wantLabels) writeFileSync(join(speakerDir, 'etc', 'READ.ME'), 'Waveforms only.');
   const phones = ['aa', 'ae', 'ah', 'b', 'd', 'k', 'p', 's', 't', 'z', 'n', 'm', 'l', 'r', 'ih', 'eh'];
   // Every ordered pair of these phones appears in the sequence, so the fixture
   // contains hundreds of distinct diphones instead of a short repeating cycle.
@@ -385,9 +395,33 @@ check('the protected base pack is untouched by library removals', sha256(basePac
     header.writeUInt16LE(16, 34);
     header.write('data', 36);
     header.writeUInt32LE(samples.length, 40);
-    writeFileSync(join(speakerDir, 'wav', `arctic_${utterance}.wav`), Buffer.concat([header, samples]));
-    writeFileSync(join(speakerDir, 'lab', `arctic_${utterance}.lab`), `${labels.join('\n')}\n`);
+    writeFileSync(join(wavDir, `arctic_${utterance}.wav`), Buffer.concat([header, samples]));
+    if (wantLabels) {
+      writeFileSync(join(labelDir, `arctic_${utterance}.lab`), `${labels.join('\n')}\n`);
+    }
   }
+  return { speakerDir, wavDir, labelDir: wantLabels ? labelDir : null };
+}
+
+function packArctic(speakerDir: string, archivePath: string): string {
+  execFileSync('python3', [
+    '-c',
+    `import os,tarfile,sys
+with tarfile.open(sys.argv[1],'w:bz2') as t:
+    t.add(sys.argv[2], arcname=os.path.basename(sys.argv[2]))
+`,
+    archivePath,
+    speakerDir,
+  ]);
+  return archivePath;
+}
+
+// The other install recipe: a CMU ARCTIC distribution. The real archives are on
+// festvox.org, which this environment cannot reach, so the *conversion* is proved
+// here against an archive built in the same layout (wav/ + lab/ + COPYING) from
+// generated audio. If the layout is wrong, this fails — which is the point.
+{
+  const { speakerDir } = buildArcticSpeaker(join(workDir, 'arctic'), { speaker: 'fix' });
   const archivePath = join(workDir, 'arctic-fixture.tar.bz2');
   execFileSync('python3', [
     '-c',
@@ -415,6 +449,123 @@ with tarfile.open(sys.argv[1],'w:bz2') as t:
   }
   const progressText = existsSync(arcticProgress) ? readFileSync(arcticProgress, 'utf8') : '';
   check('the progress file reports success for the UI', /"stage":\s*"done"/.test(progressText), progressText.slice(-120));
+}
+
+// ARCTIC archives are not uniform. Some call their label directory `labels/`,
+// the clustergen distributions ship waveforms with no labels at all, and the
+// real LJM archive turned out to be exactly that. The installer finds what is
+// there and refuses what is not — it must never write an empty pack and call it
+// a voice, and `--inspect` must say what an archive actually contains.
+{
+  const lastLine = (outcome: { output: string }): string =>
+    outcome.output.trim().split('\n').filter(Boolean).slice(-1)[0] ?? '';
+
+  const labelled = buildArcticSpeaker(join(workDir, 'arctic-labels'), { speaker: 'labs', labelDir: 'labels' });
+  const labelledArchive = packArctic(labelled.speakerDir, join(workDir, 'arctic-labels.tar.bz2'));
+  const labelledRoot = join(workDir, 'arctic-labels-out');
+  const labelledOutcome = installerOutcome([
+    '--id', 'arctic-labels', '--kind', 'arctic-archive', '--url', `file://${labelledArchive}`,
+    '--speaker', 'labs', '--out-root', labelledRoot, '--progress', join(workDir, 'labels-progress.json'),
+    '--display-name', 'ARCTIC labels fixture', '--accent', 'US English', '--gender', 'Female',
+  ]);
+  check('labels are found outside the conventional lab directory', labelledOutcome.code === 0, lastLine(labelledOutcome));
+  const labelledManifest = join(labelledRoot, 'arctic-labels', 'manifest.json');
+  check('and a pack is built from them', existsSync(labelledManifest));
+  if (existsSync(labelledManifest)) {
+    const manifest = JSON.parse(readFileSync(labelledManifest, 'utf8'));
+    check('with the units the labels describe', Object.keys(manifest.units).length >= 200, `${Object.keys(manifest.units).length}`);
+  }
+
+  const unlabelledRoot = join(workDir, 'arctic-nolab-out');
+  const unlabelledProgress = join(workDir, 'nolab-progress.json');
+  const unlabelledArchive = packArctic(
+    buildArcticSpeaker(join(workDir, 'arctic-nolab'), { speaker: 'nolab', labels: false }).speakerDir,
+    join(workDir, 'arctic-nolab.tar.bz2'),
+  );
+  const unlabelledOutcome = installerOutcome([
+    '--id', 'arctic-nolab', '--kind', 'arctic-archive', '--url', `file://${unlabelledArchive}`,
+    '--speaker', 'nolab', '--out-root', unlabelledRoot, '--progress', unlabelledProgress,
+    '--display-name', 'ARCTIC unlabelled fixture', '--accent', 'US English', '--gender', 'Female',
+  ]);
+  check('an archive with no labels is refused', unlabelledOutcome.code !== 0, lastLine(unlabelledOutcome));
+  check('the refusal names the missing labels', /no phone labels/i.test(unlabelledOutcome.output), lastLine(unlabelledOutcome));
+  check('and says alignment is needed instead of guessing', /forced alignment/i.test(unlabelledOutcome.output));
+  check('and describes what the archive does contain', /2 wav, 0 lab/.test(unlabelledOutcome.output), lastLine(unlabelledOutcome));
+  check('and no empty pack is left behind', !existsSync(join(unlabelledRoot, 'arctic-nolab')));
+  const unlabelledProgressText = existsSync(unlabelledProgress) ? readFileSync(unlabelledProgress, 'utf8') : '';
+  check('the progress file reports the failure for the UI', /"stage":\s*"failed"/.test(unlabelledProgressText), unlabelledProgressText.slice(-120));
+  check(
+    'and the UI message is the explanation, not a bare exception name',
+    /no phone labels/i.test(unlabelledProgressText),
+    unlabelledProgressText.slice(-160),
+  );
+
+  const inspectRoot = join(workDir, 'arctic-inspect-out');
+  const inspectOutcome = installerOutcome([
+    '--id', 'arctic-nolab', '--kind', 'arctic-archive', '--url', `file://${unlabelledArchive}`,
+    '--speaker', 'nolab', '--out-root', inspectRoot, '--progress', join(workDir, 'inspect-progress.json'),
+    '--display-name', 'ARCTIC unlabelled fixture', '--accent', 'US English', '--gender', 'Female',
+    '--inspect',
+  ]);
+  check('--inspect reports on an archive without installing it', inspectOutcome.code === 0, lastLine(inspectOutcome));
+  check('and reports the waveforms it found', /2 waveforms/.test(inspectOutcome.output), inspectOutcome.output.trim());
+  check('and that it carries no labels', /0 label files/.test(inspectOutcome.output), inspectOutcome.output.trim());
+  check('and writes nothing into the voice root', !existsSync(inspectRoot));
+}
+
+// The label directory can also be named explicitly, for a distribution whose
+// layout defeats discovery. Pointing it at a directory with no labels is an
+// error, not an empty pack.
+{
+  const speaker = buildArcticSpeaker(join(workDir, 'arctic-override'), { speaker: 'over', labelDir: 'labels' });
+  const emptyLabels = join(workDir, 'arctic-override', 'empty-labels');
+  mkdirSync(emptyLabels, { recursive: true });
+  const build = (labelDir: string): { code: number; output: string } => {
+    try {
+      const output = execFileSync('python3', [
+        join(ROOT, 'scripts', 'build_cmu_voicepack.py'),
+        '--source', speaker.speakerDir,
+        '--output', join(workDir, 'override-pack'),
+        '--speaker-id', 'arctic-over',
+        '--display-name', 'ARCTIC override fixture',
+        '--accent', 'US English',
+        '--gender', 'Male',
+        '--lab-dir', labelDir,
+      ], { cwd: ROOT, encoding: 'utf8', stdio: 'pipe' });
+      return { code: 0, output };
+    } catch (error) {
+      const failure = error as { status?: number; stderr?: string };
+      return { code: failure.status ?? 1, output: failure.stderr ?? '' };
+    }
+  };
+  const explicit = build(speaker.labelDir!);
+  check('an explicit --lab-dir builds the pack', explicit.code === 0, explicit.output.trim().split('\n').slice(-1)[0]);
+  const missing = build(emptyLabels);
+  check('an explicit --lab-dir with no labels is refused', missing.code !== 0);
+  check(
+    'and says the directory it was given holds no labels',
+    /holds no \.lab files/i.test(missing.output),
+    missing.output.trim().split('\n')[0] ?? '',
+  );
+}
+
+// Labels that do not match the waveforms are a mismatch, not a zero-unit voice.
+{
+  // Right number of files, wrong names: nothing lines up, and the pack would be empty.
+  const speaker = buildArcticSpeaker(join(workDir, 'arctic-mismatch'), { speaker: 'mis' });
+  for (const utterance of ['a0001', 'a0002']) {
+    renameSync(join(speaker.labelDir!, `arctic_${utterance}.lab`), join(speaker.labelDir!, `utt_${utterance}.lab`));
+  }
+  const archive = packArctic(speaker.speakerDir, join(workDir, 'arctic-mismatch.tar.bz2'));
+  const mismatchRoot = join(workDir, 'arctic-mismatch-out');
+  const outcome = installerOutcome([
+    '--id', 'arctic-mismatch', '--kind', 'arctic-archive', '--url', `file://${archive}`,
+    '--speaker', 'mis', '--out-root', mismatchRoot, '--progress', join(workDir, 'mismatch-progress.json'),
+    '--display-name', 'ARCTIC mismatch fixture', '--accent', 'US English', '--gender', 'Male',
+  ]);
+  check('labels that do not match the waveforms are refused', outcome.code !== 0);
+  check('and the refusal shows both counts', /2 lab files, 2 wav files/.test(outcome.output), outcome.output.trim().split('\n')[0] ?? '');
+  check('and no pack is left behind', !existsSync(join(mismatchRoot, 'arctic-mismatch')));
 }
 
 // ---------------------------------------------------------------------------

@@ -100,6 +100,11 @@ function printUsage(): void {
   remove <id...>
         Delete installed voices. The protected base voices are refused.
 
+  inspect <id> [--from <archive>]
+        Download and unpack a voice's archive and report what it contains —
+        waveforms, phone labels, text — without converting or installing anything.
+        Use it first when an install fails.
+
   urls [--class A|B]
         Print the curl commands for the archives, for people who would rather
         fetch by hand.
@@ -180,19 +185,16 @@ function positionals(args: string[]): string[] {
   return out;
 }
 
-function runInstaller(voice: VoiceCandidate, archiveOverride?: string): Promise<number> {
+function installerArgs(voice: VoiceCandidate, archiveOverride?: string): string[] | null {
   const recipe = voice.install;
-  if (!recipe) return Promise.resolve(1);
-  const progressFile = resolve(PROGRESS_ROOT, `${voice.id}.json`);
-  mkdirSync(PROGRESS_ROOT, { recursive: true });
-
+  if (!recipe) return null;
   const args = [
     resolve(ROOT, 'scripts', 'install_voice.py'),
     '--id', voice.id,
     '--kind', recipe.kind,
     '--url', archiveOverride ? pathToFileURL(expandHome(archiveOverride)).href : recipe.url,
     '--out-root', VOICE_ROOT,
-    '--progress', progressFile,
+    '--progress', resolve(PROGRESS_ROOT, `${voice.id}.json`),
     '--display-name', voice.displayName,
     '--accent', voice.accent,
     '--gender', voice.gender,
@@ -207,19 +209,32 @@ function runInstaller(voice: VoiceCandidate, archiveOverride?: string): Promise<
   } else {
     args.push('--dic', recipe.dicPath, '--wav', recipe.wavPath);
   }
+  return args;
+}
 
+function runInstaller(voice: VoiceCandidate, archiveOverride?: string): Promise<number> {
+  const args = installerArgs(voice, archiveOverride);
+  const recipe = voice.install;
+  if (!args || !recipe) return Promise.resolve(1);
   const python = resolvePythonExecutable();
   if (!python) {
     console.error(`  ✗ ${pythonInstallHint()}`);
     return Promise.resolve(1);
   }
 
+  const progressFile = resolve(PROGRESS_ROOT, `${voice.id}.json`);
+  mkdirSync(PROGRESS_ROOT, { recursive: true });
+
   console.log(`\n▸ ${voice.displayName}  (${voice.id})`);
-  console.log(`  ${archiveOverride ? `from ${archiveOverride}` : recipe.url}`);
+  console.log(`  ${archiveOverride ? expandHome(archiveOverride) : recipe.url}`);
   console.log(`  licence: ${voice.licence.name}`);
 
   return new Promise((resolvePromise) => {
-    const child = spawn(python, args, { cwd: ROOT, stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true });
+    const child = spawn(python, args, {
+      cwd: ROOT,
+      stdio: ['ignore', 'pipe', 'pipe'],
+      windowsHide: true,
+    });
     let lastLine = '';
     const timer = setInterval(() => {
       if (!existsSync(progressFile)) return;
@@ -227,15 +242,14 @@ function runInstaller(voice: VoiceCandidate, archiveOverride?: string): Promise<
         const progress = JSON.parse(readFileSync(progressFile, 'utf-8')) as {
           stage?: string;
           message?: string;
-          percent?: number;
         };
         const line = `${progress.stage ?? ''}: ${progress.message ?? ''}`;
         if (line !== lastLine) {
           lastLine = line;
-          console.log(`  … ${line}`);
+          for (const part of line.split('\n')) console.log(`  … ${part}`);
         }
       } catch {
-        // The installer rewrites the file between reads; the next tick will read it.
+        // The installer renames the file into place; the next tick will read it.
       }
     }, 400);
 
@@ -249,12 +263,54 @@ function runInstaller(voice: VoiceCandidate, archiveOverride?: string): Promise<
         const info = installedInfo(voice.id);
         console.log(`  ✓ installed: ${info?.units ?? '?'} recorded units, ${humanBytes(info?.bytes)}`);
       } else {
-        const raw = lastLine.includes('failed:') ? lastLine : stderr.trim().split('\n').slice(-1)[0];
-        const message = (raw ?? '').replace(/^(\w+: )?install failed: /, '');
-        console.error(`  ✗ failed${message ? `: ${message}` : ''}`);
+        // The installer explains itself; print its explanation, not just "failed".
+        const explanation =
+          stderr
+            .split('\n')
+            .map((line) => line.trim())
+            .filter((line) => line && !line.startsWith('install failed:'))
+            .slice(-4)
+            .join(' ') ||
+          (lastLine.includes('failed:') ? lastLine.replace(/.*failed: /, '') : 'unknown error');
+        console.error(`  ✗ ${explanation}`);
       }
       resolvePromise(code ?? 1);
     });
+  });
+}
+
+async function inspect(args: string[]): Promise<number> {
+  const [id] = positionals(args);
+  const fromArchive = valueOf(args, '--from');
+  if (!id) {
+    console.error('Which voice? e.g. `npm run voices -- inspect arctic-ljm`');
+    return 1;
+  }
+  const voice = findVoiceCandidate(id);
+  if (!voice) {
+    console.error(`✗ unknown voice "${id}". Run \`npm run voices -- list\` for the ids.`);
+    return 1;
+  }
+  if (!voice.install) {
+    console.error(`✗ ${voice.displayName} has no installer.`);
+    return 1;
+  }
+  const python = resolvePythonExecutable();
+  if (!python) {
+    console.error(pythonInstallHint());
+    return 1;
+  }
+  const args2 = installerArgs(voice, fromArchive);
+  if (!args2) return 1;
+  console.log(`\n▸ inspecting ${voice.displayName} (${id})`);
+  console.log(`  ${fromArchive ? expandHome(fromArchive) : voice.install!.url}\n`);
+  return new Promise((resolvePromise) => {
+    const child = spawn(python, [...args2, '--inspect'], {
+      cwd: ROOT,
+      stdio: ['ignore', 'inherit', 'inherit'],
+      windowsHide: true,
+    });
+    child.on('close', (code) => resolvePromise(code ?? 1));
   });
 }
 
@@ -362,6 +418,8 @@ async function main(): Promise<number> {
       return 0;
     case 'install':
       return install(args);
+    case 'inspect':
+      return inspect(args);
     case 'remove':
     case 'rm':
       return remove(args);
