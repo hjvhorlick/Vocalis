@@ -44,9 +44,16 @@ user types a script and presses Play / Export WAV
         │    │    ├─ segmentUtterance(utterance)                       :1277
         │    │    │    splits at sentence ends and line breaks ONLY
         │    │    ├─ buildWordProsody(utterance, segments)  src/utils/phonemeSynthesizer.ts:347
+        │    │    │    (shapes the mathematical path; the recorded path gets the
+        │    │    │     same contour from applyProsody below)
         │    │    ├─ BRANCH 'cmu-arctic' (the product)                 :603
         │    │    │    └─ renderCmuDiphones(segments, model, fallback, offset)
-        │    │    │         src/utils/cmuDiphoneSynthesizer.ts:460
+        │    │    │         src/utils/cmuDiphoneSynthesizer.ts:659
+        │    │    │         ├─ per chunk: medianChunkPitch            :431
+        │    │    │         ├─ applyProsody(chunks, chunkProsody)     :523
+        │    │    │         │    reference pitch, declination, boundary
+        │    │    │         │    ramp, stress lift, peak match
+        │    │    │         │    see RECORDED_VOICE_PROSODY.md
         │    │    │         ├─ speakerForModel(model)   slt / bdl       :133
         │    │    │         ├─ loadVoicePack(speaker)                   :141
         │    │    │         │    manifest.json + diphones.bin
@@ -151,7 +158,7 @@ replaces this graph with the shared transformation module.
 | --- | --- | --- |
 | `utils/textAnalysis.ts` | 1,321 | **New.** The text/pronunciation front end, extracted from `phonemeSynthesizer.ts` and rebuilt. 212 checks. |
 | `utils/phonemeSynthesizer.ts` | 710 | **Rebuilt around segments.** Orchestrator, timings, normalisation and WAV encoding are new; the formant synthesizer (`getFormants` … `buildPhoneSamples`) and `buildWordProsody` are the preserved originals. |
-| `utils/cmuDiphoneSynthesizer.ts` | 652 | **Head rebuilt, tail moved out.** Pack loading, indexing, assembly, half-unit backoff and offsets unchanged; the pitch/rate/character tail now delegates to `voiceTransform.ts`, so the assembly that *is* the base voice no longer contains signal processing. |
+| `utils/cmuDiphoneSynthesizer.ts` | 862 | **Head rebuilt, tail moved out, contour added.** Pack loading, indexing, assembly, half-unit backoff and offsets unchanged; the pitch/rate/character tail delegates to `voiceTransform.ts`; `applyProsody` gives the joined chunks one pitch line (`RECORDED_VOICE_PROSODY.md`). |
 | `utils/naturalVoiceEngine.ts` | 753 | **Rewired.** One entry point, one dialogue timeline, presets that state their method and speaker, engine warm-up, and the audition feature kept as a labelled separate thing. |
 | `utils/audioDspEngine.ts` | 290 | **Extended.** `samplesToAudioBuffer` + `playRenderedSpeech` are the single playback path for generated speech; `stopTransformedVoice` releases the analyser and no longer fires `onended`. The Web Audio node graph is gone: the audition transforms its buffer with `transformRecordedVoice` and plays the resulting samples, so playback and export of the reference recording are the same audio (D3 and D4 closed). |
 | `utils/voiceTransform.ts` | 676 | **New.** The voice transformation stage: band-limited pitch resampling, five-band timbre correction, correlation-aligned pace change, tone character, resonance sliders under a 3 dB colour budget. Original code; see `PHASE3_VOICE_TRANSFORM.md` for the measurements. |
@@ -178,7 +185,7 @@ replaces this graph with the shared transformation module.
 | Joins | Equal-length crossfades at every joint, sized by unit kind | Splice search at minimum energy or a zero crossing, RMS equalisation across the join, equal-power fades sized by voiced/unvoiced/silence, no fade across a stop burst |
 | Coverage | 79.5 % of the pairs a passage needs; misses covered by same-speaker half units, ranked by class and length, and counted (0 mathematical stand-ins measured) | Pack v2: the internal phone boundary, pitch marks, several candidates per pair, and cost-based selection (target + join cost) over a pruned lattice |
 | Articulation | None. Effects apply to the whole signal, consonants included | Voiced/unvoiced separation so sibilants, plosives and fricatives are protected |
-| Prosody | `buildWordProsody` shapes the experimental path; the recorded path uses the units' own prosody, with segment-level pauses and dialogue gaps | Stress-driven duration, F0 and energy on the recorded path; declination, boundary tones, question rise |
+| Prosody | `applyProsody` re-pitches every recorded chunk onto one contour — declination +1.2 → −1.8 st, question rise 2.4 st, statement fall 1.2 st ramped over the last third, stress +0.6 st, bounded reference normalisation; frame-to-frame F0 movement 0.964 → 0.745 st (recording 0.391) | Pitch accents with rise-falls *inside* syllables, a duration model, phrase-final lengthening, boundary tones per intermediate phrase |
 | Loudness | Peak-normalise to 0.78, make-up gain capped at 4×, then the profile volume | Loudness-consistent normalisation, click/pop detection at joins, de-harshing |
 | Profiles | `VoiceModelConfig`, unversioned: pitch, rate, volume, toneStyle, accent, gender, three EQ numbers, method, speaker | One versioned profile schema covering source / tract / resonance / texture / articulation / prosody, reproducible byte-for-byte |
 
@@ -204,6 +211,7 @@ Phase 3  Voice transformation foundation           ← next
          3.4  vocal-tract stage: formant frequency and bandwidth scaling
          3.5  voiced/unvoiced separation to protect consonants
          3.6  join smoothing: splice search, energy equalisation, equal-power fades
+         3.7  prosody on the recorded path ✅ done — RECORDED_VOICE_PROSODY.md
          Gate: copy synthesis of a corpus sentence is indistinguishable from the original;
                pitch ±5 semitones at constant rate keeps vowels recognisable.
 

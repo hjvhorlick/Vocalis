@@ -100,7 +100,9 @@ export interface RenderDiagnostics {
 
 /** One sentence-worth of phones. Silence may only appear between segments. */
 export interface SegmentInput {
-  phones: Array<{ phone: string }>;
+  phones: Array<{ phone: string; stress?: string | number }>;
+  /** The punctuation that ended this phrase, or '' when the text simply stopped. */
+  terminal?: string;
 }
 
 /**
@@ -386,6 +388,202 @@ function concat(parts: Float32Array[]): Float32Array {
 }
 
 // ---------------------------------------------------------------------------
+// Prosody for the recorded-unit path
+// ---------------------------------------------------------------------------
+
+/**
+ * What the recorded-unit path is allowed to do about intonation.
+ *
+ * Every unit in the packs was cut from a different sentence, so each one carries
+ * whatever pitch and timing its own sentence had. Glued together, those pitches
+ * jump at random from unit to unit: measured on the reference sentence, the
+ * finished render moves 0.89 semitones between neighbouring analysis frames
+ * where the source recording moves 0.39 — twice the instability of a person,
+ * before any profile touches it. That is heard as a waver, and it is why capping
+ * the tone filters helped but did not cure the sound.
+ *
+ * So the units are re-pitched onto one smooth contour: each chunk is brought to a
+ * common reference pitch (the median of its own voiced frames, so its internal
+ * shape is kept) and then offset by an intended phrase contour — a gentle
+ * declination, and a boundary tone that falls at a full stop and rises at a
+ * question mark. Timing is not touched: every chunk is resampled and then
+ * stretched back to exactly the length it had, so joins, word timings and the
+ * render's duration are unchanged to the sample.
+ */
+const DECLINATION_START_ST = 1.2;
+const DECLINATION_END_ST = -1.8;
+const QUESTION_RISE_ST = 2.4;
+const FINAL_FALL_ST = -0.8;
+/** The most any chunk may move in total: about +/-4 semitones. */
+const MIN_PROSODY_RATIO = 0.75;
+const MAX_PROSODY_RATIO = 1.3;
+/** Below a fifth of a semitone nothing is audible, and nothing is processed. */
+const PROSODY_DEADBAND = 0.008;
+
+/**
+ * Median F0 of one chunk, from its own voiced frames, or 0 when it has none.
+ *
+ * Autocorrelation per 32 ms frame on 512-sample hops, frames below a floor
+ * skipped so a pause unit reports "unvoiced" rather than dividing by noise. The
+ * shortest lag within 95 % of the best wins, which is the usual guard against
+ * locking onto a sub-octave.
+ */
+function medianChunkPitch(samples: Float32Array): number {
+  const frame = 512;
+  const shortest = Math.round(SAMPLE_RATE / 400);
+  const longest = Math.round(SAMPLE_RATE / 70);
+  const values: number[] = [];
+  for (let start = 0; start + frame + longest <= samples.length; start += 512) {
+    let energy = 0;
+    for (let index = 0; index < frame; index += 1) energy += samples[start + index] * samples[start + index];
+    if (energy / frame < 0.003) continue;
+    let bestLag = 0;
+    let bestScore = 0;
+    for (let lag = shortest; lag <= longest; lag += 1) {
+      let dot = 0;
+      let left = 0;
+      let right = 0;
+      for (let index = 0; index + lag < frame; index += 1) {
+        const a = samples[start + index];
+        const b = samples[start + index + lag];
+        dot += a * b;
+        left += a * a;
+        right += b * b;
+      }
+      const score = left > 0 && right > 0 ? dot / Math.sqrt(left * right) : 0;
+      if (score > bestScore) {
+        bestScore = score;
+        bestLag = lag;
+      }
+    }
+    if (bestLag === 0 || bestScore < 0.45) continue;
+    for (let lag = shortest; lag < bestLag; lag += 1) {
+      let dot = 0;
+      let left = 0;
+      let right = 0;
+      for (let index = 0; index + lag < frame; index += 1) {
+        const a = samples[start + index];
+        const b = samples[start + index + lag];
+        dot += a * b;
+        left += a * a;
+        right += b * b;
+      }
+      const score = left > 0 && right > 0 ? dot / Math.sqrt(left * right) : 0;
+      if (score >= bestScore * 0.95) {
+        bestLag = lag;
+        break;
+      }
+    }
+    values.push(SAMPLE_RATE / bestLag);
+  }
+  if (!values.length) return 0;
+  values.sort((a, b) => a - b);
+  return values[Math.floor(values.length / 2)];
+}
+
+/**
+ * Give `shaped` the peak of `reference`, so a processing pass changes the shape
+ * of a chunk and not its level.
+ */
+function matchPeak(reference: Float32Array, shaped: Float32Array): Float32Array {
+  let before = 0;
+  let after = 0;
+  for (let index = 0; index < reference.length; index += 1) {
+    const magnitude = Math.abs(reference[index]);
+    if (magnitude > before) before = magnitude;
+  }
+  for (let index = 0; index < shaped.length; index += 1) {
+    const magnitude = Math.abs(shaped[index]);
+    if (magnitude > after) after = magnitude;
+  }
+  if (before <= 0 || after <= 0) return shaped;
+  const scale = before / after;
+  if (Math.abs(scale - 1) < 1e-4) return shaped;
+  const output = new Float32Array(shaped.length);
+  for (let index = 0; index < shaped.length; index += 1) output[index] = shaped[index] * scale;
+  return output;
+}
+
+/** Where a chunk sits in its phrase, and what the phrase did at its end. */
+interface ChunkProsody {
+  /** 0 at the start of the phrase, 1 at its end. */
+  position: number;
+  final: boolean;
+  question: boolean;
+  /** 1 for a stressed vowel, 0 otherwise: stress gets a small lift of its own. */
+  stress: number;
+}
+
+/**
+ * Put every chunk on one contour.
+ *
+ * Chunks with no voiced frames (a pause unit, a lone fricative) are passed
+ * through untouched and simply do not vote on the reference pitch.
+ */
+function applyProsody(chunks: Float32Array[], prosody: ChunkProsody[]): Float32Array[] {
+  const pitches = chunks.map((chunk) => medianChunkPitch(chunk));
+  const voiced = pitches.filter((pitch) => pitch > 0).sort((a, b) => a - b);
+  if (!voiced.length) return chunks;
+  const reference = voiced[Math.floor(voiced.length / 2)];
+
+  // The boundary tone belongs to the last *voiced* chunk of a phrase. The tail
+  // unit is the last phone fading into silence, and its median pitch is often
+  // unavailable — the phrase then ended with no tone at all, which is how a
+  // question could come out flat. Move the flag back to the last chunk that can
+  // carry a pitch.
+  for (let index = 0; index < chunks.length; index += 1) {
+    if (!prosody[index]?.final) continue;
+    let carrier = index;
+    while (carrier > 0 && (pitches[carrier] <= 0 || !prosody[carrier])) {
+      if (prosody[carrier - 1]?.final) break;
+      carrier -= 1;
+    }
+    if (carrier !== index && prosody[carrier]) {
+      prosody[carrier] = { ...prosody[carrier], final: true, question: prosody[index].question };
+      prosody[index] = { ...prosody[index], final: false };
+    }
+  }
+  return chunks.map((chunk, index) => {
+    const measured = pitches[index];
+    const meta = prosody[index];
+    if (measured <= 0 || !meta) return chunk;
+    let semitones = DECLINATION_START_ST + (DECLINATION_END_ST - DECLINATION_START_ST) * meta.position;
+    semitones += 0.6 * meta.stress;
+    // The boundary tone is not a step on the last unit: a rise or a fall in real
+    // speech is carried by the last part of the phrase. Spreading it over the
+    // final third also puts it where the ear expects it — on the last stressed
+    // syllable — instead of on the 40 ms of vowel that happens to sit in the
+    // closing unit.
+    const boundaryRamp = meta.final ? 1 : Math.max(0, (meta.position - 0.68) / 0.32);
+    semitones += boundaryRamp * (meta.question ? QUESTION_RISE_ST : FINAL_FALL_ST);
+    // Two stages, because they fail differently. Bringing a unit onto the
+    // reference pitch has to be bounded or a badly-matched unit would be moved a
+    // fourth; the contour offset is small on purpose and must survive that bound,
+    // otherwise a question ends exactly like a statement whenever its last unit
+    // happens to sit far from the reference — which is what the first version of
+    // this did.
+    const normalise = Math.min(1.18, Math.max(0.85, reference / measured));
+    const contour = Math.pow(2, semitones / 12);
+    const factor = Math.min(MAX_PROSODY_RATIO, Math.max(MIN_PROSODY_RATIO, normalise * contour));
+    if (Math.abs(factor - 1) < PROSODY_DEADBAND) return chunk;
+    // Pitch, then length back to exactly what the join expects. Formant
+    // preservation keeps the speaker's own vowel space instead of sliding it
+    // with the pitch, which at these small ratios is the difference between
+    // "the same person, speaking" and "a slightly different person".
+    const shaped = transformRecordedVoice(
+      chunk,
+      { pitch: factor, rate: 1, toneStyle: 'natural', formantPreservation: 0.7 },
+      SAMPLE_RATE,
+    );
+    // Re-pitching raises the crest factor a little. Left alone, the render's
+    // peak normaliser would answer that by turning the whole voice down, which
+    // is a change of volume nobody asked a contour for. Matching the chunk's own
+    // peak keeps "the same audio, a different pitch".
+    return matchPeak(chunk, shaped);
+  });
+}
+
+// ---------------------------------------------------------------------------
 // Joining, with the position of every phone reported
 // ---------------------------------------------------------------------------
 
@@ -474,6 +672,9 @@ export async function renderCmuDiphones(
   };
   const phoneOffsets: number[] = [];
   const segmentPhoneCounts: number[] = [];
+  // Prosody metadata, one entry per assembled chunk, used after assembly to put
+  // every unit on one contour.
+  const chunkProsody: ChunkProsody[] = [];
 
   const allPhones: string[] = [];
   for (const segment of segments) {
@@ -538,6 +739,7 @@ export async function renderCmuDiphones(
   for (const segment of segments) {
     const phones = segment.phones.map((token) => packPhone(token.phone));
     if (!phones.length) continue;
+    const question = segment.terminal === '?';
 
     // Lead: the first half of the segment's first phone, on a recorded pause
     // unit when one exists.
@@ -563,11 +765,18 @@ export async function renderCmuDiphones(
       }
     }
     const leadIndex = chunks.length - 1;
+    chunkProsody.push({ position: 0, final: false, question, stress: 0 });
     cursor += chunks[leadIndex].length;
 
     // Joints between the segment's phones.
     for (let index = 1; index < phones.length; index += 1) {
       chunks.push(joint(phones[index - 1], phones[index], cursor));
+      chunkProsody.push({
+        position: index / phones.length,
+        final: false,
+        question,
+        stress: Number(segment.phones[index]?.stress ?? 0) > 0 ? 1 : 0,
+      });
       cursor += chunks[chunks.length - 1].length;
     }
 
@@ -595,13 +804,14 @@ export async function renderCmuDiphones(
         );
       }
     }
+    chunkProsody.push({ position: 1, final: true, question, stress: 0 });
     cursor += chunks[chunks.length - 1].length;
 
     // Remember where this segment's chunks began, to map midpoints afterwards.
     segmentStarts.push({ chunkIndex: leadIndex, phoneCount: phones.length });
   }
 
-  const joined = crossfadeJoinWithOffsets(chunks);
+  const joined = crossfadeJoinWithOffsets(applyProsody(chunks, chunkProsody));
   // Chunk i begins on the midpoint of phone i-1 within its segment, so the
   // offsets of a segment's phones are the starts of the chunks after its lead.
   for (const { chunkIndex, phoneCount } of segmentStarts) {

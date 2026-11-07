@@ -28,7 +28,7 @@ through an effects chain, whatever text you type. That single fact explains most
 ## Status after the pipeline correction (2026-11-07)
 
 The P0 wiring defect is closed and the Phase 1 naturalness work is built. Measurements come
-from `tests/renderSpeech.test.ts` (550 checks) and `tests/textAnalysis.test.ts` (212 checks);
+from `tests/renderSpeech.test.ts` (555 checks) and `tests/textAnalysis.test.ts` (212 checks);
 the full before-and-after record is
 [`PHASE2_PIPELINE_CORRECTION.md`](PHASE2_PIPELINE_CORRECTION.md), and the phase that rebuilt
 the transformation stage is [`PHASE3_VOICE_TRANSFORM.md`](PHASE3_VOICE_TRANSFORM.md).

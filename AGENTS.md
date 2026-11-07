@@ -15,7 +15,9 @@ Read this before changing anything. These rules are binding for every session, h
 - No browser TTS, cloud TTS, neural TTS, statistical parametric voice, voice conversion, voice
   cloning, or downloaded prebuilt voice may be added — not as a default, not as a fallback, not
   as a hidden mode.
-- All improvement happens **around** the base voice: text analysis, pronunciation, prosody,
+- All improvement happens **around** the base voice: text analysis, pronunciation, prosody
+  (the recorded chunks are re-pitched onto one contour by `applyProsody`, see
+  `docs/RECORDED_VOICE_PROSODY.md`),
   duration, unit selection, join smoothing, pitch/duration modification, accent modelling,
   playback, export, evaluation. New speakers arrive as **additional** frozen packs.
 

@@ -168,7 +168,7 @@ interface says so, and Sterling's −11 dB below 1 kHz is the 1930s broadcast ch
 
 ## 4. What the renderer now measures about itself
 
-`npm run test:render` — 550 checks. New in this phase (they run on known signals, not on the
+`npm run test:render` — 555 checks. New in this phase (they run on known signals, not on the
 renders, so they pin the algorithm rather than one sentence):
 
 | Check | Result |
@@ -184,7 +184,7 @@ renders, so they pin the algorithm rather than one sentence):
 | Pitch lowers/raises the measured pitch without changing the duration | period 131 / 67 samples against 94, duration 3.73 s in all three |
 | Rate changes the duration without changing the measured pitch | 2.66 s and 5.33 s at the same measured period |
 
-The gate: `npm run lint`, `npm run test:engine` (212), `npm run test:render` (550),
+The gate: `npm run lint`, `npm run test:engine` (212), `npm run test:render` (555),
 `npm run verify:base-voice` — all pass.
 
 ---

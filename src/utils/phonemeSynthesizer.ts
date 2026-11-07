@@ -602,7 +602,10 @@ export async function synthesizeText(text: string, model: VoiceModelConfig): Pro
 
   if (method === 'cmu-arctic') {
     const rendered = await renderCmuDiphones(
-      segments.map((segment) => ({ phones: segment.phones })),
+      segments.map((segment) => ({
+        phones: segment.phones,
+        terminal: segment.terminal,
+      })),
       model,
       (phone, offset) => mathematicalPhone(phone, '0', offset, NEUTRAL_PROSODY),
       0,

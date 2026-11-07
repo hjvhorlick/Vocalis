@@ -864,6 +864,125 @@ console.log(
     colourBudget.map(([name, value]) => `${name.split(' ')[0]} ${value >= 0 ? '+' : ''}${value.toFixed(1)}`).join('  '),
 );
 
+// --- prosody on the recorded-unit path -------------------------------------
+// The units carry whatever intonation their own sentence had, so the assembly
+// used to leave pitch jumping from unit to unit. These measure the two things
+// the contour pass is responsible for: a stable pitch line, and a phrase that
+// ends the way its punctuation says.
+
+/** F0 per voiced analysis frame, in Hz, by autocorrelation. */
+function pitchTrack(samples: Float32Array): number[] {
+  const frame = 512;
+  const track: number[] = [];
+  for (let start = 0; start + frame + 240 <= samples.length; start += 256) {
+    let energy = 0;
+    for (let index = 0; index < frame; index += 1) energy += samples[start + index] * samples[start + index];
+    if (energy / frame < 0.004) continue;
+    let bestLag = 0;
+    let bestScore = 0;
+    for (let lag = 40; lag <= 240; lag += 1) {
+      let dot = 0;
+      let left = 0;
+      let right = 0;
+      for (let index = 0; index + lag < frame; index += 1) {
+        const a = samples[start + index];
+        const b = samples[start + index + lag];
+        dot += a * b;
+        left += a * a;
+        right += b * b;
+      }
+      const score = left > 0 && right > 0 ? dot / Math.sqrt(left * right) : 0;
+      if (score > bestScore) {
+        bestScore = score;
+        bestLag = lag;
+      }
+    }
+    if (bestLag === 0 || bestScore < 0.45) continue;
+    // Octave guard: the shortest lag within 95 % of the best peak wins, otherwise
+    // every sub-octave error reads as a semitone jump that no voice made.
+    for (let lag = 40; lag < bestLag; lag += 1) {
+      let dot = 0;
+      let left = 0;
+      let right = 0;
+      for (let index = 0; index + lag < frame; index += 1) {
+        const a = samples[start + index];
+        const b = samples[start + index + lag];
+        dot += a * b;
+        left += a * a;
+        right += b * b;
+      }
+      const score = left > 0 && right > 0 ? dot / Math.sqrt(left * right) : 0;
+      if (score >= bestScore * 0.95) {
+        bestLag = lag;
+        break;
+      }
+    }
+    track.push(16000 / bestLag);
+  }
+  return track;
+}
+
+/** How far F0 moves between neighbouring frames, in semitones, on average. */
+function pitchMovement(samples: Float32Array): number {
+  const track = pitchTrack(samples);
+  if (track.length < 4) return 0;
+  let moved = 0;
+  for (let index = 1; index < track.length; index += 1) {
+    moved += Math.abs(12 * Math.log2(track[index] / track[index - 1]));
+  }
+  return moved / (track.length - 1);
+}
+
+/** Median F0 of the last quarter of the voiced frames. */
+function finalPitch(samples: Float32Array): number {
+  const track = pitchTrack(samples);
+  if (track.length < 8) return 0;
+  const tail = track.slice(Math.floor(track.length * 0.85)).sort((a, b) => a - b);
+  return tail[Math.floor(tail.length / 2)];
+}
+
+// Measured with this tracker on this sentence: 0.964 semitones per frame before
+// the contour pass, 0.745 after, against 0.391 for the source recording of a
+// similar sentence. The rail sits between the two numbers, not at the new one,
+// so ordinary drift is allowed but a regression is caught.
+const stableVoice = await renderSpeech(PASSAGES[0].text, voice({ pitch: 1, rate: 1, toneStyle: 'natural', throatWarmth: 0, oralClarity: 0, airPresence: 0 }));
+const stableMovement = pitchMovement(stableVoice.samples);
+check(
+  'the recorded-unit path holds a stable pitch line',
+  stableMovement < 0.82,
+  `${stableMovement.toFixed(3)} semitones per frame (recording 0.391, before the contour pass 0.964)`,
+);
+console.log(
+  `  ${'pitch stability'.padEnd(38)} ${stableMovement.toFixed(3)} st/frame (recording 0.391, before the contour pass 0.964)`,
+);
+releaseSynthesis(stableVoice);
+// The deep and character voices are excluded on purpose: at 90 Hz with a raised
+// noise floor the tracker itself starts making octave errors, so the number
+// would measure the tracker rather than the voice.
+for (const preset of PRESET_VOICE_MODELS) {
+  if (/Marcus|Jax|Oliver|Sterling|Unit-7/.test(preset.name)) continue;
+  const rendered = await renderSpeech(PASSAGES[0].text, preset);
+  const movement = pitchMovement(rendered.samples);
+  check(
+    `${preset.name}: the pitch line stays stable`,
+    movement < 0.8,
+    `${movement.toFixed(3)} semitones per frame`,
+  );
+  releaseSynthesis(rendered);
+}
+
+const statement = await renderSpeech('You are coming with us today.', voice({ pitch: 1, rate: 1, toneStyle: 'natural' }));
+const question = await renderSpeech('You are coming with us today?', voice({ pitch: 1, rate: 1, toneStyle: 'natural' }));
+const statementEnd = finalPitch(statement.samples);
+const questionEnd = finalPitch(question.samples);
+check(
+  'a question mark lifts the end of the phrase',
+  questionEnd > statementEnd * Math.pow(2, 1 / 12),
+  `final F0 ${questionEnd.toFixed(0)} Hz (question) against ${statementEnd.toFixed(0)} Hz (statement)`,
+);
+releaseSynthesis(statement);
+releaseSynthesis(question);
+
 // --- speaker resolution ----------------------------------------------------
 eq('the default preset speaks from the SLT recordings', warmUp.diagnostics.speaker, 'slt');
 const male = await renderSpeech(PASSAGES[0].text, { ...marcus, pitch: 1, rate: 1, toneStyle: 'natural' });
