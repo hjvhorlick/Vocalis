@@ -86,6 +86,33 @@ export type { HumanVoiceSample };
  */
 export const PRESET_VOICE_MODELS: VoiceModelConfig[] = [
   {
+    // First in the list because the app opens with `models[0]`: what a listener
+    // hears before touching anything should be the recording with nothing done
+    // to it, so that every other preset is a change they chose. Its phrase is
+    // the sentence `cmu_slt_arctic_a0001.wav` contains, so the source audition
+    // is an immediate A/B of the same words.
+    id: 'studio-neutral',
+    name: 'Studio Neutral (SLT)',
+    archetype: 'The recording, unprocessed',
+    description:
+      'Pitch 1.00, pace 1.00, no delivery style, no resonance shift: the joined recordings and nothing between them and the listener. Judge the voice from this one — every other preset adds processing you can hear.',
+    gender: 'Female',
+    accent: 'US',
+    flag: '🎚️',
+    pitch: 1,
+    rate: 1,
+    volume: 1,
+    toneStyle: 'natural',
+    synthesisMethod: 'cmu-arctic',
+    baseSampleId: 'cmu-slt-1',
+    baseVoiceId: 'slt',
+    throatWarmth: 0,
+    oralClarity: 0,
+    airPresence: 0,
+    samplePhrase: 'Author of the danger trail, Philip Ross.',
+    avatarColor: '#22c55e',
+  },
+  {
     id: 'narrator-aria',
     name: 'Aria (Storyteller)',
     archetype: 'Warm Audiobook & Documentary Narrator',

@@ -54,8 +54,15 @@ function dialogueKey(
 }
 
 export const DialogueStudio: React.FC<DialogueStudioProps> = ({ models }) => {
-  const [modelAId, setModelAId] = useState<string>(models[0]?.id || 'narrator-aria');
-  const [modelBId, setModelBId] = useState<string>(models[1]?.id || 'titan-marcus');
+  // Speaker B defaults to the first identity built from a *different* recording,
+  // so a fresh conversation has two voices a listener can tell apart instead of
+  // the same speaker reading both parts.
+  const defaultPartner =
+    models.find(
+      (m) => m.id !== models[0]?.id && (m.baseVoiceId ?? '') !== (models[0]?.baseVoiceId ?? ''),
+    ) || models[1];
+  const [modelAId, setModelAId] = useState<string>(models[0]?.id || 'studio-neutral');
+  const [modelBId, setModelBId] = useState<string>(defaultPartner?.id || 'titan-marcus');
 
   const modelA = models.find((m) => m.id === modelAId) || models[0];
   const modelB = models.find((m) => m.id === modelBId) || models[1] || models[0];

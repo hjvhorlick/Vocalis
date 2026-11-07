@@ -472,6 +472,16 @@ eq('rendering the same text twice gives the same duration', again.duration, warm
 eq('rendering the same text twice gives the same word count', again.diagnostics.words, warmUp.diagnostics.words);
 releaseSynthesis(again);
 
+const shippedRender = await renderSpeech(PASSAGES[0].text, PRESET_VOICE_MODELS[0]);
+check(
+  'the shipped default renders exactly what an explicit neutral voice renders',
+  shippedRender.samples.length === warmUp.samples.length &&
+    shippedRender.samples.every((value, index) => value === warmUp.samples[index]),
+  'the default voice and a neutral voice disagreed',
+);
+eq('the shipped default speaks from the SLT recordings', shippedRender.diagnostics.speaker, 'slt');
+releaseSynthesis(shippedRender);
+
 const exported = decodeWav(await warmUp.wavBlob.arrayBuffer());
 eq('the exported WAV carries the corpus sample rate', exported.sampleRate, 16000);
 eq('the exported WAV has the same length as the preview', exported.samples.length, warmUp.samples.length);
@@ -557,6 +567,34 @@ check(
   'a neutral voice leaves the recording bit-exact',
   untouched.every((value, index) => value === testSignal[index]),
   'a neutral render was processed',
+);
+
+// The voice the app opens with must be the untouched one.
+const shippedDefault = PRESET_VOICE_MODELS[0];
+eq('the shipped default is the neutral voice', shippedDefault.id, 'studio-neutral');
+eq('the shipped default leaves pitch alone', shippedDefault.pitch, 1);
+eq('the shipped default leaves pace alone', shippedDefault.rate, 1);
+eq('the shipped default is at full volume', shippedDefault.volume, 1);
+eq('the shipped default has no delivery style', shippedDefault.toneStyle, 'natural');
+eq('the shipped default is American English', shippedDefault.accent, 'US');
+eq('the shipped default uses the recorded units', shippedDefault.synthesisMethod, 'cmu-arctic');
+eq('the shipped default names its speaker', shippedDefault.baseVoiceId, 'slt');
+eq('the shipped default shifts no resonance band', [
+  shippedDefault.throatWarmth,
+  shippedDefault.oralClarity,
+  shippedDefault.airPresence,
+], [0, 0, 0]);
+const shippedUntouched = processCmuVoice(testSignal, shippedDefault);
+check(
+  'the shipped default leaves the recording bit-exact',
+  shippedUntouched.length === testSignal.length &&
+    shippedUntouched.every((value, index) => value === testSignal[index]),
+  'the default voice processed the audio',
+);
+check(
+  'every preset states its synthesis method and its speaker',
+  PRESET_VOICE_MODELS.every((model) => model.synthesisMethod === 'cmu-arctic' && (model.baseVoiceId === 'slt' || model.baseVoiceId === 'bdl')),
+  'a preset leaves its method or speaker to be inferred',
 );
 
 const nearlyNeutral = processCmuVoice(testSignal, voice({ pitch: 1, rate: 1.004 }));

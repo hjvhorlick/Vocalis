@@ -223,9 +223,9 @@ export const VoiceManipulator: React.FC<VoiceManipulatorProps> = ({
         <div className="flex items-center justify-between">
           <label className="text-[11px] font-bold uppercase tracking-wider text-slate-300 flex items-center gap-1.5">
             <Waves className="w-3.5 h-3.5 text-cyan-400" />
-            Vocal Tract Formant EQ Shaping (Resonance & Timbre)
+            Resonance &amp; Timbre — applies to the source-recording audition
           </label>
-          <span className="text-[10px] text-slate-500 font-mono">Biquad Filter DSP</span>
+          <span className="text-[10px] text-slate-500 font-mono">biquad EQ, audition path</span>
         </div>
 
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
@@ -292,6 +292,14 @@ export const VoiceManipulator: React.FC<VoiceManipulatorProps> = ({
             />
           </div>
         </div>
+
+        <p className="text-[10px] text-slate-500 leading-relaxed">
+          These three bands shape the <em>original reference recording</em> in the audition
+          player. Generated speech does not pass through them: three fixed EQs are not a vocal
+          tract, and giving the generated voice real resonance means scaling formant frequencies
+          and bandwidths, which is the next phase of work. Until then this panel says which path
+          it reaches rather than implying it shapes everything.
+        </p>
       </div>
 
       {/* Tone Style Mode */}

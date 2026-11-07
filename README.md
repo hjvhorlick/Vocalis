@@ -30,6 +30,8 @@ The recorded-unit method can still sound rough: the compact packs hold one selec
 
 ## Voice profiles
 
+The app opens on **Studio Neutral (SLT)** — pitch 1.00, pace 1.00, no delivery style, no resonance shift. At that setting the transformation stage is a proved pass-through: the audio is the joined recordings and nothing else, and the suite asserts it is bit-exact. Every other preset adds processing you can hear, and three of them (radio, robot, whisper) are deliberate effects rather than voices.
+
 The active profiles are descriptive delivery presets, not separate human recordings or cloned identities. They vary register, pitch, speed, pronunciation rules, and signal-processing character over the selected local synthesis method. Only BDL and SLT are real recorded speakers. Accent and persona labels do not claim new authentic speakers.
 
 ## Attribution and licenses
