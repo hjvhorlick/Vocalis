@@ -30,10 +30,24 @@
  * occurred. Only when no half unit exists does the caller's mathematical
  * synthesizer stand in, and that is counted in `diagnostics.fallbackPhones`.
  *
+ * A unit's own length is not how long the phone should be, so the assembled
+ * stream is re-timed before it is joined. `durationModel` plans every phone from
+ * the speaker's measured durations, stress, consonant runs and phrase boundaries;
+ * `psola` then re-cuts each unit into grains one voice cycle wide and re-adds
+ * them on a grid of the planned length, so a phone can be shortened without
+ * dragging its neighbour and a join can be made where both recordings are at the
+ * same phase. The grid needs the pitch marks and the internal phone boundary that
+ * `manifest.v2.json` carries; where that derived index is absent the render falls
+ * back to the units as recorded and the fixed crossfade between them.
+ *
  * Original Vocalis code. The unit data is Carnegie Mellon University's; the
- * extraction tool is `scripts/build_cmu_voicepack.py`.
+ * extraction tools are `scripts/build_cmu_voicepack.py` and
+ * `scripts/build_cmu_voicepack_v2.py`.
  */
 import type { VoiceModelConfig } from './naturalVoiceEngine';
+import type { BoundaryKind, Stress } from './textAnalysis';
+import { planDurations, type DurationPlan, type IntrinsicDurations } from './durationModel';
+import { joinInPhase, synthesiseUnit, type MarkedUnit } from './psola';
 
 const SAMPLE_RATE = 16000;
 
@@ -79,12 +93,39 @@ interface DiphoneManifest {
   units: Record<string, UnitEntry>;
 }
 
+/**
+ * What the derived v2 index adds to a unit: the internal phone boundary, the
+ * pitch marks as a position then a run of steps, and how much of the unit is
+ * voiced. Measured from the same frozen audio by
+ * `scripts/build_cmu_voicepack_v2.py`; the samples themselves are untouched.
+ */
+interface UnitMeta {
+  offset: number;
+  length: number;
+  boundary: number;
+  period: number;
+  voiced: number;
+  marks: number[];
+}
+
+interface DerivedManifest {
+  format: string;
+  phoneDurationsMs?: Record<string, number>;
+  units?: Record<string, UnitMeta>;
+}
+
 interface VoicePack {
   manifest: DiphoneManifest;
   samples: Int16Array;
   /** Keys grouped by their left phone, built once on first use. */
   byLeft: Map<string, string[]>;
   byRight: Map<string, string[]>;
+  /** The derived index, or null when only the v1 index is available. */
+  derived: DerivedManifest | null;
+  /** Pitch marks decoded from their deltas once per unit. */
+  decodedMarks: Map<string, number[]>;
+  /** Measured duration of each phone in seconds, for the plan. */
+  intrinsic: IntrinsicDurations;
 }
 
 export interface RenderDiagnostics {
@@ -98,11 +139,42 @@ export interface RenderDiagnostics {
   missingPairs: string[];
   /** Every phone this render was asked to speak, in order. */
   phones: string[];
+  /**
+   * True when the units were re-timed to the duration plan on their own pitch
+   * marks. When it is, pitch and tempo have already been applied here and must
+   * not be applied again to the joined result.
+   */
+  timedFromPlan: boolean;
+  /** Seconds the plan asked for, excluding the pauses between segments. */
+  plannedSeconds: number;
+  /** Half phones re-timed by overlap-add, the transparent path. */
+  grainHalves: number;
+  /**
+   * Half phones the plan wanted so much shorter than the recording that they were
+   * cut - head and tail kept, middle dropped - because grains read that far
+   * apart in the source are a crackle rather than a sound.
+   */
+  truncatedHalves: number;
+  /** Half phones given less stretch than the plan asked for, to keep them voiced. */
+  cappedHalves: number;
 }
 
-/** One sentence-worth of phones. Silence may only appear between segments. */
+/**
+ * One sentence-worth of phones. Silence may only appear between segments.
+ *
+ * The extra fields are what the duration model needs to tell a stressed vowel
+ * from a schwa and a consonant inside a cluster from one between two vowels.
+ * They are optional so a caller that only has phone symbols still renders: it
+ * just gets the units as recorded, with no plan.
+ */
 export interface SegmentInput {
-  phones: Array<{ phone: string }>;
+  phones: Array<{ phone: string; stress?: Stress; wordIndex?: number; long?: boolean; word?: string }>;
+  /**
+   * How strong the boundary after each phone is, when the caller knows it. An
+   * entry is undefined for a phone that does not end a word, which is most of
+   * them: the boundary belongs to the last phone of each word.
+   */
+  boundaries?: Array<BoundaryKind | undefined>;
 }
 
 /**
@@ -141,14 +213,78 @@ export function speakerForModel(model: VoiceModelConfig): 'slt' | 'bdl' {
   return model.gender === 'Male' ? 'bdl' : 'slt';
 }
 
+/** Pitch marks from their delta coding: a position, then a run of steps. */
+function decodeMarks(deltas: number[]): number[] {
+  if (!Array.isArray(deltas) || !deltas.length) return [];
+  const marks = new Array<number>(deltas.length);
+  let at = deltas[0];
+  marks[0] = at;
+  for (let i = 1; i < deltas.length; i += 1) {
+    at += deltas[i];
+    marks[i] = at;
+  }
+  return marks;
+}
+
+/**
+ * Read the derived index, and check it against the frozen one before trusting it.
+ *
+ * Both index the same bytes of the same audio, so a unit whose offset or length
+ * disagrees means the two files came from different builds. Guessing in that
+ * case would put pitch marks in the wrong places, which is worse than not having
+ * them, so the whole derived index is dropped and the render falls back.
+ */
+async function readDerivedIndex(
+  response: Response | null,
+  manifest: DiphoneManifest,
+  speaker: 'slt' | 'bdl',
+): Promise<{ manifest: DerivedManifest | null; intrinsic: IntrinsicDurations }> {
+  const empty = { manifest: null as DerivedManifest | null, intrinsic: {} as IntrinsicDurations };
+  if (!response || !response.ok) return empty;
+  let derived: DerivedManifest;
+  try {
+    derived = (await response.json()) as DerivedManifest;
+  } catch {
+    return empty;
+  }
+  if (derived?.format !== 'vocalis-cmu-diphones-v2' || !derived.units) {
+    console.warn(`Vocalis: the ${speaker.toUpperCase()} derived unit index has format "${derived?.format}" and was ignored.`);
+    return empty;
+  }
+  let mismatched = 0;
+  let covered = 0;
+  for (const [key, entry] of Object.entries(manifest.units)) {
+    const meta = derived.units[key];
+    if (!meta) continue;
+    covered += 1;
+    if (meta.offset !== entry.offset || meta.length !== entry.length) mismatched += 1;
+  }
+  if (mismatched || covered < Object.keys(manifest.units).length) {
+    console.warn(
+      `Vocalis: the ${speaker.toUpperCase()} derived unit index disagrees with the frozen one ` +
+        `(${mismatched} mismatched, ${covered} of ${Object.keys(manifest.units).length} covered) and was ignored.`,
+    );
+    return empty;
+  }
+  const intrinsic: IntrinsicDurations = {};
+  for (const [phone, ms] of Object.entries(derived.phoneDurationsMs ?? {})) {
+    if (typeof ms === 'number' && ms > 0) intrinsic[phone] = ms / 1000;
+  }
+  if (!Object.keys(intrinsic).length) return empty;
+  return { manifest: derived, intrinsic };
+}
+
 async function loadVoicePack(speaker: 'slt' | 'bdl'): Promise<VoicePack> {
   const cached = packs.get(speaker);
   if (cached) return cached;
   const request = (async () => {
     const root = `/voicepacks/cmu-arctic/${speaker}`;
-    const [manifestResponse, audioResponse] = await Promise.all([
+    const [manifestResponse, audioResponse, derivedResponse] = await Promise.all([
       fetch(`${root}/manifest.json`),
       fetch(`${root}/diphones.bin`),
+      // The derived index is an optimisation over the frozen one: if it is not
+      // there, or does not agree with it, the render falls back rather than fails.
+      fetch(`${root}/manifest.v2.json`).catch(() => null),
     ]);
     if (!manifestResponse.ok || !audioResponse.ok) {
       throw new Error(`Could not load the CMU ARCTIC ${speaker.toUpperCase()} voice pack.`);
@@ -187,7 +323,16 @@ async function loadVoicePack(speaker: 'slt' | 'bdl'): Promise<VoicePack> {
       if (rights) rights.push(key);
       else byRight.set(right, [key]);
     }
-    return { manifest, samples: new Int16Array(buffer), byLeft, byRight };
+    const derived = await readDerivedIndex(derivedResponse, manifest, speaker);
+    return {
+      manifest,
+      samples: new Int16Array(buffer),
+      byLeft,
+      byRight,
+      derived: derived.manifest,
+      decodedMarks: new Map<string, number[]>(),
+      intrinsic: derived.intrinsic,
+    };
   })();
   packs.set(speaker, request);
   try {
@@ -449,6 +594,87 @@ function packPhone(phone: string): string {
   return mapped.toLowerCase();
 }
 
+/** A pause half of a unit: no phone to plan, so it keeps its recorded length. */
+const PAUSE_HALF = -1;
+
+/** One chunk of the stream: what it is made of, and the two half phones it carries. */
+interface ChunkSpec {
+  samples: Float32Array;
+  /** The recorded unit this chunk is exactly, or null when it was assembled. */
+  key: string | null;
+  /** Index into the plan of the phone whose SECOND half this chunk carries. */
+  leftPhone: number;
+  /** Index into the plan of the phone whose FIRST half this chunk carries. */
+  rightPhone: number;
+}
+
+/** Pitch marks for a unit, decoded from their deltas once and kept. */
+function marksFor(pack: VoicePack, key: string): number[] {
+  const cached = pack.decodedMarks.get(key);
+  if (cached) return cached;
+  const decoded = decodeMarks(pack.derived?.units?.[key]?.marks ?? []);
+  pack.decodedMarks.set(key, decoded);
+  return decoded;
+}
+
+/**
+ * A chunk as the resynthesiser wants it: its samples, its pitch marks, and how
+ * long each of its two half phones should be.
+ *
+ * A half that belongs to a pause is left at the length it was recorded at. The
+ * pause is the breath between sentences, and the plan says nothing about it.
+ */
+function markedUnitOf(pack: VoicePack, spec: ChunkSpec, plan: DurationPlan): MarkedUnit {
+  const { samples } = spec;
+  const meta = spec.key ? pack.derived?.units?.[spec.key] : undefined;
+  const split = meta
+    ? Math.min(Math.max(Math.round(meta.boundary), 1), Math.max(1, samples.length - 1))
+    : Math.max(1, Math.round(samples.length / 2));
+  const target = (index: number, recorded: number): number =>
+    index >= 0 && plan.phones[index] ? (plan.phones[index].seconds * SAMPLE_RATE) / 2 : recorded;
+  return {
+    samples,
+    marks: spec.key ? marksFor(pack, spec.key) : [],
+    boundary: split,
+    leftTarget: target(spec.leftPhone, split),
+    rightTarget: target(spec.rightPhone, samples.length - split),
+  };
+}
+
+/** How the halves of one render were realised, counted as they are built. */
+export interface RealisationCounts {
+  grains: number;
+  truncated: number;
+  capped: number;
+}
+
+/**
+ * Re-time every chunk to the plan and join them on the voice cycle.
+ *
+ * The counts come back filled in: a render is not "re-timed" in the abstract, it
+ * is a specific number of halves walked on grains, a specific number cut because
+ * the plan asked for less than a grain walk can do, and a specific number given
+ * less stretch than was asked for. All three belong in the report.
+ */
+function joinRetimed(
+  pack: VoicePack,
+  specs: ChunkSpec[],
+  plan: DurationPlan,
+  pitch: number,
+  counts: RealisationCounts,
+): { samples: Float32Array; starts: number[] } {
+  const parts = specs.map((spec) => {
+    const part = synthesiseUnit(markedUnitOf(pack, spec, plan), { sampleRate: SAMPLE_RATE, pitch });
+    for (const mode of part.modes) {
+      if (mode === 'truncated') counts.truncated += 1;
+      else if (mode === 'capped') counts.capped += 1;
+      else if (mode === 'grains') counts.grains += 1;
+    }
+    return part;
+  });
+  return joinInPhase(parts, { sampleRate: SAMPLE_RATE });
+}
+
 /**
  * Render segments of phones as one continuous waveform.
  *
@@ -473,6 +699,11 @@ export async function renderCmuDiphones(
     fallbackPhones: 0,
     missingPairs: [],
     phones: [],
+    timedFromPlan: false,
+    plannedSeconds: 0,
+    grainHalves: 0,
+    truncatedHalves: 0,
+    cappedHalves: 0,
   };
   const phoneOffsets: number[] = [];
   const segmentPhoneCounts: number[] = [];
@@ -511,66 +742,100 @@ export async function renderCmuDiphones(
     if (!diagnostics.missingPairs.includes(key)) diagnostics.missingPairs.push(key);
   };
 
-  const joint = (left: string, right: string, cursor: number): Float32Array => {
+  const joint = (
+    left: string,
+    right: string,
+    cursor: number,
+  ): { samples: Float32Array; key: string | null } => {
     const key = `${left}|${right}`;
     const entry = pack?.manifest.units[key];
     if (pack && entry) {
       diagnostics.exactUnits += 1;
-      return toFloat(pack, entry);
+      return { samples: toFloat(pack, entry), key };
     }
     missing(key);
     const outgoing = pack ? outgoingHalfOf(pack, left) : null;
     const incoming = pack ? incomingHalfOf(pack, right) : null;
     if (outgoing && incoming) {
       diagnostics.backoffUnits += 1;
-      return crossfadeJoinWithOffsets([outgoing, incoming], HALF_UNIT_JOIN_SECONDS).samples;
+      return {
+        samples: crossfadeJoinWithOffsets([outgoing, incoming], HALF_UNIT_JOIN_SECONDS).samples,
+        key: null,
+      };
     }
     // No recorded audio for either side of this transition. Synthesise the two
     // half-phones so the timing model still holds: one chunk, one boundary.
     diagnostics.fallbackPhones += 1;
     const leftSamples = fallbackPhone(left, cursor);
     const rightSamples = fallbackPhone(right, cursor + Math.floor(leftSamples.length / 2));
-    return concat([secondHalfOf(leftSamples), firstHalfOf(rightSamples)]);
+    return { samples: concat([secondHalfOf(leftSamples), firstHalfOf(rightSamples)]), key: null };
   };
 
-  const chunks: Float32Array[] = [];
+  // How long each phone should be, from this speaker's own measured durations.
+  // Without the derived index there is nothing to plan against and the units are
+  // played at the length they were recorded at, exactly as before.
+  const { pitch: pitchFactor, rate: rateFactor } = factorsFor(model);
+  const plan = pack.derived && Object.keys(pack.intrinsic).length
+    ? planDurations(segments, pack.intrinsic, { rate: rateFactor })
+    : null;
+  diagnostics.plannedSeconds = plan ? plan.totalSeconds : 0;
+
+  const specs: ChunkSpec[] = [];
   const segmentStarts: Array<{ chunkIndex: number; phoneCount: number }> = [];
   let cursor = absoluteOffset;
+  /** Where this segment's phones begin in the plan's flat list. */
+  let phoneBase = 0;
+
+  const add = (
+    chunk: { samples: Float32Array; key: string | null },
+    leftPhone: number,
+    rightPhone: number,
+  ): void => {
+    specs.push({ samples: chunk.samples, key: chunk.key, leftPhone, rightPhone });
+    cursor += chunk.samples.length;
+  };
 
   for (const segment of segments) {
     const phones = segment.phones.map((token) => packPhone(token.phone));
     if (!phones.length) continue;
 
     // Lead: the first half of the segment's first phone, on a recorded pause
-    // unit when one exists.
+    // unit when one exists. The pause half keeps the length it was recorded at.
     const leadKey = `pau|${phones[0]}`;
     const leadEntry = pack.manifest.units[leadKey];
+    const leadIndex = specs.length;
     if (leadEntry) {
       diagnostics.exactUnits += 1;
-      chunks.push(toFloat(pack, leadEntry));
+      add({ samples: toFloat(pack, leadEntry), key: leadKey }, PAUSE_HALF, phoneBase);
     } else {
       missing(leadKey);
       const incoming = incomingHalfOf(pack, phones[0]);
       if (incoming) {
         diagnostics.backoffUnits += 1;
-        chunks.push(concat([silence(SEGMENT_EDGE_SILENCE_SECONDS), incoming]));
+        add(
+          { samples: concat([silence(SEGMENT_EDGE_SILENCE_SECONDS), incoming]), key: null },
+          PAUSE_HALF,
+          phoneBase,
+        );
       } else {
         diagnostics.fallbackPhones += 1;
-        chunks.push(
-          concat([
-            silence(SEGMENT_EDGE_SILENCE_SECONDS),
-            firstHalfOf(fallbackPhone(phones[0], cursor)),
-          ]),
+        add(
+          {
+            samples: concat([
+              silence(SEGMENT_EDGE_SILENCE_SECONDS),
+              firstHalfOf(fallbackPhone(phones[0], cursor)),
+            ]),
+            key: null,
+          },
+          PAUSE_HALF,
+          phoneBase,
         );
       }
     }
-    const leadIndex = chunks.length - 1;
-    cursor += chunks[leadIndex].length;
 
     // Joints between the segment's phones.
     for (let index = 1; index < phones.length; index += 1) {
-      chunks.push(joint(phones[index - 1], phones[index], cursor));
-      cursor += chunks[chunks.length - 1].length;
+      add(joint(phones[index - 1], phones[index], cursor), phoneBase + index - 1, phoneBase + index);
     }
 
     // Tail: the second half of the segment's last phone, into a recorded pause
@@ -580,30 +845,54 @@ export async function renderCmuDiphones(
     const tailEntry = pack.manifest.units[tailKey];
     if (tailEntry) {
       diagnostics.exactUnits += 1;
-      chunks.push(toFloat(pack, tailEntry));
+      add(
+        { samples: toFloat(pack, tailEntry), key: tailKey },
+        phoneBase + phones.length - 1,
+        PAUSE_HALF,
+      );
     } else {
       missing(tailKey);
       const outgoing = outgoingHalfOf(pack, last);
       if (outgoing) {
         diagnostics.backoffUnits += 1;
-        chunks.push(concat([outgoing, silence(SEGMENT_EDGE_SILENCE_SECONDS)]));
+        add(
+          { samples: concat([outgoing, silence(SEGMENT_EDGE_SILENCE_SECONDS)]), key: null },
+          phoneBase + phones.length - 1,
+          PAUSE_HALF,
+        );
       } else {
         diagnostics.fallbackPhones += 1;
-        chunks.push(
-          concat([
-            secondHalfOf(fallbackPhone(last, cursor)),
-            silence(SEGMENT_EDGE_SILENCE_SECONDS),
-          ]),
+        add(
+          {
+            samples: concat([
+              secondHalfOf(fallbackPhone(last, cursor)),
+              silence(SEGMENT_EDGE_SILENCE_SECONDS),
+            ]),
+            key: null,
+          },
+          phoneBase + phones.length - 1,
+          PAUSE_HALF,
         );
       }
     }
-    cursor += chunks[chunks.length - 1].length;
 
     // Remember where this segment's chunks began, to map midpoints afterwards.
     segmentStarts.push({ chunkIndex: leadIndex, phoneCount: phones.length });
+    phoneBase += phones.length;
   }
 
-  const joined = crossfadeJoinWithOffsets(chunks);
+  // Re-time and join. With a plan, every unit is rebuilt from grains one voice
+  // cycle wide laid on a grid of the planned length, and each junction is aligned
+  // to those grains. Without one, the units are played as recorded and crossfaded
+  // over a fixed time.
+  const counts: RealisationCounts = { grains: 0, truncated: 0, capped: 0 };
+  const joined = plan
+    ? joinRetimed(pack, specs, plan, pitchFactor, counts)
+    : crossfadeJoinWithOffsets(specs.map((spec) => spec.samples));
+  diagnostics.timedFromPlan = plan !== null;
+  diagnostics.grainHalves = counts.grains;
+  diagnostics.truncatedHalves = counts.truncated;
+  diagnostics.cappedHalves = counts.capped;
   // Chunk i begins on the midpoint of phone i-1 within its segment, so the
   // offsets of a segment's phones are the starts of the chunks after its lead.
   for (const { chunkIndex, phoneCount } of segmentStarts) {
@@ -787,16 +1076,50 @@ function applyStyle(input: Float32Array, style: VoiceModelConfig['toneStyle']): 
   return output;
 }
 
-export function processCmuVoice(samples: Float32Array, model: VoiceModelConfig): Float32Array {
+/** The pitch and tempo a profile asks for, including what its character adds. */
+export interface CmuFactors {
+  pitch: number;
+  rate: number;
+}
+
+/**
+ * One place where pitch and tempo are read off a profile, so the unit assembler
+ * and this stage cannot disagree about what a setting means.
+ */
+export function factorsFor(model: VoiceModelConfig): CmuFactors {
   const stylePitch = model.toneStyle === 'deep' ? 0.92 : model.toneStyle === 'energetic' ? 1.06 : 1;
-  const pitchFactor = Math.max(0.25, Math.min(4, model.pitch * stylePitch));
   const rateStyle = model.toneStyle === 'deep' ? 0.92 : model.toneStyle === 'energetic' ? 1.1 : 1;
-  const rateFactor = Math.max(0.55, model.rate * rateStyle);
+  return {
+    pitch: Math.max(0.25, Math.min(4, model.pitch * stylePitch)),
+    rate: Math.max(0.55, model.rate * rateStyle),
+  };
+}
+
+/**
+ * Pitch, tempo and character, applied to a joined render.
+ *
+ * `alreadyTimed` says the unit assembler has applied the pitch and the tempo
+ * itself, on the pitch marks of each unit, which is both better and cheaper than
+ * doing it here: re-timing a unit on its own voice cycle keeps the pitch and the
+ * duration independent, where resampling here moves them together and then puts
+ * the duration back by stretching the whole render. Applying either twice would
+ * apply it twice, so the caller passes this flag when the render reports
+ * `timedFromPlan`.
+ */
+export function processCmuVoice(
+  samples: Float32Array,
+  model: VoiceModelConfig,
+  alreadyTimed = false,
+): Float32Array {
+  const { pitch: pitchFactor, rate: rateFactor } = factorsFor(model);
   // A neutral voice means "play the recording": no resampling, no stretching,
   // nothing between the joined units and the listener. Stating that as a branch
   // rather than relying on two processes happening to cancel out is what makes
   // the default setting provably the untouched one.
-  if (Math.abs(pitchFactor - 1) < STRETCH_PASS_THROUGH && Math.abs(rateFactor - 1) < STRETCH_PASS_THROUGH) {
+  if (
+    alreadyTimed ||
+    (Math.abs(pitchFactor - 1) < STRETCH_PASS_THROUGH && Math.abs(rateFactor - 1) < STRETCH_PASS_THROUGH)
+  ) {
     return applyStyle(samples, model.toneStyle);
   }
   const pitched = resample(samples, pitchFactor);

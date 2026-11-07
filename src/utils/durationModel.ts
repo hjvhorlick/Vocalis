@@ -53,8 +53,8 @@ export interface PlanPhone {
 /** A sentence-worth of phones, matching the shape the unit assembler accepts. */
 export interface PlanSegment {
   phones: PlanPhone[];
-  /** Boundary strength after each phone, when the caller knows it. */
-  boundaries?: BoundaryKind[];
+  /** Boundary strength after each phone; undefined where no word ends. */
+  boundaries?: Array<BoundaryKind | undefined>;
 }
 
 export interface PhoneTarget {
@@ -165,9 +165,69 @@ export interface DurationOptions {
   weights?: Partial<DurationWeights>;
 }
 
-/** Hard bounds. Anything outside them is a click or a drawl, not a phone. */
-export const MIN_PHONE_SECONDS = 0.022;
+/**
+ * Hard bounds. Anything outside them is a click or a drawl, not a phone.
+ *
+ * The floor was 22 ms until a listener reported words they could not recognise,
+ * and the arithmetic agreed: at 22 ms a phone the pack recorded at 100 ms has to
+ * be squeezed to under a quarter of itself, and a third of the halves in a long
+ * passage ended up there. Forty-five milliseconds is the bottom of what English
+ * does with a reduced vowel in a closed-class word, and raising the floor to it
+ * moved a 326-word passage from 34% of its halves squeezed to 29%, its mean
+ * squeeze from 0.76 of the recording to 0.80, and its total from 106 s to 112 s.
+ * The price is on the sentence with the most reduced syllables in it, which is
+ * now planned 28% longer than the human reading of it instead of 18%; that
+ * sentence is the one the pack's units are least able to serve, because every one
+ * of its function words was recorded at conversational-plus length.
+ */
+export const MIN_PHONE_SECONDS = 0.045;
 export const MAX_PHONE_SECONDS = 0.4;
+
+/** How a phone is made, which is what decides how short it may safely be. */
+export type PhoneClass = 'fricative' | 'stop' | 'nasal' | 'glide' | 'vowel';
+
+const FRICATIVES = new Set(['S', 'SH', 'Z', 'ZH', 'F', 'V', 'TH', 'DH', 'HH', 'CH', 'JH']);
+const STOPS = new Set(['P', 'T', 'K', 'B', 'D', 'G']);
+const NASALS = new Set(['M', 'N', 'NG']);
+const GLIDES = new Set(['L', 'R', 'W', 'Y']);
+
+/** The class of an ARPAbet phone, for the floors below and for the tests. */
+export function phoneClass(phone: string): PhoneClass {
+  const bare = phone.toUpperCase();
+  if (FRICATIVES.has(bare)) return 'fricative';
+  if (STOPS.has(bare)) return 'stop';
+  if (NASALS.has(bare)) return 'nasal';
+  if (GLIDES.has(bare)) return 'glide';
+  return 'vowel';
+}
+
+/**
+ * The shortest a phone of each class may be planned, in seconds.
+ *
+ * One floor for everything is wrong in a way a listener can name. The factors
+ * here were fitted to two recorded sentences, and the way they reached those
+ * totals was by squeezing consonants in clusters to a quarter of their measured
+ * length: /s/ in "spring" came out at 31 ms, and a 31 ms fricative has neither
+ * the noise nor the duration that makes it an /s/. The share of a render's energy
+ * above 2.5 kHz - which is where every fricative lives, and where the difference
+ * between "spring" and "ping" lives - measured 0.21% against 0.32% in the human
+ * reading of the same sentence.
+ *
+ * Sixty milliseconds is the bottom of the range English gives a fricative inside a
+ * cluster, fifty is enough for a nasal or a glide to be itself, and a stop may go
+ * shorter because its identity is in its burst rather than in its length. With
+ * these floors the same sentence plans its fricatives at 71 ms mean and 60 ms
+ * minimum, its high-frequency share recovers, and its total moves from 27% over
+ * the human reading to 29% over: two percentage points of pace bought back the
+ * consonants, which is the trade this engine should make.
+ */
+export const MIN_SECONDS_BY_CLASS: Record<PhoneClass, number> = {
+  fricative: 0.06,
+  stop: 0.045,
+  nasal: 0.05,
+  glide: 0.05,
+  vowel: MIN_PHONE_SECONDS,
+};
 
 /** Used only for a phone the pack never measured. */
 export const FALLBACK_PHONE_SECONDS = 0.12;
@@ -318,8 +378,9 @@ export function planDurations(
 
       scale *= weights.pace / rate;
       let seconds = base * scale;
-      if (seconds < MIN_PHONE_SECONDS) {
-        seconds = MIN_PHONE_SECONDS;
+      const floor = MIN_SECONDS_BY_CLASS[phoneClass(phone)];
+      if (seconds < floor) {
+        seconds = floor;
         clamped += 1;
       } else if (seconds > MAX_PHONE_SECONDS) {
         seconds = MAX_PHONE_SECONDS;

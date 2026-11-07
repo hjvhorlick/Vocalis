@@ -482,6 +482,20 @@ export interface SynthesisDiagnostics {
   durationSeconds: number;
   /** Fraction of the utterance carried by exact recorded units, 0..1. */
   recordedCoverage: number;
+  /**
+   * True when every unit was re-timed to a per phone duration plan and joined on
+   * the voice cycle. False when the units were played at the length they were
+   * recorded at, which is what happens without a v2 index for the speaker.
+   */
+  timedFromPlan: boolean;
+  /** Seconds the duration plan asked for, pauses excluded; 0 when there was none. */
+  plannedSeconds: number;
+  /** Half phones re-timed by overlap-add. */
+  grainHalves: number;
+  /** Half phones cut - head and tail kept - because the plan wanted far less. */
+  truncatedHalves: number;
+  /** Half phones given less stretch than the plan asked for. */
+  cappedHalves: number;
 }
 
 export interface SynthesisResult {
@@ -558,6 +572,11 @@ function emptyResult(method: SynthesisMethod, utterance: Utterance): SynthesisRe
       sampleRate: SAMPLE_RATE,
       durationSeconds: samples.length / SAMPLE_RATE,
       recordedCoverage: 0,
+      timedFromPlan: false,
+      plannedSeconds: 0,
+      grainHalves: 0,
+      truncatedHalves: 0,
+      cappedHalves: 0,
     },
     wavBlob,
     audioUrl: URL.createObjectURL(wavBlob),
@@ -599,10 +618,32 @@ export async function synthesizeText(text: string, model: VoiceModelConfig): Pro
   let backoffUnits = 0;
   let fallbackPhones = 0;
   let missingPairs: string[] = [];
+  let timedFromPlan = false;
+  let plannedSeconds = 0;
+  let grainHalves = 0;
+  let truncatedHalves = 0;
+  let cappedHalves = 0;
 
   if (method === 'cmu-arctic') {
+    // The assembler plans how long each phone should be before it re-times the
+    // units to fit, and for that it needs the stress, the spoken word and the
+    // boundary after each phone - not just the phone symbols.
+    const unitSegments = segments.map((segment) => ({
+      phones: segment.phones.map((token) => ({
+        phone: token.phone,
+        stress: token.stress,
+        wordIndex: token.wordIndex,
+        long: token.long,
+        word: utterance.words[token.wordIndex]?.text,
+      })),
+      boundaries: segment.phones.map((token, index) => {
+        const next = segment.phones[index + 1];
+        const endsWord = !next || next.wordIndex !== token.wordIndex;
+        return endsWord ? utterance.words[token.wordIndex]?.boundaryAfter ?? 'word' : undefined;
+      }),
+    }));
     const rendered = await renderCmuDiphones(
-      segments.map((segment) => ({ phones: segment.phones })),
+      unitSegments,
       model,
       (phone, offset) => mathematicalPhone(phone, '0', offset, NEUTRAL_PROSODY),
       0,
@@ -614,6 +655,11 @@ export async function synthesizeText(text: string, model: VoiceModelConfig): Pro
     backoffUnits = rendered.diagnostics.backoffUnits;
     fallbackPhones = rendered.diagnostics.fallbackPhones;
     missingPairs = rendered.diagnostics.missingPairs;
+    timedFromPlan = rendered.diagnostics.timedFromPlan;
+    plannedSeconds = rendered.diagnostics.plannedSeconds;
+    grainHalves = rendered.diagnostics.grainHalves;
+    truncatedHalves = rendered.diagnostics.truncatedHalves;
+    cappedHalves = rendered.diagnostics.cappedHalves;
   } else {
     const pieces: Float32Array[] = [];
     const offsets: number[] = [];
@@ -655,7 +701,9 @@ export async function synthesizeText(text: string, model: VoiceModelConfig): Pro
     throw new Error(`Rendered audio exceeds ${MAX_SYNTHESIS_SECONDS} seconds. Split the text into shorter passages.`);
   }
 
-  const processed = method === 'cmu-arctic' ? processCmuVoice(raw, model) : raw;
+  // When the units were re-timed on their own pitch marks, the pitch and the
+  // tempo are already in the audio: doing either again here would do it twice.
+  const processed = method === 'cmu-arctic' ? processCmuVoice(raw, model, timedFromPlan) : raw;
   const scale = raw.length ? processed.length / raw.length : 1;
   const samples = normaliseSamples(processed, model.volume);
   const duration = samples.length / SAMPLE_RATE;
@@ -684,6 +732,11 @@ export async function synthesizeText(text: string, model: VoiceModelConfig): Pro
       sampleRate: SAMPLE_RATE,
       durationSeconds: duration,
       recordedCoverage: unitTotal ? exactUnits / unitTotal : 0,
+      timedFromPlan,
+      plannedSeconds,
+      grainHalves,
+      truncatedHalves,
+      cappedHalves,
     },
     wavBlob,
     audioUrl: URL.createObjectURL(wavBlob),

@@ -23,12 +23,12 @@ user types a script and presses Play / Export WAV
      PredefinedVoiceList / VoiceLibrary / VoiceManipulator / VoiceShaper
        speakRealWords(model.samplePhrase, …)  (an alias for speakText)
         │
-        ├─ speakText(text, model, callbacks)  src/utils/naturalVoiceEngine.ts:357
-        │  renderSpeech(text, model)                                  :394
-        │  renderDialogue(parts, timing)                              :520
-        │    ├─ initializeLocalSpeechEngine(model)                    :281
+        ├─ speakText(text, model, callbacks)  src/utils/naturalVoiceEngine.ts:384
+        │  renderSpeech(text, model)                                  :421
+        │  renderDialogue(parts, timing)                              :547
+        │    ├─ initializeLocalSpeechEngine(model)                    :308
         │    │    warms /cmudict.txt and the selected speaker's pack before the first Play
-        │    ├─ synthesizeText(text, model)   src/utils/phonemeSynthesizer.ts:574
+        │    ├─ synthesizeText(text, model)   src/utils/phonemeSynthesizer.ts:593
         │    │    ├─ analyzeText(text, accent) src/utils/textAnalysis.ts:1123
         │    │    │    pass 1  tokenize                                :134
         │    │    │    pass 2  spokenFormsOf(token)                    :385
@@ -44,44 +44,56 @@ user types a script and presses Play / Export WAV
         │    │    ├─ segmentUtterance(utterance)                       :1277
         │    │    │    splits at sentence ends and line breaks ONLY
         │    │    ├─ buildWordProsody(utterance, segments)  src/utils/phonemeSynthesizer.ts:347
-        │    │    ├─ BRANCH 'cmu-arctic' (the product)                 :603
+        │    │    ├─ BRANCH 'cmu-arctic' (the product)                 :627
         │    │    │    └─ renderCmuDiphones(segments, model, fallback, offset)
-        │    │    │         src/utils/cmuDiphoneSynthesizer.ts:460
-        │    │    │         ├─ speakerForModel(model)   slt / bdl       :133
-        │    │    │         ├─ loadVoicePack(speaker)                   :141
+        │    │    │         src/utils/cmuDiphoneSynthesizer.ts:689
+        │    │    │         ├─ speakerForModel(model)   slt / bdl       :208
+        │    │    │         ├─ loadVoicePack(speaker)                   :277
         │    │    │         │    manifest.json + diphones.bin
         │    │    │         │    1,337 units bdl (5,582,516 B) / 1,324 slt (5,732,116 B)
         │    │    │         │    16 kHz 16-bit mono; offset in BYTES, length in SAMPLES
+        │    │    │         ├─ planDurations(segments, pack.intrinsic)  :778
+        │    │    │         │    src/utils/durationModel.ts:308 — how long each phone
+        │    │    │         │    should be: DEFAULT_WEIGHTS               :141
+        │    │    │         │    MIN_SECONDS_BY_CLASS (fricative 60 ms)   :224
+        │    │    │         │    intrinsic durations from manifest.v2.json
+        │    │    │         ├─ joinRetimed(pack, specs, plan, pitch)      :659
+        │    │    │         │    markedUnitOf → two half-phone targets    :627
+        │    │    │         │    synthesiseUnit  src/utils/psola.ts:569
+        │    │    │         │      grains / capped / truncated / silent, counted
+        │    │    │         │      in the diagnostics; level() normalises the
+        │    │    │         │      overlap-add window sum                 :218
+        │    │    │         │    joinInPhase → joins on the voice cycle   :675
         │    │    │         ├─ per segment: lead → one chunk per joint → tail
-        │    │    │         │    joint(left, right)                     :511
+        │    │    │         │    joint(left, right)                     :745
         │    │    │         │      1. the exact recorded unit  "a|b"
-        │    │    │         │      2. outgoingHalfOf(a) + incomingHalfOf(b)   :342 / :355
+        │    │    │         │      2. outgoingHalfOf(a) + incomingHalfOf(b)   :490 / :503
         │    │    │         │         neighbours ranked by classOf, lengthFit,
-        │    │    │         │         neighbourScore                     :246 / :280 / :286
+        │    │    │         │         neighbourScore                     :394 / :428 / :434
         │    │    │         │      3. only if no half unit exists: the caller's
         │    │    │         │         mathematical phone, counted in fallbackPhones
-        │    │    │         ├─ crossfadeJoinWithOffsets(chunks)          :401
+        │    │    │         ├─ crossfadeJoinWithOffsets(chunks)          :549
         │    │    │         │    reports the boundary offset of every chunk
-        │    │    │         └─ segmentStarts → phoneOffsets (measured)   :534 / :606
-        │    │    ├─ BRANCH 'formant' (the preserved experiment)        :617
+        │    │    │         └─ segmentStarts → phoneOffsets (measured)   :784 / :898
+        │    │    ├─ BRANCH 'formant' (the preserved experiment)        :663
         │    │    │    buildPhoneSamples: glottal-flow pulse, formant resonators,
         │    │    │    coarticulation, stress-weighted duration, aspiration,
         │    │    │    frication, stop bursts, F0 declination            :178
         │    │    │    joinPhonesWithOffsets: equal-power crossfade      :308
-        │    │    ├─ processCmuVoice(raw, model)   recorded path only    :736
-        │    │    │    resample(pitch × stylePitch)                      :626
-        │    │    │    wsolaStretch to a target measured from the ORIGINAL length :640
-        │    │    │    applyStyle (whisper / radio / robot)              :711
+        │    │    ├─ processCmuVoice(raw, model, timedFromPlan)  :1109
+        │    │    │    resample(pitch × stylePitch)                      :937
+        │    │    │    wsolaStretch — skipped when the plan already re-timed the units :986
+        │    │    │    applyStyle (whisper / radio / robot)              :1054
         │    │    ├─ normaliseSamples(combined, volume)                  :399
         │    │    │    make-up gain to the 0.78 ceiling, cap 4×, silence floor 0.02
-        │    │    ├─ wordTimingsFrom(utterance, phoneOffsets, …)         :506
+        │    │    ├─ wordTimingsFrom(utterance, phoneOffsets, …)         :520
         │    │    │    a word boundary is halfway between two measured phone midpoints
         │    │    └─ encodeWav(samples, 16000) → Blob → object URL       :419
         │    └─ SynthesisResult { samples, sampleRate, duration, wordTimings,
-        │                         diagnostics, wavBlob, audioUrl }       :487
+        │                         diagnostics, wavBlob, audioUrl }       :501
         │
-        ├─ PLAY  playRender(result)             naturalVoiceEngine.ts:406
-        │        playDialogueRender(render)                             :646
+        ├─ PLAY  playRender(result)             naturalVoiceEngine.ts:433
+        │        playDialogueRender(render)                             :690
         │          └─ playRenderedSpeech(samples, rate, callbacks)
         │               src/utils/audioDspEngine.ts:258
         │               samplesToAudioBuffer                            :234
@@ -93,7 +105,7 @@ user types a script and presses Play / Export WAV
              Play already made whenever renderKey() is unchanged  SpeechStudio.tsx:49,181
 ```
 
-Turn-taking rhythm for a conversation: `gapBeforeLine` (`naturalVoiceEngine.ts:501`) — 0.34 s
+Turn-taking rhythm for a conversation: `gapBeforeLine` (`naturalVoiceEngine.ts:528`) — 0.34 s
 when the turn changes hands, 0.15 s when the same voice continues, ×0.6 when the previous line
 trailed off without punctuation. The recorded units carry their own sentence-final pause; these
 gaps sit on top of it.
@@ -147,10 +159,12 @@ replaces this graph with the shared transformation module.
 
 | Module | Lines | State |
 | --- | --- | --- |
+| `utils/durationModel.ts` | 418 | **New.** How long each phone should be: intrinsic durations measured from the speaker's own pack, fourteen factors fitted against the four bundled recordings, per-class floors, a rate control that reaches everything. See [`DURATION_MODEL.md`](DURATION_MODEL.md). |
+| `utils/psola.ts` | 707 | **New.** Re-times one recorded diphone to two half-phone targets on the pitch marks: overlap-add grains, a stretch ceiling, a cut for a voiced half asked to be under 0.4× of its recording, window-sum normalisation, and joins placed on the voice cycle. |
 | `utils/textAnalysis.ts` | 1,321 | **New.** The text/pronunciation front end, extracted from `phonemeSynthesizer.ts` and rebuilt. 212 checks. |
-| `utils/phonemeSynthesizer.ts` | 710 | **Rebuilt around segments.** Orchestrator, timings, normalisation and WAV encoding are new; the formant synthesizer (`getFormants` … `buildPhoneSamples`) and `buildWordProsody` are the preserved originals. |
-| `utils/cmuDiphoneSynthesizer.ts` | 752 | **Head rebuilt, tail preserved.** Pack loading and indexing kept; assembly, half-unit backoff and offsets are new; `resample`, `wsolaStretch`, `applyStyle` kept, with the pitch/duration fix in `processCmuVoice`. |
-| `utils/naturalVoiceEngine.ts` | 753 | **Rewired.** One entry point, one dialogue timeline, presets that state their method and speaker, engine warm-up, and the audition feature kept as a labelled separate thing. |
+| `utils/phonemeSynthesizer.ts` | 763 | **Rebuilt around segments.** Orchestrator, timings, normalisation and WAV encoding are new; the formant synthesizer (`getFormants` … `buildPhoneSamples`) and `buildWordProsody` are the preserved originals. |
+| `utils/cmuDiphoneSynthesizer.ts` | 1,137 | **Head rebuilt, tail preserved.** Pack loading and indexing kept; assembly, half-unit backoff and offsets are new; it now plans durations and re-times every unit to them, and reports how each half was realised; `resample`, `wsolaStretch`, `applyStyle` kept, and `processCmuVoice` leaves already-timed audio alone. |
+| `utils/naturalVoiceEngine.ts` | 797 | **Rewired.** One entry point, one dialogue timeline, presets that state their method and speaker, engine warm-up, and the audition feature kept as a labelled separate thing. |
 | `utils/audioDspEngine.ts` | 395 | **Extended.** `samplesToAudioBuffer` + `playRenderedSpeech` are the single playback path for generated speech; `stopTransformedVoice` releases the analyser and no longer fires `onended`. `buildDspGraph` remains for the audition path and is Phase 3's replacement target. |
 | `utils/naturalHumanAudio.ts` | 121 | **Retained, corrected.** Shared context and decode helpers unchanged; licence wording and speaker provenance fixed; each sample names its recorded speaker's pack. |
 | `components/SpeechStudio.tsx` | 866 | **Rebuilt.** Script field, measured word highlighting, render reuse for export, a diagnostics panel, labelled audition. |
@@ -158,9 +172,10 @@ replaces this graph with the shared transformation module.
 | `components/VoiceManipulator.tsx`, `PredefinedVoiceList.tsx`, `VoiceLibrary.tsx`, `VoiceShaper.tsx` | — | **Retained.** They audition a preset's phrase, which now really speaks that phrase. Their blob-URL leaks and persisted `blob:` takes are still open (D2). |
 | Pitch-trainer suite (3,144 lines) | — | **Still disconnected.** Re-exposing it is Phase 5 work; nothing in this phase removed it. |
 | `types/voice.ts` | 74 | **Retained as the Phase 4 target schema.** Not yet consolidated with `VoiceModelConfig`. |
-| `scripts/build_cmu_voicepack.py` | 152 | **Retained.** Extending it to emit additive v2 packs is Phase 3. |
+| `scripts/build_cmu_voicepack.py` | 152 | **Retained, never re-run.** It built the frozen v1 index; `unit_quality` at :41-63 prefers units near 160 ms, which is why about half of all half-phones must be squeezed. |
+| `scripts/build_cmu_voicepack_v2.py` | — | **New.** Derives pitch marks, phone boundaries and per-phone durations from the frozen v1 audio into `manifest.v2.json` beside it. Additive: v1 stays byte-identical. |
 | `scripts/check_base_voice.mjs`, `config/base-voice.lock.json` | — | **Retained.** Reports CONTRACT HOLDS; its reachability check now requires a *component* that speaks generated text. |
-| `tests/textAnalysis.test.ts`, `tests/renderSpeech.test.ts` | — | **New.** 212 + 534 checks, both running against the real bundled assets through a disk-backed fetch shim. |
+| `tests/textAnalysis.test.ts`, `tests/renderSpeech.test.ts` | — | **New.** 212 + 710 checks, both running against the real bundled assets through a disk-backed fetch shim. The render suite measures the four intact recordings at run time and anchors its pace, silence and rhythm bands on them. |
 
 ---
 

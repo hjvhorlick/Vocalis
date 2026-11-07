@@ -607,6 +607,11 @@ export async function renderDialogue(
       accumulator.missingPairs.push(...d.missingPairs);
       accumulator.guessedWords.push(...d.guessedWords);
       accumulator.rejectedTokens.push(...d.rejectedTokens);
+      accumulator.plannedSeconds += d.plannedSeconds;
+      accumulator.grainHalves += d.grainHalves;
+      accumulator.truncatedHalves += d.truncatedHalves;
+      accumulator.cappedHalves += d.cappedHalves;
+      if (!d.timedFromPlan) accumulator.unplanned += 1;
       if (d.speaker) accumulator.speakers.add(d.speaker);
       return accumulator;
     },
@@ -620,6 +625,11 @@ export async function renderDialogue(
       missingPairs: [] as string[],
       guessedWords: [] as string[],
       rejectedTokens: [] as string[],
+      plannedSeconds: 0,
+      grainHalves: 0,
+      truncatedHalves: 0,
+      cappedHalves: 0,
+      unplanned: 0,
       speakers: new Set<string>(),
     },
   );
@@ -657,6 +667,13 @@ export async function renderDialogue(
       sampleRate,
       durationSeconds: duration,
       recordedCoverage: unitTotal ? totals.exactUnits / unitTotal : 0,
+      // Every line has to be planned for the conversation to call itself planned:
+      // one line falling back to recorded lengths is audible as one slow line.
+      timedFromPlan: renders.length > 0 && totals.unplanned === 0,
+      plannedSeconds: totals.plannedSeconds,
+      grainHalves: totals.grainHalves,
+      truncatedHalves: totals.truncatedHalves,
+      cappedHalves: totals.cappedHalves,
     },
     wavBlob,
     audioUrl: URL.createObjectURL(wavBlob),
