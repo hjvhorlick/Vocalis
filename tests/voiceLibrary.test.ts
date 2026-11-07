@@ -170,6 +170,37 @@ console.log(
 
 check('the KAL diphone voice is in the catalogue', Boolean(findVoiceCandidate('cmu-kal')));
 check('the KAL voice is installable', findVoiceCandidate('cmu-kal')?.install?.kind === 'festival-est');
+
+// FestVox publishes eighteen ARCTIC archives and only seven speakers' phone
+// labels. The eleven others are waveforms plus transcription: the LJM archive was
+// checked by hand — 593 waveforms, 0 label files, one .data transcription — so they
+// are class C and offered no installer, rather than class A and failing on download.
+{
+  const withoutLabels = ['aew', 'ahw', 'aup', 'axb', 'eey', 'fem', 'gka', 'ljm', 'lnh', 'rxr', 'slp'];
+  const offeredNothing = withoutLabels.every((speaker) => {
+    const voice = findVoiceCandidate(`arctic-${speaker}`);
+    return voice !== undefined && voice.install === null && voice.compatibility === 'C';
+  });
+  check('the eleven ARCTIC speakers with no published labels offer no installer', offeredNothing);
+  check(
+    'and the catalogue says why in words',
+    withoutLabels.every((speaker) => /no phone labels/.test(findVoiceCandidate(`arctic-${speaker}`)?.compatibilityNote ?? '')),
+  );
+  const withLabels = ['awb', 'clb', 'jmk', 'ksp', 'rms'];
+  check(
+    'the five speakers with published labels point at the labelled release build',
+    withLabels.every((speaker) => /-0\.95-release\.tar\.bz2$/.test(findVoiceCandidate(`arctic-${speaker}`)?.install?.url ?? '')),
+  );
+  check(
+    'and say they are not proved yet',
+    withLabels.every((speaker) => /not yet proved/i.test(findVoiceCandidate(`arctic-${speaker}`)?.compatibilityNote ?? '')),
+  );
+  check(
+    'no ARCTIC voice claims labels its archive does not have',
+    VOICE_CATALOGUE.filter((voice) => voice.id.startsWith('arctic-'))
+      .every((voice) => !/plus phone labels \(tar\.bz2\)/.test(voice.originalFormat ?? '')),
+  );
+}
 const mbrola = VOICE_CATALOGUE.filter((voice) => voice.id.startsWith('mbrola-'));
 check('every MBROLA voice is excluded, with the licence as the reason', mbrola.length > 0 &&
   mbrola.every((voice) => voice.compatibility === 'D' && /only with MBROLA/.test(voice.compatibilityNote)));
@@ -599,7 +630,7 @@ try {
 } catch (error) {
   urlsOut = (error as { stdout?: string }).stdout ?? '';
 }
-check('`voices urls` prints a real archive URL', /festvox\.org\/cmu_arctic\/packed\/cmu_us_awb_arctic\.tar\.bz2/.test(urlsOut));
+check('`voices urls` prints a real archive URL', /festvox\.org\/cmu_arctic\/cmu_arctic\/packed\/cmu_us_awb_arctic-0\.95-release\.tar\.bz2/.test(urlsOut));
 check('and the matching install command', /--from arctic-awb\.archive/.test(urlsOut));
 
 const refusedInstall = (() => {
@@ -625,7 +656,7 @@ console.log('\nthe inspect command');
   const speaker = buildArcticSpeaker(join(workDir, 'cli-inspect'), { speaker: 'insp', labels: false });
   const archive = packArctic(speaker.speakerDir, join(workDir, 'cli-inspect.tar.bz2'));
   const libraryBefore = readdirSync(join(ROOT, 'public', 'optional-voices')).sort().join(',');
-  const inspected = cli(['inspect', 'arctic-ljm', '--from', archive]);
+  const inspected = cli(['inspect', 'arctic-rms', '--from', archive]);
   check('`voices inspect` reports on an archive', inspected.code === 0, inspected.out.trim().split('\n').slice(-1)[0]);
   check(
     'with its waveforms and its missing labels',
@@ -641,13 +672,19 @@ console.log('\nthe inspect command');
 
   const missingArchive = (() => {
     try {
-      return { code: 0, text: cli(['inspect', 'arctic-ljm', '--from', join(workDir, 'not-there.tar.bz2')]).out };
+      return { code: 0, text: cli(['inspect', 'arctic-rms', '--from', join(workDir, 'not-there.tar.bz2')]).out };
     } catch (error) {
       const failure = error as { status?: number; stdout?: string; stderr?: string };
       return { code: failure.status ?? 1, text: `${failure.stdout ?? ''}${failure.stderr ?? ''}` };
     }
   })();
   check('a missing archive fails instead of waiting', missingArchive.code !== 0);
+  check(
+    'and says the file is missing rather than reporting a network error',
+    /No such file: .*not-there\.tar\.bz2/.test(missingArchive.text),
+    missingArchive.text.trim().split('\n').slice(-1)[0],
+  );
+  check('and never mentions urlopen', !/urlopen/.test(missingArchive.text), missingArchive.text.trim().split('\n').slice(-1)[0]);
   check('and names the file it could not read', /not-there\.tar\.bz2/.test(missingArchive.text), missingArchive.text.trim().split('\n').slice(-1)[0]);
 }
 

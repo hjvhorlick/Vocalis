@@ -35,6 +35,7 @@ import sys
 import tarfile
 import tempfile
 import time
+import urllib.parse
 import urllib.request
 from pathlib import Path
 
@@ -80,7 +81,29 @@ def sanitise_id(voice_id: str) -> str:
     return voice_id
 
 
+def local_path_for(url: str) -> Path | None:
+    """The file a `file://` URL points at, or None for anything remote."""
+    parsed = urllib.parse.urlparse(url)
+    if parsed.scheme != "file":
+        return None
+    return Path(urllib.request.url2pathname(parsed.path))
+
+
 def download(url: str, target: Path, progress: Path, label: str) -> None:
+    local = local_path_for(url)
+    if local is not None:
+        # urlopen would report this as "<urlopen error [Errno 2] ...>", which reads
+        # like a network failure instead of the mistyped path it usually is.
+        if not local.exists():
+            raise SystemExit(
+                f"No such file: {local}. Check the path given to --from "
+                "(~ is expanded; quote it if it contains spaces)."
+            )
+        if local.is_dir():
+            raise SystemExit(
+                f"{local} is a directory, not an archive. Point --from at the "
+                ".tar.bz2, .tar.gz or .zip file itself."
+            )
     request = urllib.request.Request(url, headers={"User-Agent": "Vocalis voice library"})
     write_progress(progress, stage="download", message=f"Downloading {label}…", percent=0)
     with urllib.request.urlopen(request, timeout=120) as response:

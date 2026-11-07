@@ -5,21 +5,27 @@ people — not more transformations — and it records what was found, what was
 verified, what is installable today, and what was excluded and why.
 
 The short version: **105 recorded, non-neural voice databases were investigated.
-18 of them can be installed and spoken today. 1 needs an adapter that has not been
-run against the real archive yet. 12 are real databases in languages the
-pronunciation front end cannot read. 75 are excluded because their licence forbids
-using them outside MBROLA.** Every one of the 105 is in the catalogue on screen,
-with its licence and its reason, so a user can see what exists rather than trusting
-a claim.
+7 of them have a working installer today** (five CMU ARCTIC speakers, the CMU KAL
+diphone database and CSTR RAB). **23 are class C** — the audio and the format are
+right but something else is missing: for eleven of the ARCTIC speakers FestVox
+publishes waveforms and transcription but never the phone labels a diphone pack is
+cut from, and the other twelve are databases in languages the pronunciation front
+end cannot read. **75 are excluded** because their licence forbids using them outside
+MBROLA. Every one of the 105 is in the catalogue on screen, with its licence and its
+reason, so a user can see what exists rather than trusting a claim.
 
-**What is proven, and what is not.** One of the 18 has been installed and spoken end
-to end on a real archive: `cmu-kal`. The other 17 (the 16 ARCTIC speakers and CSTR
-RAB) are supported by an installer whose conversion is proven on an archive built in
-the documented layout, but the first real ARCTIC download — `cmu_us_ljm_arctic` — was
-refused by the converter because it contained no phone labels, which is exactly the
-failure the guard exists for. That download is why `inspect` exists: it reports what
-an archive actually contains without installing anything. Until an archive passes it,
-this document does not claim the voice works.
+**What is proven, and what is not.** `cmu-kal` has been installed, spoken and removed
+here on a real archive: 1,578 recorded units, a rendered sentence with zero
+mathematical stand-ins. Nothing else is proved. The sixteen ARCTIC speakers were
+originally rated class A on the strength of the database documentation, which says the
+corpus ships with "automatic phone labels"; the first real download —
+`cmu_us_ljm_arctic.tar.bz2` — unpacked to 593 waveforms, **0 label files** and one
+Festival transcription file, because FestVox labels those speakers at build time with
+CMU Sphinx rather than shipping the labels. The converter refused it instead of
+writing an empty pack, and that refusal is why `npm run voices -- inspect` exists.
+Five ARCTIC speakers do have published labels (see §3), and their release builds are
+offered as class A with a "not yet proved" note until an archive passes `inspect` on a
+real machine. This document does not claim a voice works because it downloaded.
 
 Two voices are special and are not in that count: **CMU ARCTIC BDL and SLT are
 protected base voices**. Nothing here can install, replace, modify or remove them
@@ -46,56 +52,76 @@ quality.
 
 | Class | Meaning | Count today |
 |---|---|---|
-| **A** | Directly compatible: the archive converts with a script Vocalis already runs, audio untouched. | 17 |
+| **A** | Directly compatible: the archive converts with a script Vocalis already runs, audio untouched. | 6 |
 | **B** | Compatible after an adapter: right shape, but the details (index name, layout) are discovered at install time. | 1 |
-| **C** | Needs a separate front end: the audio is right and the format is right; the *language* is not English, and the app's pronunciation front end is English (CMUdict). | 12 |
+| **C** | Needs something Vocalis does not have: phone labels that were never published (eleven ARCTIC speakers, which need forced alignment), or a pronunciation front end for a non-English language (twelve databases). | 23 |
 | **D** | Not compatible: format or licence rules it out. Kept visible, never installable. | 75 |
 
 `install: null` in the catalogue is the machine-readable form of "no installer
 yet". It is not a quality claim about the voice.
 
-## 3. The 18 installable voices
+## 3. The seven voices with an installer
 
-### CMU ARCTIC, the other 16 speakers — class A
+### CMU ARCTIC — five speakers whose labels FestVox publishes, class A
 
-The corpus that BDL and SLT come from has 18 speakers, all recorded the same way:
-16 kHz mono WAV per utterance plus automatic phone labels, published under the ARCTIC
-terms (free for any purpose, commercial included, with the notice retained and
-modifications marked). Vocalis already ships a builder for exactly this layout —
-`scripts/build_cmu_voicepack.py`, the script that produced the base packs — so these
-are the cleanest additions available — *if the published archives really carry those
-labels*. The first real one tried here did not: `cmu_us_ljm_arctic.tar.bz2`
-downloaded and unpacked correctly and then produced zero units, because the archive
-held waveforms and `etc/` but no `.lab` files (the ARCTIC build script labels the
-corpus itself with `build_cg_rfs_voice`, so a clustergen distribution need not ship
-labels at all). The installer now refuses such an archive with an explanation instead
-of writing an empty pack, and `npm run voices -- inspect <id>` prints the inventory
-before anything is installed. **Run it on your machine before trusting the class-A
-rating of any ARCTIC voice**; if none of the archives carry labels these 16 are class
-C (they need forced alignment), not class A, and the catalogue will be corrected to
-say so.
+The ARCTIC corpus has 18 speakers recorded the same way (16 kHz mono WAV per
+utterance). What differs — and what decides installability — is *what FestVox
+published for each of them*, and there are three different shapes on their server:
 
-| id | accent | gender | archive |
-|---|---|---|---|
-| `arctic-aew` | US English | Male | `cmu_us_aew_arctic.tar.bz2` (89M) |
-| `arctic-ahw` | US English (German speaker) | Male | 45M |
-| `arctic-aup` | Indian English | Male | 41M |
-| `arctic-awb` | Scottish English | Male | 74M |
-| `arctic-axb` | Indian English | Female | 48M |
-| `arctic-clb` | US English | Female | 87M |
-| `arctic-eey` | US English | Female | 41M |
-| `arctic-fem` | US English (German speaker) | Male | 39M |
-| `arctic-gka` | Indian English | Male | 43M |
-| `arctic-jmk` | Canadian English | Male | 68M |
-| `arctic-ksp` | Indian English | Male | 86M |
-| `arctic-ljm` | US English | Female | 37M |
-| `arctic-lnh` | US English | Female | 79M |
-| `arctic-rms` | US English | Male | 88M |
-| `arctic-rxr` | US English (Israeli speaker) | Male | 53M |
-| `arctic-slp` | Indian English | Male | 48M |
+| What is published | Where | Contains |
+|---|---|---|
+| the packed build, all 18 speakers | `cmu_arctic/packed/cmu_us_<spk>_arctic.tar.bz2` (37–89M) | `wav/`, `etc/` and a transcription file — **no labels** |
+| the release build, seven speakers | `cmu_arctic/cmu_arctic/packed/cmu_us_<spk>_arctic-0.95-release.tar.bz2` (87–124M) | the full 0.95 tree, cut with `scripts/build_cmu_voicepack.py` |
+| the built tree, seven speakers | `cmu_arctic/cmu_arctic/cmu_us_<spk>_arctic/` | `wav/`, **`lab/`**, `etc/`, cepstra, f0 and the Festival voice |
+
+The seven with a published `lab/` directory are **awb, bdl, clb, jmk, ksp, rms and
+slt** — the four original speakers plus the three accent speakers. `bdl` and `slt` are
+the protected base voices, so five of the seven are new to the library. Their labels
+are the Festival format Vocalis already parses (`0.13200 125 pau`, one line per
+phone, seconds from the start of the file), fetched from that published tree and
+checked by hand. The other eleven speakers — aew, ahw, aup, axb, eey, fem, gka, ljm,
+lnh, rxr, slp — exist only as packed builds.
+
+| id | accent | gender | archive | label count |
+|---|---|---|---|---|
+| `arctic-awb` | Scottish English | Male | `cmu_us_awb_arctic-0.95-release.tar.bz2` (123M) | published |
+| `arctic-clb` | US English | Female | `cmu_us_clb_arctic-0.95-release.tar.bz2` (124M) | published |
+| `arctic-jmk` | Canadian English | Male | `cmu_us_jmk_arctic-0.95-release.tar.bz2` (87M) | published |
+| `arctic-ksp` | Indian English | Male | `cmu_us_ksp_arctic-0.95-release.tar.bz2` (114M) | published |
+| `arctic-rms` | US English | Male | `cmu_us_rms_arctic-0.95-release.tar.bz2` (111M) | published |
+
+Those five are marked class A because the builder for that layout is the one that
+produced the base packs, and their labels demonstrably exist. They are **not** called
+proven: no archive has been through `install_voice.py` on a real machine yet. Check
+one before trusting it:
+
+```sh
+npm run voices -- inspect arctic-clb
+```
+
+Two numbers decide it: a non-zero label count means the conversion has real work to
+do and the install will proceed; `0 label files` means the refusal message is correct
+and the voice needs forced alignment after all.
+
+### CMU ARCTIC — eleven speakers with waveforms only, class C
+
+For aew, ahw, aup, axb, eey, fem, gka, ljm, lnh, rxr and slp, the only thing FestVox
+publishes is the packed build: 593 waveforms, a `txt.done.data` transcription, and no
+phone boundaries. The evidence is the LJM archive itself — `inspect` reports 593
+waveforms, 0 label files and a text sample of
+`( arctic_a0001 "Author of the danger trail, Philip Steels, etc." )`. Their own
+`do_arctic` script labels the corpus with CMU Sphinx (`build_cg_rfs_voice`) after
+downloading it, which is a build step nothing in this repository reimplements.
+
+Cutting recorded diphones needs the boundaries, and inventing them would be exactly
+the "build the database yourself" work this project ruled out, so these eleven have
+`install: null`, class C, and a note that says so. The catalogue keeps them visible —
+a user can see that eleven more ARCTIC voices exist and exactly what stands between
+them and a pack, instead of wondering why only five are offered.
 
 Download URLs and sizes were read from the published index at
-<http://festvox.org/cmu_arctic/packed/> on 2026-11-07.
+<http://festvox.org/cmu_arctic/packed/> and
+<http://festvox.org/cmu_arctic/cmu_arctic/packed/> on 2026-11-07.
 
 ### CMU KAL — class A, **built, installed and spoken here**
 
@@ -134,8 +160,10 @@ and the waveform directory are discovered at install time because the archive is
 mirrored on GitHub and could not be opened here. It is marked **B** for exactly that
 reason: the converter is right, the specific archive has not been proved end to end.
 
-## 4. Class C: right audio, wrong language (12)
+## 4. Class C: the other twenty-three
 
+* **Eleven CMU ARCTIC speakers** — see §3: right audio, right format, labels never
+  published.
 * **Festival Czech diphone databases** — `brailcom/voice-czech-{ph,dita,krb,machac}`.
   Complete, human-recorded, EST format, 16 kHz, with labels and waveforms. GPL-2.0 /
   GPL-3.0 (copyleft: a redistributed pack would carry the same licence). One female
@@ -144,8 +172,8 @@ reason: the converter is right, the specific archive has not been proved end to 
   Telugu. Studio recordings with Festvox unit-selection builds. Gender is not
   documented per speaker, so the catalogue says so instead of guessing.
 
-These would work as packs tomorrow; what is missing is a pronunciation front end for
-their language. Adding one is a language project, not a voice project, and it is
+The twelve non-English databases would work as packs tomorrow; what is missing is a
+pronunciation front end for their language. Adding one is a language project, not a voice project, and it is
 deliberately out of scope here.
 
 ## 5. Class D: excluded, and the reason is the licence (75)
@@ -213,7 +241,7 @@ uses the same catalogue, the same installer and the same guards:
 | `npm run voices -- list` | every investigated voice, with class, size and install state |
 | `npm run voices -- list --ready` | only the ones that can be installed now |
 | `npm run voices -- install arctic-awb` | download, unpack, convert, validate, install |
-| `npm run voices -- install --class A` | all 17 ready voices, one at a time |
+| `npm run voices -- install --class A` | all six class-A voices, one at a time |
 | `npm run voices -- install cmu-kal --from ~/Downloads/kal.tar.gz` | install from an archive you already have |
 | `npm run voices -- inspect arctic-ljm` | download an archive, report what is inside it, install nothing |
 | `npm run voices -- inspect arctic-ljm --from ~/Downloads/ljm.tar.bz2` | the same, for an archive you already have |
@@ -304,7 +332,7 @@ they cannot drift from the data.
 
 ## 8. Testing
 
-`npm run test:voices` — **111 checks**, all passing, no network access:
+`npm run test:voices` — **118 checks**, all passing, no network access:
 
 * catalogue: unique ids, ≥80 candidates, no protected id offered, every entry has a
   source URL, licence, attribution, class and a reason; nothing class D installable;
@@ -326,6 +354,10 @@ they cannot drift from the data.
   goes through `install_voice.py --kind arctic-archive`, is cut by
   `build_cmu_voicepack.py`, validates, and reports `done` — the same path the 16
   speakers use, exercised on a fixture because the real host is unreachable here
+* the catalogue tells the truth about ARCTIC: the eleven speakers FestVox never
+  published labels for offer no installer, are class C and say why; the five that do
+  point at the labelled release build and are marked "not yet proved"; no ARCTIC entry
+  claims labels its archive does not have
 * label discovery and honest failure: labels found under `labels/` instead of `lab/`
   install; an archive with no labels at all is refused with the inventory in the
   message, writes no pack, and reports `failed` to the UI; labels whose names do not
@@ -334,7 +366,7 @@ they cannot drift from the data.
 * `--inspect`: reports the waveforms and the absence of labels from an archive, exits
   0, and writes nothing into the voice root — including for an already-installed id;
   at the CLI level it installs nothing, leaves the library directory unchanged, and
-  fails promptly with the filename when the archive does not exist
+  fails promptly, naming the missing file instead of reporting a `urlopen` error
 * the terminal command: `list --ready`, `urls --class A` and `install slt` (refused,
   with the reason) run as subprocesses and are checked on their output and exit code
 * the runtime: a Python 3 is found on this machine, the candidate list covers every
@@ -361,11 +393,14 @@ Required checks and where they stand:
 
 ## 9. What is not done, honestly
 
-* **The 16 ARCTIC archives were not downloaded from the build environment**
-  (`festvox.org` is unreachable here; only GitHub is). Their conversion path is now
-  proved on a fixture archive in the real layout, and the download itself is a
-  terminal command away: `npm run voices -- install --class A`. The KAL install was
-  run for real, end to end, including the download.
+* **No ARCTIC archive has been converted end to end yet.** Their conversion path is
+  proved on fixture archives in the real layout, and the label format is checked
+  against the published `lab/` tree, but the first real download (LJM) had no labels
+  at all and the eleven speakers it represents are now class C. The five with
+  published labels are one `inspect` away from being confirmed or corrected — that is
+  the next step, on a machine that can reach `festvox.org`.
+* **Forced alignment is not implemented, on purpose.** It needs a trained acoustic
+  model and a build toolchain, which the "no trained models, no AI" rule rules out.
 * **RAB is class B** until it is run against the real archive.
 * **No installers for classes C and D**, for the reasons above.
 * **Installing needs the Node server.** A static `dist` build served by

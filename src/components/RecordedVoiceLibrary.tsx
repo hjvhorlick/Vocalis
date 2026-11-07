@@ -72,7 +72,7 @@ const PROTECTED_VOICES = [
 const COMPATIBILITY_LABEL: Record<string, string> = {
   A: 'Ready to install',
   B: 'Needs an adapter',
-  C: 'Needs a language front end',
+  C: 'Needs labels or a language front end',
   D: 'Not compatible',
 };
 

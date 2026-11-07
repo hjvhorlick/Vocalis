@@ -159,7 +159,7 @@ function list(args: string[]): void {
   const installable = INSTALLABLE_VOICES.length;
   console.log(
     `\n${rows.length} shown of ${VOICE_CATALOGUE.length} investigated · ${summary.A} ready · ` +
-      `${summary.B} need an adapter · ${summary.C} need a language front end · ${summary.D} excluded ` +
+      `${summary.B} need an adapter · ${summary.C} need labels or a language front end · ${summary.D} excluded ` +
       `· ${installable} installable · ${readdirSync(VOICE_ROOT, { withFileTypes: true }).filter((e) => e.isDirectory()).length} installed`,
   );
   if (rows.some((voice) => !voice.install)) {
