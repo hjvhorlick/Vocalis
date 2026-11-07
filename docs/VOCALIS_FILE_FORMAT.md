@@ -102,6 +102,12 @@ settings block is the part that ends up in the file:
 }
 ```
 
+A session starts with every switch off and every knob at the value that changes
+nothing, so the first preview is the recording exactly as it was captured. Turning one
+switch on is then the only processing in the chain — which is what makes "is it the
+pitch or the pace?" a question with an answer. Selecting a different voice resets the
+switches, so no setting follows a voice it was not chosen for.
+
 A switch is a bypass, not a neutral value: `enabled: {"pitch": false}` means the
 pitch stage was not run at all. That distinction is measured, not asserted —
 `tests/bypass.test.ts` renders with every stage bypassed and requires the samples to

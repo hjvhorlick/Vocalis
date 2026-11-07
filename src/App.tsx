@@ -12,13 +12,6 @@ import { VoiceCredits } from './components/VoiceCredits';
 import { RecordedVoiceLibrary } from './components/RecordedVoiceLibrary';
 import { VoiceFileCreator } from './components/VoiceFileCreator';
 import { VOICE_CATALOGUE } from './data/voiceCatalogue';
-import {
-  applyProfileToModel,
-  buildLibraryRows,
-  fetchLibraryState,
-  modelForLibraryVoice,
-  registerInstalledVoices,
-} from './utils/voiceLibrary';
 
 export function App() {
   const [activeTab, setActiveTab] = useState<'studio' | 'voicefile' | 'dialogue' | 'library'>('studio');
@@ -40,34 +33,15 @@ export function App() {
 
   const [activeModel, setActiveModel] = useState<VoiceModelConfig>(models[0]);
 
-  // The installed recorded voices are models too, and the Text to Speech page has to
-  // offer them in its dropdown — otherwise the dropdown is a list of a different set
-  // of voices than the ones the library installs. A voice that came from a `.vls`
-  // file carries the switches it was sealed with, applied here.
-  const [libraryModels, setLibraryModels] = useState<VoiceModelConfig[]>([]);
-  useEffect(() => {
-    let cancelled = false;
-    void (async () => {
-      try {
-        const state = await fetchLibraryState();
-        if (cancelled) return;
-        registerInstalledVoices(state.installed);
-        const installed = buildLibraryRows(state)
-          .filter((row) => row.installed !== null)
-          .map((row) => applyProfileToModel(modelForLibraryVoice(row), row.installed?.profile ?? null));
-        setLibraryModels(installed);
-      } catch {
-        // A static build has no /api/voices. The dropdown then lists the saved voices
-        // only, which is honest: nothing recorded is installed in that case.
-        if (!cancelled) setLibraryModels([]);
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [activeTab]);
-
-  const selectableModels = [...models, ...libraryModels.filter((model) => !models.some((own) => own.id === model.id))];
+  /**
+   * The two pages own their own settings, and this is where that is enforced.
+   *
+   * Text to Speech works from `models` — the factory voices and whatever has been
+   * **saved**. It deliberately does not pull in installed library packs: a recording
+   * enters the studio only after it has been saved as a voice or exported as a
+   * `.vls` file, so nothing from the workbench can leak into a spoken session.
+   */
+  const studioModels = models;
 
   useEffect(() => {
     initializeLocalSpeechEngine(activeModel);
@@ -236,7 +210,7 @@ export function App() {
 
             {/* 1. Predefined Voices List (Select to Manipulate) */}
             <PredefinedVoiceList
-              voices={selectableModels}
+              voices={studioModels}
               activeVoice={activeModel}
               onSelectVoice={(v) => setActiveModel(v)}
               onNewVoice={handleNewVoice}
@@ -274,7 +248,10 @@ export function App() {
                   : undefined
               }
               onSelectVoice={(model) => {
-                setActiveModel(model);
+                // A recorded voice enters Text to Speech by being saved first, and
+                // only then; the studio never borrows a library pack directly.
+                handleSaveModel({ ...model, isCustom: true });
+                setActiveModel({ ...model, isCustom: true });
                 setActiveTab('studio');
               }}
             />

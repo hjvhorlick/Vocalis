@@ -101,30 +101,38 @@ const SETTINGS: SettingSpec[] = [
   },
 ];
 
-type SwitchState = Record<SettingSpec['key'] | 'tone', boolean>;
-type KnobState = Record<SettingSpec['key'], number>;
+export type SwitchState = Record<SettingSpec['key'] | 'tone', boolean>;
+export type KnobState = Record<SettingSpec['key'], number>;
 
-const ALL_ON: SwitchState = {
-  pitch: true,
-  rate: true,
-  volume: true,
-  tone: true,
-  throatWarmth: true,
-  oralClarity: true,
-  airPresence: true,
+/**
+ * A new session starts with nothing applied.
+ *
+ * The page is a workbench, not a preset: the voice you pick arrives exactly as it
+ * was recorded, with every stage switched off. Each switch you turn on is the only
+ * thing that happens to it, which is what makes one setting at a time testable.
+ */
+export const ALL_OFF: SwitchState = {
+  pitch: false,
+  rate: false,
+  volume: false,
+  tone: false,
+  throatWarmth: false,
+  oralClarity: false,
+  airPresence: false,
 };
 
-const NEUTRAL_KNOBS: KnobState = {
-  pitch: 1.08,
-  rate: 0.95,
+/** Every knob at the value that changes nothing, so switching one on is honest. */
+export const NEUTRAL_KNOBS: KnobState = {
+  pitch: 1,
+  rate: 1,
   volume: 1,
-  throatWarmth: 0.2,
-  oralClarity: 0.15,
+  throatWarmth: 0,
+  oralClarity: 0,
   airPresence: 0,
 };
 
 /** The model to speak or export with: a switch that is off contributes neutral. */
-function effectiveModel(
+export function effectiveModel(
   base: VoiceModelConfig,
   switches: SwitchState,
   knobs: KnobState,
@@ -153,7 +161,7 @@ function effectiveModel(
   };
 }
 
-function profileFrom(switches: SwitchState, knobs: KnobState, tone: string): VocalisVoiceProfile {
+export function profileFrom(switches: SwitchState, knobs: KnobState, tone: string): VocalisVoiceProfile {
   return {
     enabled: { ...switches },
     settings: Object.fromEntries(
@@ -196,7 +204,7 @@ export const VoiceFileCreator: React.FC<VoiceFileCreatorProps> = ({ onOpenLibrar
     }
   });
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [switches, setSwitches] = useState<SwitchState>(ALL_ON);
+  const [switches, setSwitches] = useState<SwitchState>(ALL_OFF);
   const [knobs, setKnobs] = useState<KnobState>(NEUTRAL_KNOBS);
   const [tone, setTone] = useState<string>('natural');
   const [fileName, setFileName] = useState('');
@@ -241,9 +249,23 @@ export const VoiceFileCreator: React.FC<VoiceFileCreatorProps> = ({ onOpenLibrar
     if (!nameTouched) setFileName(defaultName);
   }, [defaultName, nameTouched]);
 
-  const chooseVoice = useCallback((id: string) => {
-    setSelectedId(id);
+  const resetSettings = useCallback(() => {
+    setSwitches(ALL_OFF);
+    setKnobs(NEUTRAL_KNOBS);
+    setTone('natural');
+    setTestingKey(null);
+    setNotice(null);
   }, []);
+
+  const chooseVoice = useCallback(
+    (id: string) => {
+      setSelectedId(id);
+      // A different voice starts from nothing applied. Nothing from the previous
+      // voice's settings can follow it, which is the whole point of a clean slate.
+      resetSettings();
+    },
+    [resetSettings],
+  );
 
   const move = useCallback(
     (id: string, direction: -1 | 1) => {
@@ -466,11 +488,28 @@ export const VoiceFileCreator: React.FC<VoiceFileCreatorProps> = ({ onOpenLibrar
         {/* Settings, each with its own switch, then the export. */}
         <section className="space-y-4">
           <div className="rounded-2xl border border-slate-800 bg-slate-900/60 p-4">
-            <div className="flex items-baseline justify-between">
+            <div className="flex flex-wrap items-center justify-between gap-2">
               <h2 className="text-sm font-semibold text-slate-200">Settings</h2>
-              <span className="text-[11px] text-slate-500">
-                {activeSwitches} of {totalSwitches} on
-              </span>
+              <div className="flex items-center gap-2">
+                <span
+                  className={`rounded px-2 py-0.5 text-[10px] font-semibold ${
+                    activeSwitches === 0
+                      ? 'bg-slate-700/40 text-slate-300'
+                      : 'bg-emerald-500/15 text-emerald-300'
+                  }`}
+                >
+                  {activeSwitches === 0
+                    ? 'clean — nothing applied'
+                    : `${activeSwitches} of ${totalSwitches} applied`}
+                </span>
+                <button
+                  onClick={resetSettings}
+                  className="rounded-lg border border-slate-700 px-2 py-1 text-[10px] font-semibold text-slate-300 hover:border-slate-500 hover:text-white"
+                  title="Switch everything off and put every knob back to the value that changes nothing"
+                >
+                  Reset to clean
+                </button>
+              </div>
             </div>
 
             <div className="mt-3 space-y-2">
@@ -512,7 +551,11 @@ export const VoiceFileCreator: React.FC<VoiceFileCreatorProps> = ({ onOpenLibrar
               className="mt-3 flex w-full items-center justify-center gap-2 rounded-xl border border-slate-700 bg-slate-800 px-3 py-2 text-xs font-semibold text-slate-100 enabled:hover:border-indigo-500 disabled:opacity-40"
             >
               {busy === 'preview' ? <Square className="h-3.5 w-3.5" /> : <Play className="h-3.5 w-3.5" />}
-              {busy === 'preview' ? 'Stop' : 'Preview with these switches'}
+              {busy === 'preview'
+                ? 'Stop'
+                : activeSwitches === 0
+                  ? 'Preview the recording, untouched'
+                  : `Preview with ${activeSwitches} setting${activeSwitches === 1 ? '' : 's'} applied`}
             </button>
           </div>
 
