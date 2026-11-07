@@ -101,78 +101,329 @@ export { ATTRIBUTION_DETAILS, NATURAL_HUMAN_SAMPLES };
 export type { HumanVoiceSample };
 
 /**
- * The predefined voices are the recordings, and there are two of them because this
- * repository has two licensed speakers: CMU ARCTIC SLT (female) and BDL (male).
+ * The predefined voices are the four recordings this repository ships, and they are
+ * the recordings: pitch 1.00, pace 1.00, full volume, the natural delivery, no
+ * resonance shift, American English as recorded, recorded timing kept. Nothing in
+ * between the licensed audio and the listener.
  *
- * Neither is a character and neither carries an adjustment. Pitch 1.00, pace 1.00,
- * full volume, the natural delivery, no resonance shift, American English as
- * recorded, recorded timing kept. They are the only predefined voices here because
- * the person this application is for listened to nine delivery presets built on
- * these same two recordings and judged every one of them worse than the recording:
- * "the original voice stays like it was imported... it became worse with the vocalis
- * settings", and then, after hearing the original files beside the processed ones,
- * "all the original voices was 100 percent clear. no crackle no whining... but once
- * it get adjusted by the application the quality drops and the mechanical sound
- * happen."
+ * The four are two licensed speakers — CMU ARCTIC SLT (female) and BDL (male) — on
+ * two sentences each, because a single sentence cannot show a voice off and because
+ * the two speakers say the same words, so they can be compared like for like. Each
+ * one names, in its own description, which file it is and how it is meant to be used.
  *
- * So the voices are the originals, and everything the application can do to one is
- * on the effects panel beside this list, applied to whichever recording is selected,
- * one control at a time, each of them checked in tests/renderSpeech.test.ts to reach
- * the audio on its own. The nine presets that used to be here were bundles of those
- * same controls; they are in the git history at 51e84f6.
+ * The starter voices below them are the recordings with settings attached, and the
+ * settings are applied to the recording file by the Web Audio graph — the same 16
+ * controls as the effects panel, nothing else. A starter voice is a starting point
+ * for one particular job (a story, a podcast, a 1930s broadcast), not a different
+ * person, and each one says which recording it was built from. Two of them, the
+ * accents, are marked as needing the generated voice, because an accent is a rule
+ * over phones and audio has no phones.
+ *
+ * The distinction that matters, and the reason this file keeps saying it: a voice
+ * that only changes *sound* is always heard on the file. Only a voice that changes
+ * *words* is rendered, and it says so.
  *
  * `samplePhrase` is the exact transcript of the recording named by `baseSampleId`, so
  * "hear the original" beside "hear it adjusted" is the same sentence both times.
  */
+
+/** Shared by every predefined entry, so no voice can quietly acquire an extra change. */
+const UNTOUCHED = {
+  pitch: 1,
+  rate: 1,
+  volume: 1,
+  toneStyle: 'natural' as const,
+  throatWarmth: 0,
+  oralClarity: 0,
+  airPresence: 0,
+  synthesisMethod: 'cmu-arctic' as const,
+  referenceRaw: true,
+  accent: 'US' as const,
+};
+
 export const PRESET_VOICE_MODELS: VoiceModelConfig[] = [
+  // ---------------------------------------------------------------- the recordings
   {
     id: 'cmu-arctic-slt',
-    name: 'SLT — the recording',
-    archetype: 'Original voice, nothing applied',
+    name: 'SLT — the recording (female)',
+    archetype: 'Original file, nothing applied',
     description:
-      'CMU ARCTIC SLT, female, American English, as recorded. Pitch 1.00, pace 1.00, full volume, natural delivery, no resonance shift, recorded timing kept: the licensed units joined for your text with nothing between them and the listener. Every adjustment is off until you move it.',
+      'The licensed file itself: CMU ARCTIC SLT, a female American English speaker, sentence a0001. Use it as the clean reference — anything else in this list is this recording with a change on top. Pitch, pace, volume, character and all three resonance bands are off, and the timing is the timing she recorded.',
     gender: 'Female',
-    accent: 'US',
     flag: '🎙️',
-    pitch: 1,
-    rate: 1,
-    volume: 1,
-    toneStyle: 'natural',
-    synthesisMethod: 'cmu-arctic',
+    ...UNTOUCHED,
     baseSampleId: 'cmu-slt-1',
     baseVoiceId: 'slt',
-    throatWarmth: 0,
-    oralClarity: 0,
-    airPresence: 0,
-    referenceRaw: true,
     samplePhrase: 'Author of the danger trail, Philip Steels, etc.',
     avatarColor: '#22c55e',
   },
   {
     id: 'cmu-arctic-bdl',
-    name: 'BDL — the recording',
-    archetype: 'Original voice, nothing applied',
+    name: 'BDL — the recording (male)',
+    archetype: 'Original file, nothing applied',
     description:
-      'CMU ARCTIC BDL, male, American English, as recorded. Pitch 1.00, pace 1.00, full volume, natural delivery, no resonance shift, recorded timing kept. The same sentence as SLT, so the two speakers can be compared on identical words.',
+      'The licensed file itself: CMU ARCTIC BDL, a male American English speaker, sentence a0001 — the same words as SLT, so the two can be compared on identical sentences. Use it as the clean reference for a male voice. Nothing is applied.',
     gender: 'Male',
-    accent: 'US',
     flag: '🎙️',
-    pitch: 1,
-    rate: 1,
-    volume: 1,
-    toneStyle: 'natural',
-    synthesisMethod: 'cmu-arctic',
+    ...UNTOUCHED,
     baseSampleId: 'cmu-bdl-1',
     baseVoiceId: 'bdl',
-    throatWarmth: 0,
-    oralClarity: 0,
-    airPresence: 0,
-    referenceRaw: true,
     samplePhrase: 'Author of the danger trail, Philip Steels, etc.',
     avatarColor: '#38bdf8',
   },
+  {
+    id: 'cmu-arctic-slt-sentence-2',
+    name: 'SLT — the recording, sentence 2 (female)',
+    archetype: 'Original file, nothing applied',
+    description:
+      'The licensed file itself: CMU ARCTIC SLT, sentence a0003 — "For the twentieth time that evening the two men shook hands." The same clean female reference on a second, longer sentence, for testing how a setting behaves past the first line. Nothing is applied.',
+    gender: 'Female',
+    flag: '🎙️',
+    ...UNTOUCHED,
+    baseSampleId: 'cmu-slt-2',
+    baseVoiceId: 'slt',
+    samplePhrase: 'For the twentieth time that evening the two men shook hands.',
+    avatarColor: '#10b981',
+  },
+  {
+    id: 'cmu-arctic-bdl-sentence-2',
+    name: 'BDL — the recording, sentence 2 (male)',
+    archetype: 'Original file, nothing applied',
+    description:
+      'The licensed file itself: CMU ARCTIC BDL, sentence a0003 — the same words as SLT sentence 2, in the male voice. The clean male reference on a second sentence. Nothing is applied.',
+    gender: 'Male',
+    flag: '🎙️',
+    ...UNTOUCHED,
+    baseSampleId: 'cmu-bdl-2',
+    baseVoiceId: 'bdl',
+    samplePhrase: 'For the twentieth time that evening the two men shook hands.',
+    avatarColor: '#0ea5e9',
+  },
+
+  // ------------------------------------------------------- the recordings, adjusted
+  // Settings only. The graph applies them to the file above; nothing here is
+  // rendered. `referenceRaw` stays true on all of them — it gates the rhythm engine,
+  // not the effects — so each remains "a change on the recording".
+  {
+    id: 'storyteller-slt',
+    name: 'The Storyteller (from SLT)',
+    archetype: 'Warm audiobook narration',
+    description:
+      'SLT with a little more weight in the chest and a slower, more deliberate pace: pitch 1.00, pace 0.95, throat +3 dB, oral +2 dB, air +1 dB. For reading a story aloud. The recording is underneath, unchanged in wording and rhythm.',
+    gender: 'Female',
+    accent: 'US',
+    flag: '📖',
+    pitch: 1,
+    rate: 0.95,
+    volume: 1,
+    toneStyle: 'natural',
+    throatWarmth: 3,
+    oralClarity: 2,
+    airPresence: 1,
+    synthesisMethod: 'cmu-arctic',
+    referenceRaw: true,
+    baseSampleId: 'cmu-slt-1',
+    baseVoiceId: 'slt',
+    samplePhrase: 'Author of the danger trail, Philip Steels, etc.',
+    avatarColor: '#a78bfa',
+  },
+  {
+    id: 'storyteller-bdl',
+    name: 'The Storyteller (from BDL)',
+    archetype: 'Warm audiobook narration',
+    description:
+      'The same storyteller settings on the male recording: pitch 1.00, pace 0.95, throat +3 dB, oral +2 dB, air +1 dB. For a male narration voice. The recording underneath is BDL, unchanged in wording and rhythm.',
+    gender: 'Male',
+    accent: 'US',
+    flag: '📖',
+    pitch: 1,
+    rate: 0.95,
+    volume: 1,
+    toneStyle: 'natural',
+    throatWarmth: 3,
+    oralClarity: 2,
+    airPresence: 1,
+    synthesisMethod: 'cmu-arctic',
+    referenceRaw: true,
+    baseSampleId: 'cmu-bdl-1',
+    baseVoiceId: 'bdl',
+    samplePhrase: 'Author of the danger trail, Philip Steels, etc.',
+    avatarColor: '#8b5cf6',
+  },
+  {
+    id: 'deep-cinema-bdl',
+    name: 'Deep Cinema (from BDL)',
+    archetype: 'Trailer and authority baritone',
+    description:
+      'A lower, heavier reading for trailers and narration that needs authority: pitch 0.72, pace 0.90, the deep character, throat +7 dB, oral −1 dB, air −2 dB. Everything is applied to the BDL file — the words and the rhythm are his.',
+    gender: 'Male',
+    accent: 'US',
+    flag: '🎬',
+    pitch: 0.72,
+    rate: 0.9,
+    volume: 1,
+    toneStyle: 'deep',
+    throatWarmth: 7,
+    oralClarity: -1,
+    airPresence: -2,
+    synthesisMethod: 'cmu-arctic',
+    referenceRaw: true,
+    baseSampleId: 'cmu-bdl-1',
+    baseVoiceId: 'bdl',
+    samplePhrase: 'Author of the danger trail, Philip Steels, etc.',
+    avatarColor: '#f59e0b',
+  },
+  {
+    id: 'podcast-host-bdl',
+    name: 'Podcast Host (from BDL)',
+    archetype: 'Upbeat presenter',
+    description:
+      'Brighter and quicker for a show intro: pitch 1.12, pace 1.15, the high-energy character, oral +5 dB, air +4 dB, throat −1 dB. Applied to BDL; the recording still does the talking.',
+    gender: 'Male',
+    accent: 'US',
+    flag: '🎧',
+    pitch: 1.12,
+    rate: 1.15,
+    volume: 1,
+    toneStyle: 'energetic',
+    throatWarmth: -1,
+    oralClarity: 5,
+    airPresence: 4,
+    synthesisMethod: 'cmu-arctic',
+    referenceRaw: true,
+    baseSampleId: 'cmu-bdl-1',
+    baseVoiceId: 'bdl',
+    samplePhrase: 'Author of the danger trail, Philip Steels, etc.',
+    avatarColor: '#fb7185',
+  },
+  {
+    id: 'calm-whisper-slt',
+    name: 'Calm & Close (from SLT)',
+    archetype: 'Soft, intimate delivery',
+    description:
+      'Quieter, slower and breathier, for meditation and close narration: pitch 0.94, pace 0.85, volume 0.90, the whisper character, air +8 dB, throat −4 dB, oral +1 dB. Applied to SLT.',
+    gender: 'Female',
+    accent: 'US',
+    flag: '🌙',
+    pitch: 0.94,
+    rate: 0.85,
+    volume: 0.9,
+    toneStyle: 'whisper',
+    throatWarmth: -4,
+    oralClarity: 1,
+    airPresence: 8,
+    synthesisMethod: 'cmu-arctic',
+    referenceRaw: true,
+    baseSampleId: 'cmu-slt-1',
+    baseVoiceId: 'slt',
+    samplePhrase: 'Author of the danger trail, Philip Steels, etc.',
+    avatarColor: '#67e8f9',
+  },
+  {
+    id: 'vintage-radio-bdl',
+    name: 'Vintage Radio (from BDL)',
+    archetype: '1930s broadcast announcer',
+    description:
+      'A narrow, saturated band like an old transmitter: pitch 1.08, pace 1.20, the radio character, oral +6 dB, throat −3 dB, air −6 dB. Applied to BDL — the announcer is him.',
+    gender: 'Male',
+    accent: 'US',
+    flag: '📻',
+    pitch: 1.08,
+    rate: 1.2,
+    volume: 1,
+    toneStyle: 'radio',
+    throatWarmth: -3,
+    oralClarity: 6,
+    airPresence: -6,
+    synthesisMethod: 'cmu-arctic',
+    referenceRaw: true,
+    baseSampleId: 'cmu-bdl-1',
+    baseVoiceId: 'bdl',
+    samplePhrase: 'Author of the danger trail, Philip Steels, etc.',
+    avatarColor: '#fbbf24',
+  },
+  {
+    id: 'droid-bdl',
+    name: 'Cyber Droid (from BDL)',
+    archetype: 'Metallic science-fiction assistant',
+    description:
+      'A machined, ring-modulated voice for a machine character: pitch 0.88, pace 1.05, the robot character, air +4 dB, throat +2 dB, oral −3 dB. Applied to BDL.',
+    gender: 'Neutral',
+    accent: 'US',
+    flag: '🤖',
+    pitch: 0.88,
+    rate: 1.05,
+    volume: 1,
+    toneStyle: 'robot',
+    throatWarmth: 2,
+    oralClarity: -3,
+    airPresence: 4,
+    synthesisMethod: 'cmu-arctic',
+    referenceRaw: true,
+    baseSampleId: 'cmu-bdl-1',
+    baseVoiceId: 'bdl',
+    samplePhrase: 'Author of the danger trail, Philip Steels, etc.',
+    avatarColor: '#94a3b8',
+  },
 ];
 
+/**
+ * Voices whose sound alone cannot define them.
+ *
+ * An accent is a rule over a phone stream — "use this vowel, drop this R" — and a
+ * recording has no phone stream to rewrite, only audio. These two are here to show
+ * that limit honestly instead of hiding it: they render the text, and the interface
+ * says "British accent" or "Australian accent" beside them rather than pretending the
+ * file was adjusted.
+ */
+export const ADAPTED_VOICE_MODELS: VoiceModelConfig[] = [
+  {
+    id: 'accent-british-bdl',
+    name: 'British Accent (from BDL)',
+    archetype: 'Adapted voice — renders the words',
+    description:
+      'BDL read with British vowel and consonant rules: pitch 0.88, pace 0.96, throat +4 dB, oral +2 dB, air +1 dB, plus the accent rules themselves. The accent rewrites words, so this one is generated rather than played from the file. It is the only kind of voice here that is not the recording.',
+    gender: 'Male',
+    accent: 'UK',
+    flag: '🇬🇧',
+    pitch: 0.88,
+    rate: 0.96,
+    volume: 1,
+    toneStyle: 'natural',
+    throatWarmth: 4,
+    oralClarity: 2,
+    airPresence: 1,
+    synthesisMethod: 'cmu-arctic',
+    referenceRaw: true,
+    baseSampleId: 'cmu-bdl-1',
+    baseVoiceId: 'bdl',
+    samplePhrase: 'For the twentieth time that evening the two men shook hands.',
+    avatarColor: '#3b82f6',
+  },
+  {
+    id: 'accent-australian-slt',
+    name: 'Australian Accent (from SLT)',
+    archetype: 'Adapted voice — renders the words',
+    description:
+      'SLT read with Australian vowel rules: pitch 1.10, pace 0.96, oral +4 dB, air +3 dB, throat +1 dB, plus the accent rules. Generated, for the same reason as the British voice: an accent changes words, not sound.',
+    gender: 'Female',
+    accent: 'AU',
+    flag: '🇦🇺',
+    pitch: 1.1,
+    rate: 0.96,
+    volume: 1,
+    toneStyle: 'natural',
+    throatWarmth: 1,
+    oralClarity: 4,
+    airPresence: 3,
+    synthesisMethod: 'cmu-arctic',
+    referenceRaw: true,
+    baseSampleId: 'cmu-slt-1',
+    baseVoiceId: 'slt',
+    samplePhrase: 'For the twentieth time that evening the two men shook hands.',
+    avatarColor: '#22d3ee',
+  },
+];
 
 // ---------------------------------------------------------------------------
 // Engine readiness
@@ -665,6 +916,17 @@ export async function playRecordedWithEffects(
 ): Promise<boolean> {
   try {
     const buffer = await resolveBufferForModel(model);
+    // A neutral voice is the file, so play the file: no graph, no rounding. The
+    // filters at 0 dB are a no-op in theory and a rounding step in practice, and
+    // "the original, unchanged" should not depend on which.
+    if (dspConfigChangesNothing(dspConfigFor(model))) {
+      playBufferUntouched(buffer, {
+        onStart: () => callbacks?.onStart?.(),
+        onEnded: () => callbacks?.onEnd?.(),
+        onError: (error) => callbacks?.onError?.(error),
+      });
+      return true;
+    }
     playTransformedVoice(buffer, dspConfigFor(model), {
       onStart: () => callbacks?.onStart?.(),
       onEnded: () => callbacks?.onEnd?.(),
@@ -676,6 +938,57 @@ export async function playRecordedWithEffects(
     callbacks?.onEnd?.();
     return false;
   }
+}
+
+/**
+ * Does this voice need the generated path at all?
+ *
+ * A voice is the recording unless something about it changes *words*: an accent
+ * (a rule over phones) or the Vocalis rhythm engine (`referenceRaw === false`).
+ * Pitch, pace, volume, delivery character and the three resonance bands are sound,
+ * and sound is applied to the recording file itself by the Web Audio graph.
+ *
+ * This is the switch every audition button uses, so a voice that only changes sound
+ * is heard on the file — never on a rebuild.
+ */
+export function voiceNeedsGeneration(model: VoiceModelConfig): boolean {
+  return model.referenceRaw === false || model.accent === 'UK' || model.accent === 'AU';
+}
+
+/** Why a voice needs the generated path, in the words the interface uses. */
+export function generationReason(model: VoiceModelConfig): string | null {
+  if (model.accent === 'UK') return 'British accent';
+  if (model.accent === 'AU') return 'Australian accent';
+  if (model.referenceRaw === false) return 'rhythm engine';
+  return null;
+}
+
+/**
+ * Audition a voice the way it is defined.
+ *
+ * One entry point for every list in the app — predefined, library, shaper — so they
+ * cannot drift apart and send a sound-only voice down the rebuild path. A voice that
+ * only changes sound plays the recording through the effect graph; a voice that
+ * changes words (accent, rhythm) renders the text, because there is no other way to
+ * hear it.
+ *
+ * Returns 'recording' or 'generated' so callers can label which one ran.
+ */
+export async function auditionVoice(
+  model: VoiceModelConfig,
+  callbacks?: SpeechCallbacks,
+): Promise<'recording' | 'generated'> {
+  void generationReason(model); // keeps the reason and the switch on one definition
+  if (voiceNeedsGeneration(model)) {
+    await speakRealWords(model.samplePhrase, model, {
+      onStart: () => callbacks?.onStart?.(),
+      onEnd: () => callbacks?.onEnd?.(),
+      onError: (error) => callbacks?.onError?.(error),
+    });
+    return 'generated';
+  }
+  await playRecordedWithEffects(model, callbacks);
+  return 'recording';
 }
 
 /** The recording a profile is built from: its id, sentence and duration. */
@@ -722,6 +1035,24 @@ export async function resolveBufferForModel(model: VoiceModelConfig): Promise<Au
   const sample =
     NATURAL_HUMAN_SAMPLES.find((entry) => entry.id === model.baseSampleId) || NATURAL_HUMAN_SAMPLES[0];
   return loadHumanVoiceBuffer(sample.url);
+}
+
+/**
+ * Would this configuration leave the samples alone?
+ *
+ * Every field at the value that changes nothing: unity playback rate, unity gain,
+ * the natural character, all three bands at 0 dB. When that is true the recording is
+ * played directly instead of being taken through the graph.
+ */
+function dspConfigChangesNothing(config: VoiceDspConfig): boolean {
+  return (
+    Math.abs(config.pitch * config.rate - 1) < 1e-9 &&
+    Math.abs(config.volume - 1) < 1e-9 &&
+    (config.toneStyle ?? 'natural') === 'natural' &&
+    Math.abs(config.throatWarmth ?? 0) < 1e-9 &&
+    Math.abs(config.oralClarity ?? 0) < 1e-9 &&
+    Math.abs(config.airPresence ?? 0) < 1e-9
+  );
 }
 
 function dspConfigFor(model: VoiceModelConfig): VoiceDspConfig {

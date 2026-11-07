@@ -1,5 +1,10 @@
 import React, { useEffect, useState } from 'react';
-import { initializeLocalSpeechEngine, VoiceModelConfig, PRESET_VOICE_MODELS } from './utils/naturalVoiceEngine';
+import {
+  initializeLocalSpeechEngine,
+  VoiceModelConfig,
+  PRESET_VOICE_MODELS,
+  ADAPTED_VOICE_MODELS,
+} from './utils/naturalVoiceEngine';
 import { GeneratedTake } from './types/voice';
 import { VoiceNavbar } from './components/VoiceNavbar';
 import { PredefinedVoiceList } from './components/PredefinedVoiceList';
@@ -20,12 +25,15 @@ export function App() {
       const saved = localStorage.getItem('vocalis_natural_models');
       if (saved) {
         const parsed = JSON.parse(saved);
-        return [...PRESET_VOICE_MODELS, ...parsed];
+        // Predefined voices first, then the adapted ones, then anything saved. The
+        // saved list is only ever custom voices (see handleSaveModel), so it cannot
+        // shadow a predefined entry.
+        return [...PRESET_VOICE_MODELS, ...ADAPTED_VOICE_MODELS, ...parsed];
       }
     } catch {
       // ignore
     }
-    return PRESET_VOICE_MODELS;
+    return [...PRESET_VOICE_MODELS, ...ADAPTED_VOICE_MODELS];
   });
 
   const [activeModel, setActiveModel] = useState<VoiceModelConfig>(models[0]);

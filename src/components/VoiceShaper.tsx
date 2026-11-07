@@ -1,5 +1,9 @@
 import React, { useState } from 'react';
-import { VoiceModelConfig, speakRealWords, stopSpeaking } from '../utils/naturalVoiceEngine';
+import {
+  VoiceModelConfig,
+  auditionVoice,
+  stopSpeaking,
+} from '../utils/naturalVoiceEngine';
 import {
   Sliders,
   Play,
@@ -41,7 +45,7 @@ export const VoiceShaper: React.FC<VoiceShaperProps> = ({
     }
 
     setIsSpeaking(true);
-    speakRealWords(model.samplePhrase, model, {
+    void auditionVoice(model, {
       onStart: () => setIsSpeaking(true),
       onWord: (timing) => {
         setActiveWordRange({ start: timing.charIndex, length: timing.charLength });

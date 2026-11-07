@@ -1,5 +1,10 @@
 import React, { useState } from 'react';
-import { VoiceModelConfig, speakRealWords, stopSpeaking } from '../utils/naturalVoiceEngine';
+import {
+  VoiceModelConfig,
+  auditionVoice,
+  generationReason,
+  stopSpeaking,
+} from '../utils/naturalVoiceEngine';
 import { GeneratedTake } from '../types/voice';
 import {
   BookmarkCheck,
@@ -44,7 +49,7 @@ export const VoiceLibrary: React.FC<VoiceLibraryProps> = ({
     }
 
     setAuditioningId(m.id);
-    speakRealWords(m.samplePhrase, m, {
+    void auditionVoice(m, {
       onEnd: () => setAuditioningId(null),
       onError: () => setAuditioningId(null),
     });
@@ -125,6 +130,19 @@ export const VoiceLibrary: React.FC<VoiceLibraryProps> = ({
                     {model.description}
                   </p>
 
+                  {/* How this voice will be heard: the file, or generated. */}
+                  <div className="mb-1.5">
+                    {generationReason(model) ? (
+                      <span className="text-[10px] font-semibold px-2 py-0.5 rounded border bg-amber-950/50 border-amber-500/40 text-amber-300">
+                        {generationReason(model)} &middot; generated
+                      </span>
+                    ) : (
+                      <span className="text-[10px] font-semibold px-2 py-0.5 rounded border bg-emerald-950/50 border-emerald-500/40 text-emerald-300">
+                        The recording &middot; file
+                      </span>
+                    )}
+                  </div>
+
                   {/* Characteristic Badges */}
                   <div className="flex flex-wrap gap-1.5 text-[10px] font-mono text-slate-400 mb-2">
                     <span className="px-2 py-0.5 rounded bg-slate-950 border border-slate-800">
@@ -148,7 +166,11 @@ export const VoiceLibrary: React.FC<VoiceLibraryProps> = ({
                         ? 'bg-rose-600 text-white animate-pulse'
                         : 'bg-slate-800 hover:bg-slate-700 text-slate-200'
                     }`}
-                    title="Audition Spoken Words"
+                    title={
+                      generationReason(model)
+                        ? `Audition — ${generationReason(model)} needs the generated voice`
+                        : "Audition — the recording with this voice's settings applied to the file"
+                    }
                   >
                     {isAuditioning ? (
                       <Square className="w-4 h-4 fill-current" />

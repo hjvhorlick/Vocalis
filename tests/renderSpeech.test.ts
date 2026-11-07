@@ -40,8 +40,11 @@ import { NATURAL_HUMAN_SAMPLES } from '../src/utils/naturalHumanAudio';
 import { synthesiseUnit } from '../src/utils/psola';
 import { VOWELS, analyzeText, segmentUtterance } from '../src/utils/textAnalysis';
 import {
+  ADAPTED_VOICE_MODELS,
   DEFAULT_DIALOGUE_TIMING,
   PRESET_VOICE_MODELS,
+  generationReason,
+  voiceNeedsGeneration,
   gapBeforeLine,
   initializeLocalSpeechEngine,
   releaseDialogue,
@@ -1181,21 +1184,124 @@ check(
 // The voice the app opens with must be one of the two recordings, untouched.
 const shippedDefault = PRESET_VOICE_MODELS[0];
 eq('the shipped default is the SLT recording', shippedDefault.id, 'cmu-arctic-slt');
-eq('the predefined voices are the two recordings and nothing else', PRESET_VOICE_MODELS.length, 2);
+// The library is built in three tiers, and the tests hold each tier to its promise.
+//   1. The recordings. There are four files; they are the clean references.
+//   2. The same recordings with settings attached. Still the file at playback.
+//   3. The two accent voices. Rendered, and they must say so.
+const recordingTier = PRESET_VOICE_MODELS.filter(
+  (preset) =>
+    preset.pitch === 1 &&
+    preset.rate === 1 &&
+    preset.volume === 1 &&
+    preset.toneStyle === 'natural' &&
+    (preset.throatWarmth ?? 0) === 0 &&
+    (preset.oralClarity ?? 0) === 0 &&
+    (preset.airPresence ?? 0) === 0,
+);
+eq(
+  'the recording tier is one entry for each of the four files the repository ships',
+  recordingTier.length,
+  4,
+);
+eq(
+  'the four recordings cover both speakers on both sentences',
+  recordingTier.map((preset) => preset.baseSampleId).sort().join(','),
+  'cmu-bdl-1,cmu-bdl-2,cmu-slt-1,cmu-slt-2',
+);
 check(
-  'no predefined voice carries an adjustment of its own',
-  PRESET_VOICE_MODELS.every(
+  'every recording-tier voice plays the file, never a render',
+  recordingTier.every((preset) => voiceNeedsGeneration(preset) === false),
+  recordingTier.filter((preset) => voiceNeedsGeneration(preset)).map((p) => p.id).join(', '),
+);
+check(
+  'every recording-tier voice names its speaker, its sentence and how to use it',
+  recordingTier.every(
     (preset) =>
-      preset.pitch === 1 &&
-      preset.rate === 1 &&
-      preset.volume === 1 &&
-      preset.toneStyle === 'natural' &&
-      preset.accent === 'US' &&
-      (preset.throatWarmth ?? 0) === 0 &&
-      (preset.oralClarity ?? 0) === 0 &&
-      (preset.airPresence ?? 0) === 0,
+      (preset.baseVoiceId === 'slt' || preset.baseVoiceId === 'bdl') &&
+      preset.description.length > 80 &&
+      preset.description.includes('CMU ARCTIC'),
   ),
-  PRESET_VOICE_MODELS.filter((preset) => preset.pitch !== 1 || preset.rate !== 1).map((p) => p.id).join(', '),
+  'a recording voice does not identify its file or its purpose',
+);
+check(
+  'no recording-tier voice repeats another: every id and every sentence pairing is unique',
+  new Set(PRESET_VOICE_MODELS.map((preset) => preset.id)).size === PRESET_VOICE_MODELS.length &&
+    new Set(
+      recordingTier.map((preset) => `${preset.baseVoiceId}:${preset.baseSampleId}`),
+    ).size === recordingTier.length,
+  'two predefined voices share an id or the same speaker and sentence',
+);
+
+// Tier 2: settings, applied to the file. Each one must (a) still be a file voice,
+// (b) actually carry a change, so the description is not describing nothing, and
+// (c) name the recording it was built from.
+const adjustedTier = PRESET_VOICE_MODELS.filter((preset) => !recordingTier.includes(preset));
+eq('every adjusted voice is a distinct entry from the recordings', adjustedTier.length, 7);
+check(
+  'every adjusted voice changes something',
+  adjustedTier.every((preset) => {
+    const carried =
+      preset.pitch !== 1 ||
+      preset.rate !== 1 ||
+      preset.volume !== 1 ||
+      preset.toneStyle !== 'natural' ||
+      (preset.throatWarmth ?? 0) !== 0 ||
+      (preset.oralClarity ?? 0) !== 0 ||
+      (preset.airPresence ?? 0) !== 0;
+    return carried;
+  }),
+  adjustedTier
+    .filter(
+      (preset) =>
+        preset.pitch === 1 &&
+        preset.rate === 1 &&
+        preset.volume === 1 &&
+        preset.toneStyle === 'natural' &&
+        (preset.throatWarmth ?? 0) === 0 &&
+        (preset.oralClarity ?? 0) === 0 &&
+        (preset.airPresence ?? 0) === 0,
+    )
+    .map((p) => p.id)
+    .join(', '),
+);
+check(
+  'every adjusted voice is still the recording at playback, not a render',
+  adjustedTier.every((preset) => voiceNeedsGeneration(preset) === false),
+  adjustedTier.filter((preset) => voiceNeedsGeneration(preset)).map((p) => p.id).join(', '),
+);
+check(
+  'every adjusted voice names the recording it was built from',
+  adjustedTier.every(
+    (preset) =>
+      preset.description.includes('SLT') || preset.description.includes('BDL'),
+  ),
+  adjustedTier
+    .filter((preset) => !preset.description.includes('SLT') && !preset.description.includes('BDL'))
+    .map((p) => p.id)
+    .join(', '),
+);
+check(
+  'the adjusted voices have a description long enough to describe the settings',
+  adjustedTier.every((preset) => preset.description.length > 100),
+  'an adjusted voice does not describe what it does',
+);
+
+// Tier 3: the accents. They change words, so they render - and they must be the only
+// voices that do, and they must say which accent they are.
+eq('there are exactly two accent voices', ADAPTED_VOICE_MODELS.length, 2);
+check(
+  'both accent voices render, and for the stated reason',
+  ADAPTED_VOICE_MODELS.every(
+    (model) => voiceNeedsGeneration(model) && generationReason(model)?.includes('accent'),
+  ),
+  ADAPTED_VOICE_MODELS.filter((m) => !voiceNeedsGeneration(m)).map((m) => m.id).join(', '),
+);
+check(
+  'no non-accent voice is routed to the generated path',
+  [...PRESET_VOICE_MODELS, ...ADAPTED_VOICE_MODELS]
+    .filter((model) => model.accent === 'US')
+    .every((model) => voiceNeedsGeneration(model) === false),
+  'a sound-only voice was routed to the generated path',
 );
 eq('the shipped default leaves pitch alone', shippedDefault.pitch, 1);
 eq('the shipped default leaves pace alone', shippedDefault.rate, 1);

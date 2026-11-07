@@ -1,5 +1,10 @@
 import React, { useState } from 'react';
-import { VoiceModelConfig, speakRealWords, stopSpeaking } from '../utils/naturalVoiceEngine';
+import {
+  VoiceModelConfig,
+  auditionVoice,
+  generationReason,
+  stopSpeaking,
+} from '../utils/naturalVoiceEngine';
 import {
   Volume2,
   Square,
@@ -35,7 +40,9 @@ export const PredefinedVoiceList: React.FC<PredefinedVoiceListProps> = ({
     }
 
     setAuditioningId(voice.id);
-    speakRealWords(voice.samplePhrase, voice, {
+    // The voice decides its own path: the recording with the graph on top for a
+    // sound change, the generated voice only for an accent or the rhythm engine.
+    void auditionVoice(voice, {
       onEnd: () => setAuditioningId(null),
       onError: () => setAuditioningId(null),
     });
@@ -182,6 +189,26 @@ export const PredefinedVoiceList: React.FC<PredefinedVoiceListProps> = ({
                 </p>
 
                 {/* Pitch & Rate metrics */}
+                {/* How this voice will be heard. Stated on the card, because the
+                    distinction between "the file" and "rendered" is the whole point. */}
+                <div className="flex items-center gap-1.5 mb-1.5">
+                  {generationReason(voice) ? (
+                    <span
+                      className="text-[9px] font-semibold px-1.5 py-0.5 rounded border bg-amber-950/50 border-amber-500/40 text-amber-300"
+                      title="This changes words, not sound, so it has to be generated."
+                    >
+                      {generationReason(voice)} &middot; generated
+                    </span>
+                  ) : (
+                    <span
+                      className="text-[9px] font-semibold px-1.5 py-0.5 rounded border bg-emerald-950/50 border-emerald-500/40 text-emerald-300"
+                      title="The licensed recording, with these settings applied to the file itself."
+                    >
+                      The recording &middot; file
+                    </span>
+                  )}
+                </div>
+
                 <div className="flex items-center gap-1.5 text-[9px] font-mono text-slate-400 flex-wrap">
                   <span className="px-1.5 py-0.5 rounded bg-slate-900 border border-slate-800">
                     Pitch: {voice.pitch.toFixed(2)}x
@@ -205,7 +232,11 @@ export const PredefinedVoiceList: React.FC<PredefinedVoiceListProps> = ({
                       ? 'bg-rose-600 hover:bg-rose-500 text-white shadow-rose-600/40 animate-pulse'
                       : 'bg-slate-900 hover:bg-slate-800 text-slate-200 border border-slate-700/80 hover:border-slate-600'
                   }`}
-                  title="Audition transformed voice"
+                  title={
+                    generationReason(voice)
+                      ? `Audition — ${generationReason(voice)} needs the generated voice`
+                      : 'Audition — the recording with this voice\'s settings applied to the file'
+                  }
                 >
                   {isAuditioning ? (
                     <>
@@ -213,7 +244,8 @@ export const PredefinedVoiceList: React.FC<PredefinedVoiceListProps> = ({
                     </>
                   ) : (
                     <>
-                      <Volume2 className="w-3.5 h-3.5 text-indigo-400" /> Audition
+                      <Volume2 className="w-3.5 h-3.5 text-indigo-400" />
+                      {generationReason(voice) ? 'Audition (generated)' : 'Audition (file)'}
                     </>
                   )}
                 </button>
