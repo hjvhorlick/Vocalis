@@ -776,6 +776,21 @@ check(
   /npm run voices -- install arctic-awb/.test(urlsOut) && /curl -L -o cmu-kal\.archive/.test(urlsOut),
 );
 
+// `voices verify` is the honest answer to "is it working?": it renders with every
+// installed voice and refuses to pretend about ones that are not installed.
+{
+  const verifyMissing = (() => {
+    try {
+      return { code: 0, text: cli(['verify', 'arctic-nothing']).out };
+    } catch (error) {
+      const failure = error as { status?: number; stdout?: string; stderr?: string };
+      return { code: failure.status ?? 1, text: `${failure.stdout ?? ''}${failure.stderr ?? ''}` };
+    }
+  })();
+  check('`voices verify` refuses an id that is not installed', verifyMissing.code !== 0);
+  check('and says so by name', /arctic-nothing/.test(verifyMissing.text), verifyMissing.text.trim().split('\n').slice(-1)[0]);
+}
+
 const refusedInstall = (() => {
   try {
     execFileSync('npx', ['tsx', join(ROOT, 'scripts', 'voice_library.ts'), 'install', 'slt'], {

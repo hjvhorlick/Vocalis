@@ -287,6 +287,7 @@ uses the same catalogue, the same installer and the same guards:
 | `npm run voices -- inspect arctic-ljm --from ~/Downloads/ljm.tar.bz2` | the same, for an archive you already have |
 | `npm run voices -- remove arctic-awb` | delete that voice and its metadata |
 | `npm run voices -- status` | what is installed, and how much disk it uses |
+| `npm run voices -- verify` | render a sentence with every installed voice and print length, peak, units used and stand-ins |
 | `npm run voices -- urls --class A` | the `curl` commands, for fetching by hand |
 
 `install` prints the download URL, the licence, and each stage as it happens; it
@@ -372,7 +373,7 @@ they cannot drift from the data.
 
 ## 8. Testing
 
-`npm run test:voices` — **134 checks**, all passing, no network access:
+`npm run test:voices` — **136 checks**, all passing, no network access:
 
 * catalogue: unique ids, ≥80 candidates, no protected id offered, every entry has a
   source URL, licence, attribution, class and a reason; nothing class D installable;

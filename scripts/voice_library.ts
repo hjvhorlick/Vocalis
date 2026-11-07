@@ -42,6 +42,13 @@ import {
   isProtectedVoiceId,
 } from '../src/utils/voiceLibraryPaths';
 import { pythonInstallHint, resolvePythonExecutable } from '../src/utils/pythonRuntime';
+import {
+  registerOptionalVoiceSource,
+  unregisterOptionalVoiceSource,
+} from '../src/utils/optionalVoicePacks';
+import { AUDITION_PHRASE, modelForLibraryVoice } from '../src/utils/voiceLibrary';
+import { initializeLocalSpeechEngine, renderSpeech, PRESET_VOICE_MODELS } from '../src/utils/naturalVoiceEngine';
+import { releaseVoicePack } from '../src/utils/cmuDiphoneSynthesizer';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const VOICE_ROOT = resolve(ROOT, 'public', 'optional-voices');
@@ -92,7 +99,8 @@ function printUsage(): void {
 
   install <id...> [--from <archive>]
         Download, convert and install one or more voices. --from installs a
-        voice from an archive you already have, instead of downloading it.
+        voice from an archive — or, for ARCTIC voices, an already unpacked
+        speaker directory — instead of downloading it.
 
   install --class A
         Install every voice in that compatibility class, one at a time.
@@ -104,6 +112,11 @@ function printUsage(): void {
         Download and unpack a voice's archive and report what it contains —
         waveforms, phone labels, text — without converting or installing anything.
         Use it first when an install fails.
+
+  verify [<id...>]
+        Render a fixed sentence with every installed voice and print what came
+        out: length, peak level, how many recorded units it used, how many
+        stand-ins. This is the answer to "is it actually working?".
 
   urls [--class A|B]
         Print the curl commands for the archives, for people who would rather
@@ -298,6 +311,123 @@ function runInstaller(voice: VoiceCandidate, archiveOverride?: string): Promise<
   });
 }
 
+/**
+ * Speak a fixed sentence with every installed voice and report what came out.
+ *
+ * "It downloaded" is not evidence; neither is "the card says installed". This
+ * renders the same sentence each voice auditions with and prints the numbers a
+ * listener would otherwise have to guess at: how long the audio is, how loud, how
+ * many of its units were recorded ones, and whether any stand-in was used.
+ */
+async function verify(args: string[]): Promise<number> {
+  const installed = VOICE_CATALOGUE.filter((voice) => installedInfo(voice.id));
+  const wanted = positionals(args);
+  const rows = wanted.length ? installed.filter((voice) => wanted.includes(voice.id)) : installed;
+  if (!rows.length) {
+    console.error(
+      wanted.length
+        ? `Nothing to verify: ${wanted.join(', ')} ${wanted.length === 1 ? 'is' : 'are'} not installed.`
+        : 'Nothing is installed yet. Try `npm run voices -- install cmu-kal`.',
+    );
+    return 1;
+  }
+
+  // The engine fetches its dictionary from the page in a browser; in a terminal
+  // there is no origin, so relative requests get a 404 instead of an exception.
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = ((input: RequestInfo | URL, init?: RequestInit) => {
+    const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
+    if (url.startsWith('/')) return Promise.resolve(new Response('', { status: 404 }));
+    return realFetch(input as RequestInfo, init);
+  }) as typeof fetch;
+
+  // The engine reports a missing browser dictionary with console.warn; that is
+  // expected in a terminal, so hold both channels and restore them at the end.
+  const realConsoleError = console.error;
+  const realConsoleWarn = console.warn;
+  const collected: unknown[] = [];
+  const collect = (...parts: unknown[]) => {
+    collected.push(parts);
+  };
+  console.error = collect;
+  console.warn = collect;
+
+  let silent = 0;
+  console.log(`${'id'.padEnd(20)} ${'seconds'.padStart(8)} ${'peak'.padStart(6)} ${'units used'.padStart(11)} ${'stand-ins'.padStart(10)}  verdict`);
+  for (const voice of rows) {
+    const dir = installedVoiceDir(VOICE_ROOT, voice.id);
+    if (!dir) continue;
+    registerOptionalVoiceSource({
+      id: voice.id,
+      displayName: voice.displayName,
+      loadPack: async () => {
+        const manifestPath = resolve(dir, 'manifest.json');
+        const audioPath = resolve(dir, 'diphones.bin');
+        if (!existsSync(manifestPath) || !existsSync(audioPath)) {
+          throw new Error(`${voice.id} is missing its manifest or its audio.`);
+        }
+        const audio = readFileSync(audioPath);
+        return {
+          manifest: JSON.parse(readFileSync(manifestPath, 'utf-8')),
+          audio: audio.buffer.slice(audio.byteOffset, audio.byteOffset + audio.byteLength) as ArrayBuffer,
+        };
+      },
+    });
+
+    const model = {
+      ...PRESET_VOICE_MODELS[0],
+      id: `${voice.id}-verify`,
+      name: voice.displayName,
+      baseVoiceId: voice.id,
+      pitch: 1,
+      rate: 1,
+      volume: 1,
+      toneStyle: 'natural' as const,
+      throatWarmth: 0,
+      oralClarity: 0,
+      airPresence: 0,
+    };
+
+    try {
+      // The dictionary is fetched by the browser; in a terminal it is skipped and the
+      // render falls back to its built-in pronunciation rules.
+      await initializeLocalSpeechEngine(model).catch(() => undefined);
+      const spoken = await renderSpeech(AUDITION_PHRASE, model);
+      let peak = 0;
+      for (const sample of spoken.samples) peak = Math.max(peak, Math.abs(sample));
+      const seconds = spoken.samples.length / (spoken.sampleRate || 16000);
+      const exact = spoken.diagnostics?.exactUnits ?? 0;
+      const standIns = spoken.diagnostics?.fallbackPhones ?? 0;
+      const ok = peak > 0.05 && exact > 5;
+      if (!ok) silent += 1;
+      console.log(
+        `${voice.id.padEnd(20)} ${seconds.toFixed(2).padStart(8)} ${peak.toFixed(3).padStart(6)} ` +
+          `${String(exact).padStart(11)} ${String(standIns).padStart(10)}  ${ok ? 'speaks' : 'NO SOUND'}`,
+      );
+    } catch (error) {
+      silent += 1;
+      console.log(
+        `${voice.id.padEnd(20)} ${'-'.padStart(8)} ${'-'.padStart(6)} ${'-'.padStart(11)} ${'-'.padStart(10)}  ` +
+          `FAILED: ${error instanceof Error ? error.message : String(error)}`,
+      );
+      for (const entry of collected.slice(-2)) realConsoleWarn(...(entry as unknown[]));
+    } finally {
+      unregisterOptionalVoiceSource(voice.id);
+      releaseVoicePack(voice.id);
+    }
+  }
+
+  globalThis.fetch = realFetch;
+  console.error = realConsoleError;
+  console.warn = realConsoleWarn;
+  console.log(
+    silent
+      ? `\n${rows.length - silent} of ${rows.length} installed voices speak; ${silent} did not.`
+      : `\nAll ${rows.length} installed voices speak from their own recordings.`,
+  );
+  return silent ? 1 : 0;
+}
+
 async function inspect(args: string[]): Promise<number> {
   const [id] = positionals(args);
   const fromArchive = valueOf(args, '--from');
@@ -455,6 +585,8 @@ async function main(): Promise<number> {
       return install(args);
     case 'inspect':
       return inspect(args);
+    case 'verify':
+      return verify(args);
     case 'remove':
     case 'rm':
       return remove(args);
