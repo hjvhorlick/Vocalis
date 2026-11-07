@@ -57,6 +57,12 @@ WIDE_SEARCH_HZ = (60, 450)        # first pass, deliberately generous
 CALIBRATE_LOW = 0.55              # second pass brackets the measured median F0
 CALIBRATE_HIGH = 2.00
 VOICING_ACF = 0.45                # normalised autocorrelation peak to call a frame voiced
+# v1's unit_quality scored candidates by closeness to an ideal length, so units
+# near that ideal are over-represented in the pack. A unit further away than this
+# tolerance could not have been pulled there, which makes it an honest observation.
+V1_IDEAL_SECONDS = 0.16
+V1_IDEAL_PAUSE_SECONDS = 0.22
+V1_IDEAL_TOLERANCE = 0.15
 VOICING_RMS = 0.012               # and at least this much energy, fraction of full scale
 MARK_SEARCH = 0.30                # refine each mark within +-30% of the expected period
 UNVOICED_GAP = 1.7                # a gap wider than this many periods is not voicing
@@ -408,7 +414,23 @@ def build(speaker: str, write: bool) -> dict:
     units = manifest["units"]
     pcm = read_pcm(directory / "diphones.bin")
     lengths = {key: int(entry["length"]) for key, entry in units.items()}
-    durations, fit = solve_phone_durations(units, lengths)
+
+    def ideal_seconds(key: str) -> float:
+        return V1_IDEAL_PAUSE_SECONDS if "pau" in key else V1_IDEAL_SECONDS
+
+    honest = {
+        key: length for key, length in lengths.items()
+        if abs((length / RATE) / ideal_seconds(key) - 1.0) > V1_IDEAL_TOLERANCE
+    }
+    durations_all, fit_all = solve_phone_durations(lengths, lengths)
+    durations, fit = solve_phone_durations(honest, honest)
+    fit["allUnits"] = {
+        "observations": fit_all["observations"],
+        "medianErrorMs": fit_all["medianErrorMs"],
+        "solvedMeanMs": fit_all["predictedMeanMs"],
+        "observedMeanMs": fit_all["observedMeanMs"],
+    }
+    fit["idealSecondsExcluded"] = [V1_IDEAL_SECONDS, V1_IDEAL_PAUSE_SECONDS, V1_IDEAL_TOLERANCE]
 
     def slice_unit(entry):
         offset = int(entry["offset"])
@@ -608,6 +630,9 @@ def main() -> int:
               f"max {fit['maxErrorMs']:.1f} ms")
         print(f"                             solved mean {fit['predictedMeanMs']:.1f} ms vs observed mean "
               f"{fit['observedMeanMs']:.1f} ms, prior {fit['priorMs']:.1f} ms, ridge {fit['ridgeWeight']}")
+        print(f"  same solve on every unit   {fit['allUnits']['observations']} observations, median error "
+              f"{fit['allUnits']['medianErrorMs']:.1f} ms, solved mean {fit['allUnits']['solvedMeanMs']:.1f} ms "
+              f"(biased towards the {V1_IDEAL_SECONDS * 1000:.0f} ms ideal v1 preferred)")
         ordered = sorted(r["durations"].items(), key=lambda item: item[1])
         print("  shortest phones            " + ", ".join(f"{p} {d:.0f}" for p, d in ordered[:6]))
         print("  longest phones             " + ", ".join(f"{p} {d:.0f}" for p, d in ordered[-6:]))

@@ -25,6 +25,17 @@ import { fileURLToPath } from 'node:url';
 
 import { processCmuVoice } from '../src/utils/cmuDiphoneSynthesizer';
 import {
+  DEFAULT_WEIGHTS,
+  MAX_PHONE_SECONDS,
+  MIN_PHONE_SECONDS,
+  consonantRun,
+  intrinsicKey,
+  planDurations,
+  type IntrinsicDurations,
+  type PlanSegment,
+} from '../src/utils/durationModel';
+import { VOWELS, analyzeText, segmentUtterance } from '../src/utils/textAnalysis';
+import {
   DEFAULT_DIALOGUE_TIMING,
   PRESET_VOICE_MODELS,
   gapBeforeLine,
@@ -863,6 +874,227 @@ releaseSynthesis(longResult);
 releaseSynthesis(fast);
 releaseSynthesis(slow);
 releaseSynthesis(deep);
+// ---------------------------------------------------------------------------
+// The v2 unit metadata, and the duration model fitted on top of it
+// ---------------------------------------------------------------------------
+
+// --- the derived pack metadata ---------------------------------------------
+
+interface UnitV2 {
+  offset: number;
+  length: number;
+  boundary: number;
+  period: number;
+  voiced: number;
+  marks: number[];
+}
+interface ManifestV2 {
+  format: string;
+  derivedFrom: string;
+  audioFile: string;
+  unitCount: number;
+  phoneInventory: string[];
+  phoneDurationsMs: Record<string, number>;
+  measurement: {
+    f0MeanHz: number;
+    periodCorrelation: number;
+    durationFit: { observations: number; medianErrorMs: number; predictedMeanMs: number };
+    intactRecording: { f0MeanHz: number; periodCorrelation: number | null };
+  };
+  units: Record<string, UnitV2>;
+}
+
+const intrinsicBySpeaker = new Map<string, IntrinsicDurations>();
+
+for (const speaker of ['slt', 'bdl'] as const) {
+  const dir = join(ROOT, 'public', 'voicepacks', 'cmu-arctic', speaker);
+  const v1 = JSON.parse(readFileSync(join(dir, 'manifest.json'), 'utf-8')) as {
+    units: Record<string, { offset: number; length: number }>;
+  };
+  const v2 = JSON.parse(readFileSync(join(dir, 'manifest.v2.json'), 'utf-8')) as ManifestV2;
+  const keys = Object.keys(v2.units);
+
+  check(`${speaker}: v2 names the format and the file it indexes`,
+    v2.format === 'vocalis-cmu-diphones-v2' && v2.derivedFrom === 'manifest.json' && v2.audioFile === 'diphones.bin',
+    `${v2.format} / ${v2.derivedFrom} / ${v2.audioFile}`);
+  check(`${speaker}: v2 indexes every unit v1 does, and no others`,
+    keys.length === Object.keys(v1.units).length && keys.every((key) => v1.units[key] !== undefined),
+    `${keys.length} against ${Object.keys(v1.units).length}`);
+  check(`${speaker}: v2 offsets and lengths are identical to the frozen v1 index`,
+    keys.every((key) => v2.units[key].offset === v1.units[key].offset && v2.units[key].length === v1.units[key].length));
+  check(`${speaker}: every phone boundary falls inside its unit`,
+    keys.every((key) => v2.units[key].boundary >= 1 && v2.units[key].boundary < v2.units[key].length));
+
+  // The first entry is a position, the rest are steps. A first mark at sample
+  // zero is real: v1 cut units at phone midpoints, which land inside a vowel, so
+  // a unit can genuinely begin on a glottal closure.
+  const badMarks = keys.filter((key) => {
+    const unit = v2.units[key];
+    if (!unit.marks.length) return false;
+    if (unit.marks[0] < 0 || unit.marks[0] >= unit.length) return true;
+    let at = unit.marks[0];
+    return unit.marks.slice(1).some((delta) => {
+      at += delta;
+      return delta <= 0 || at >= unit.length;
+    });
+  });
+  check(`${speaker}: pitch marks stay inside their unit and always move forward`, badMarks.length === 0,
+    `${badMarks.length} units, e.g. ${badMarks.slice(0, 3).join(', ')}`);
+
+  const marked = keys.filter((key) => v2.units[key].marks.length >= 2).length;
+  check(`${speaker}: most units carry pitch marks`, marked > keys.length * 0.7,
+    `${marked} of ${keys.length}`);
+  check(`${speaker}: the tracker is coherent enough to splice on`,
+    v2.measurement.periodCorrelation >= 0.6 && v2.measurement.intactRecording.periodCorrelation !== null,
+    `correlation ${v2.measurement.periodCorrelation}`);
+  between(`${speaker}: voice rate measured on the intact recording is a human one`,
+    v2.measurement.intactRecording.f0MeanHz, 70, 400, ' Hz');
+
+  const table = v2.phoneDurationsMs;
+  check(`${speaker}: the duration table covers the whole phone inventory`,
+    v2.phoneInventory.every((phone) => typeof table[phone] === 'number' && table[phone] > 0),
+    `${Object.keys(table).length} entries for ${v2.phoneInventory.length} phones`);
+  const ordered = Object.entries(table)
+    .filter(([phone]) => phone !== 'pau')
+    .sort((a, b) => a[1] - b[1]);
+  check(`${speaker}: the shortest measured phones are consonants, the longest vowels`,
+    !VOWELS.has(ordered[0][0].toUpperCase()) && VOWELS.has(ordered[ordered.length - 1][0].toUpperCase()),
+    `${ordered[0][0]} ${ordered[0][1]} ms to ${ordered[ordered.length - 1][0]} ${ordered[ordered.length - 1][1]} ms`);
+  check(`${speaker}: the solve reproduces the corpus mean unit length`,
+    Math.abs(v2.measurement.durationFit.predictedMeanMs - 117) < 25,
+    `solved mean ${v2.measurement.durationFit.predictedMeanMs} ms`);
+  check(`${speaker}: the solve fits its own observations to within a frame`,
+    v2.measurement.durationFit.medianErrorMs < 20,
+    `median error ${v2.measurement.durationFit.medianErrorMs} ms`);
+
+  const intrinsic: IntrinsicDurations = {};
+  for (const [phone, ms] of Object.entries(table)) intrinsic[phone] = ms / 1000;
+  intrinsicBySpeaker.set(speaker, intrinsic);
+}
+
+// --- the duration model ----------------------------------------------------
+
+async function planFor(text: string, speaker: 'slt' | 'bdl') {
+  const utterance = await analyzeText(text, 'US');
+  const segments: PlanSegment[] = segmentUtterance(utterance).map((segment) => ({
+    phones: segment.phones.map((phone) => ({
+      phone: phone.phone,
+      stress: phone.stress,
+      wordIndex: phone.wordIndex,
+      long: phone.long,
+      word: utterance.words[phone.wordIndex]?.text,
+    })),
+    boundaries: segment.phones.map((phone, index) => {
+      const next = segment.phones[index + 1];
+      const endsWord = !next || next.wordIndex !== phone.wordIndex;
+      return endsWord ? utterance.words[phone.wordIndex]?.boundaryAfter ?? 'word' : undefined;
+    }),
+  }));
+  const intrinsic = intrinsicBySpeaker.get(speaker) ?? {};
+  const plan = planDurations(segments, intrinsic);
+  const phoneCount = utterance.phones.length;
+  return { plan, segments, intrinsic, utterance, phoneCount };
+}
+
+const isVowelPhone = (phone: string): boolean => VOWELS.has(phone.toUpperCase());
+
+// Both bundled reference sentences, read by both bundled speakers. The human
+// column is the speech extent measured on the energy envelope of the intact
+// recordings: first to last frame above 15% of peak. These four numbers are the
+// only human timing in the repository, and the model's factors were fitted to
+// them, so the suite keeps the fit honest.
+const READINGS = [
+  { speaker: 'slt' as const, text: 'Author of the danger trail, Philip Ross.', human: 2.91, phones: 24 },
+  { speaker: 'slt' as const, text: 'There had been no thawing spring, and the ice was deeply pitted', human: 2.78, phones: 40 },
+  { speaker: 'bdl' as const, text: 'Author of the danger trail, Philip Ross.', human: 2.97, phones: 24 },
+  { speaker: 'bdl' as const, text: 'There had been no thawing spring, and the ice was deeply pitted', human: 3.15, phones: 40 },
+];
+
+for (const reading of READINGS) {
+  const { plan, phoneCount } = await planFor(reading.text, reading.speaker);
+  const label = `${reading.speaker} "${reading.text.slice(0, 28)}…"`;
+  check(`${label}: the plan covers every phone`, plan.phones.length === phoneCount,
+    `${plan.phones.length} planned against ${phoneCount} spoken`);
+  check(`${label}: every phone was found in the speaker's measured table`, plan.defaulted === 0,
+    `${plan.defaulted} phones fell back to a default`);
+  const error = plan.totalSeconds / reading.human - 1;
+  check(`${label}: the plan lands within 15% of the human reading`, Math.abs(error) <= 0.15,
+    `${plan.totalSeconds.toFixed(2)} s planned against ${reading.human.toFixed(2)} s measured (${(error * 100).toFixed(0)}%)`);
+  const seconds = plan.phones.map((target) => target.seconds * 1000);
+  const mean = seconds.reduce((a, b) => a + b, 0) / seconds.length;
+  const spread = Math.sqrt(seconds.reduce((a, b) => a + (b - mean) ** 2, 0) / seconds.length);
+  check(`${label}: phone durations vary by at least as much as the human recording does`,
+    spread / mean >= 0.5, `coefficient of variation ${(spread / mean).toFixed(2)}`);
+  check(`${label}: every target stays inside the bounds`,
+    seconds.every((ms) => ms >= MIN_PHONE_SECONDS * 1000 - 0.001 && ms <= MAX_PHONE_SECONDS * 1000 + 0.001));
+}
+
+{
+  const { plan } = await planFor('Author of the danger trail, Philip Ross.', 'slt');
+  const vowels = plan.phones.filter((target) => target.cluster === 0);
+  const mean = (values: number[]) => values.reduce((a, b) => a + b, 0) / Math.max(1, values.length);
+  const stressed = mean(vowels.filter((t) => t.stress === '1').map((t) => t.seconds));
+  const reduced = mean(vowels.filter((t) => t.stress === '0').map((t) => t.seconds));
+  check('a stressed vowel gets several times the time of a reduced one', stressed / reduced >= 3,
+    `${(stressed * 1000).toFixed(0)} ms against ${(reduced * 1000).toFixed(0)} ms`);
+  check('a stressed vowel lands where the intact recording measures its nuclei',
+    stressed * 1000 >= 150 && stressed * 1000 <= 260, `${(stressed * 1000).toFixed(0)} ms`);
+  check('a reduced vowel lands where the intact recording measures its shortest nucleus',
+    reduced * 1000 >= 25 && reduced * 1000 <= 70, `${(reduced * 1000).toFixed(0)} ms`);
+}
+
+{
+  // Cluster compression, on the sentence that carries a four-consonant run.
+  const { plan } = await planFor('There had been no thawing spring, and the ice was deeply pitted', 'slt');
+  const mean = (values: number[]) => values.reduce((a, b) => a + b, 0) / Math.max(1, values.length);
+  const alone = mean(plan.phones.filter((t) => t.cluster === 1).map((t) => t.seconds));
+  const inCluster = mean(plan.phones.filter((t) => t.cluster >= 3).map((t) => t.seconds));
+  check('a consonant inside a cluster is much shorter than the same consonant alone',
+    inCluster < alone * 0.5, `${(inCluster * 1000).toFixed(0)} ms in a run of three or more against ${(alone * 1000).toFixed(0)} ms alone`);
+
+  const closed = mean(plan.phones
+    .filter((t) => t.word !== undefined && ['had', 'been', 'and', 'the', 'was', 'there', 'no'].includes(t.word.toLowerCase()))
+    .map((t) => t.seconds));
+  const open = mean(plan.phones
+    .filter((t) => t.word !== undefined && !['had', 'been', 'and', 'the', 'was', 'there', 'no'].includes(t.word.toLowerCase()))
+    .map((t) => t.seconds));
+  check('a closed-class word is spoken tighter than a content word', closed < open * 0.75,
+    `${(closed * 1000).toFixed(0)} ms against ${(open * 1000).toFixed(0)} ms`);
+}
+
+{
+  // The run counter has to see across word boundaries: "spring, and" is one run.
+  const stream = ['S', 'P', 'R', 'IH', 'NG', 'AE', 'N', 'D'].map((phone, index) => ({
+    phone,
+    stress: '0' as const,
+    wordIndex: index < 5 ? 0 : index < 7 ? 1 : 2,
+  }));
+  // Every member of a run reports the whole run, so S-P-R is 3 for all three,
+  // and the N-D pair straddles a word boundary and still counts as one run of 2.
+  eq('a consonant run counts across word boundaries, not just within them',
+    stream.map((_, index) => consonantRun(stream, index)), [3, 3, 3, 0, 1, 0, 2, 2]);
+  check('the measured table is keyed the way the pack keys it', intrinsicKey('AA1') === 'aa' && intrinsicKey('AX') === 'ah');
+}
+
+{
+  // Tempo is a scale on the plan, and nothing else changes shape.
+  const { segments, intrinsic } = await planFor('Author of the danger trail, Philip Ross.', 'slt');
+  const normal = planDurations(segments, intrinsic);
+  const faster = planDurations(segments, intrinsic, { rate: 1.25 });
+  const slower = planDurations(segments, intrinsic, { rate: 0.8 });
+  between('rate 1.25 shortens the plan by exactly a fifth', faster.totalSeconds / normal.totalSeconds, 0.79, 0.81);
+  between('rate 0.8 lengthens the plan by exactly a quarter', slower.totalSeconds / normal.totalSeconds, 1.24, 1.26);
+  check('an extreme tempo still respects the per-phone bounds',
+    planDurations(segments, intrinsic, { rate: 0.05 }).phones.every((t) => t.seconds >= MIN_PHONE_SECONDS) &&
+    planDurations(segments, intrinsic, { rate: 20 }).phones.every((t) => t.seconds <= MAX_PHONE_SECONDS));
+  const empty = planDurations([{ phones: [{ phone: 'AA', stress: '1' }] }], {});
+  check('a phone with no measured duration still gets a sane target',
+    empty.defaulted === 1 && empty.phones[0].seconds > 0.05 && empty.phones[0].seconds < MAX_PHONE_SECONDS,
+    `${(empty.phones[0].seconds * 1000).toFixed(0)} ms, ${empty.defaulted} defaulted`);
+  check('the fitted factors are the ones shipped', DEFAULT_WEIGHTS.pace > 0.8 && DEFAULT_WEIGHTS.pace <= 1 &&
+    DEFAULT_WEIGHTS.stressPrimary > DEFAULT_WEIGHTS.stressReduced * 3);
+}
+
 releaseSynthesis(bright);
 releaseSynthesis(quiet);
 releaseSynthesis(robot);
