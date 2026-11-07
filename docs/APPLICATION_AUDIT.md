@@ -106,11 +106,48 @@ of being trusted from its label.
 | ID | How |
 | --- | --- |
 | D11 | `throatWarmth`, `oralClarity` and `airPresence` are now three peaking biquads in the render path (`peakingFilter` / `applyResonance`, `phonemeSynthesizer.ts:417` / `:453`), at the frequencies and Q values the audition path already used, gains clamped ±24 dB and pass-through below 0.01 dB so a profile that leaves them at zero is untouched. 32 checks were added to `tests/renderSpeech.test.ts`: one per control position asserting the output differs from neutral, six asserting each band moves energy the direction its label claims, and six on the reference mode. |
-| A3 (partly) | A labelled reference makes the comparison available in the product itself: `model.referenceRaw` renders the recorded units at their recorded lengths with no plan, no re-timing, no pitch, pace, character, resonance or regional rules. Speech Studio exposes it as a checkbox under the pitch and pace sliders and lists it in the render cache key; it is never a default, which is what A1 forbids. The suite locates one recorded unit inside a reference render and matches its interior against the pack bytes: residual **0.0000 %** of the unit's energy at a single output gain of **1.2001**. |
+| A3 (partly) | The comparison is available in the product itself: `model.referenceRaw` renders the recorded units at their recorded lengths with no plan, no re-timing, no pitch, pace, character, resonance or regional rules. Speech Studio and the Voice Manipulator both expose it as a labelled two-way switch, it is in both render cache keys, and the controls it bypasses are disabled and named as bypassed rather than left to look like they work. The suite locates one recorded unit inside such a render and matches its interior against the pack bytes: residual **0.0000 %** of the unit's energy at a single output gain of **1.2001**. |
 
 `accent: 'Global'` is still a no-op and stays one: it is not a slider, it is a region-filter
 label in the voice list ("🌐 Global / Sci-Fi") used by one preset, `unit-7-droid`. It is recorded
 here so nobody wires a control to it and expects sound.
+
+---
+
+## The shipped default is the recorded voice (2026-11-07, by direction)
+
+After hearing the adjusted voice beside the recording, the person the application is for chose
+the recording: *"the original voice stays like it was imported… it became worse with the Vocalis
+settings."* That is a product decision and it is theirs to make, so it is implemented rather than
+argued with.
+
+- `VoiceModelConfig.referenceRaw` is **absent-or-true by default**, and all nine presets state
+  `referenceRaw: true` explicitly. A profile saved before this change, which has no such field,
+  gets the recorded voice too — absence means unadjusted, not "whatever the last release did".
+- With it, `planDurations` is not called, `joinRetimed` and the whole PSOLA realiser are not
+  called, `processCmuVoice` is skipped, `applyResonance` is skipped, and `analyzeText` is forced
+  to `'US'` so no regional rule touches the text. What remains is the dictionary-driven phone
+  stream, the recorded units at their recorded lengths, crossfade joins, and one whole-file
+  normalising gain.
+- The adjustments are **opt-in and labelled**: a two-way switch, "Recorded voice, as imported"
+  against "Vocalis adjustments", in Speech Studio and in the Voice Manipulator. While the recorded
+  voice is selected, the pitch and pace sliders are `disabled` and both components state in words
+  which controls are bypassed. A control that moves and does nothing is the defect recorded as D11;
+  a control that is visibly switched off is not.
+- This does not weaken A1, which forbids the product *quietly* becoming playback of a recording.
+  Nothing plays a corpus file — the units are still selected per typed sentence — and the mode is
+  named on the button, in `BASE_VOICE_CONTRACT.md` §2, and in the commit.
+- The suite is unchanged in scope: 748 checks. The fixture `voice()` now asks for the adjustment
+  path by name (`referenceRaw: false`), so every pace, rhythm, duration-model and PSOLA band still
+  measures the adjustments and still has to pass; six new checks pin the shipped default to the
+  recorded voice, including "every preset ships unadjusted" and "a profile that predates the
+  switch still gets the recorded voice".
+
+What the default costs, measured on the four sentences this repository has human readings of: the
+recorded voice runs 1.5–1.7× the human duration (4.94 s against a human 3.35 s on slt a0001),
+because at recorded lengths a reduced vowel in a function word lasts as long as a stressed
+nucleus. That is the drag `DURATION_MODEL.md` was written to remove, and it is now the shipped
+sound by choice, with the numbers on the record and the fix one switch away.
 
 ---
 

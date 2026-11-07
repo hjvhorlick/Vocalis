@@ -655,7 +655,7 @@ export async function synthesizeText(text: string, model: VoiceModelConfig): Pro
   const method: SynthesisMethod = model.synthesisMethod ?? 'cmu-arctic';
   // A reference render speaks the recordings as they are, so it also reads the
   // text as they would: no regional rules over a US corpus.
-  const utterance = await analyzeText(text, model.referenceRaw ? 'US' : model.accent);
+  const utterance = await analyzeText(text, model.referenceRaw === false ? model.accent : 'US');
   const segments = segmentUtterance(utterance);
   const prosody = buildWordProsody(utterance, segments);
 
@@ -766,14 +766,16 @@ export async function synthesizeText(text: string, model: VoiceModelConfig): Pro
 
   // When the units were re-timed on their own pitch marks, the pitch and the
   // tempo are already in the audio: doing either again here would do it twice.
-  // Reference mode is the recorded units and nothing else: no pitch, no tempo, no
-  // character, no resonance. Everything a listener can switch on is off, so what
-  // comes out is what the corpus contains.
-  const processed = model.referenceRaw
-    ? raw
-    : method === 'cmu-arctic'
-      ? applyResonance(processCmuVoice(raw, model, timedFromPlan), model)
-      : applyResonance(raw, model);
+  // The recorded voice is the default and it is the recorded units and nothing
+  // else: no pitch, no tempo, no character, no resonance. Everything a listener can
+  // switch on is off unless they switch it on, so what comes out is what the corpus
+  // contains.
+  const processed =
+    model.referenceRaw === false
+      ? method === 'cmu-arctic'
+        ? applyResonance(processCmuVoice(raw, model, timedFromPlan), model)
+        : applyResonance(raw, model)
+      : raw;
   const scale = raw.length ? processed.length / raw.length : 1;
   const samples = normaliseSamples(processed, model.volume);
   const duration = samples.length / SAMPLE_RATE;

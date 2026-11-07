@@ -777,7 +777,7 @@ export async function renderCmuDiphones(
   const { pitch: pitchFactor, rate: rateFactor } = factorsFor(model);
   // In reference mode there is no plan at all: every unit plays at the length it
   // was recorded at, which is the `plan === null` path below.
-  const plan = !model.referenceRaw && pack.derived && Object.keys(pack.intrinsic).length
+  const plan = model.referenceRaw === false && pack.derived && Object.keys(pack.intrinsic).length
     ? planDurations(segments, pack.intrinsic, { rate: rateFactor })
     : null;
   diagnostics.plannedSeconds = plan ? plan.totalSeconds : 0;

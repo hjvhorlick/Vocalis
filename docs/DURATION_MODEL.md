@@ -337,11 +337,15 @@ out of the chain:
 | `applyResonance` | skipped, so no profile EQ survives into it |
 | `normaliseSamples` | still applied — one gain over the whole file, so it can be compared at the same loudness |
 
-Speech Studio exposes it as a checkbox under the pitch and pace sliders, labelled "Reference:
-recorded units, unadjusted", and it is in that component's render cache key, so ticking it cannot
-be served a cached preview of the adjusted voice. It is never a default and no preset sets it:
-finding A1 in `APPLICATION_AUDIT.md` is that the product must not quietly become playback of a
-recording, and a labelled reference beside the product is the opposite of that.
+**Since 2026-11-07 this is what the application ships.** The person it is for heard the adjusted
+voice beside the recording and chose the recording, so `referenceRaw` is absent-or-true by
+default, all nine presets state `true`, and the duration model described in this document is
+opt-in behind a labelled two-way switch — "Recorded voice, as imported" against "Vocalis
+adjustments" — in Speech Studio and the Voice Manipulator. While the recorded voice is selected
+the pitch and pace sliders are disabled and both components name the controls that are bypassed,
+so nothing looks like it works when it does not. Every band in the render suite still measures the
+adjustment path, because the fixture asks for it by name; nothing here was retired, it was made
+optional. See `APPLICATION_AUDIT.md`, "The shipped default is the recorded voice".
 
 It is the recording, and that is checked rather than claimed. The suite takes the first joint of
 a sentence, reads that unit's samples out of `diphones.bin`, and searches the reference render for

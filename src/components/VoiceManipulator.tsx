@@ -144,6 +144,44 @@ export const VoiceManipulator: React.FC<VoiceManipulatorProps> = ({
         </p>
       </div>
 
+      {/* Whether any of the sliders below are applied at all */}
+      <div
+        className={`rounded-2xl border p-4 space-y-2 ${
+          voice.referenceRaw === false
+            ? 'border-cyan-500/40 bg-cyan-500/5'
+            : 'border-amber-500/50 bg-amber-500/10'
+        }`}
+      >
+        <div className="flex items-center justify-between gap-3">
+          <span className="text-xs font-bold uppercase tracking-wider text-slate-200">
+            {voice.referenceRaw === false ? 'Vocalis adjustments: on' : 'Recorded voice, as imported'}
+          </span>
+          <button
+            type="button"
+            onClick={() =>
+              onUpdateVoice({ ...voice, referenceRaw: voice.referenceRaw === false ? true : false })
+            }
+            className="text-[11px] font-semibold px-3 py-1.5 rounded-lg border border-slate-700 bg-slate-950 text-slate-200 hover:border-slate-500 transition-colors cursor-pointer"
+          >
+            {voice.referenceRaw === false ? 'Switch adjustments off' : 'Switch adjustments on'}
+          </button>
+        </div>
+        {voice.referenceRaw === false ? (
+          <p className="text-[10px] text-slate-400 leading-relaxed">
+            Every slider below is applied to generated speech: pitch and pace re-time the recorded
+            units, the three resonance bands are peaking filters, and the duration model shortens
+            unstressed sounds.
+          </p>
+        ) : (
+          <p className="text-[10px] text-amber-300/90 leading-relaxed">
+            This is the default. Generated speech is the licensed CMU ARCTIC units at the lengths
+            they were recorded at, so <b>every slider below is bypassed</b> &mdash; pitch, pace,
+            volume character, warmth, clarity and air do nothing to it, and they are labelled as
+            bypassed rather than left to look like they work. Switch adjustments on to use them.
+          </p>
+        )}
+      </div>
+
       {/* Main Sliders Grid */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         {/* Pitch Slider */}

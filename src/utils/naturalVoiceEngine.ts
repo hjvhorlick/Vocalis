@@ -82,6 +82,9 @@ export interface VoiceModelConfig {
    * becoming one is not.
    */
   referenceRaw?: boolean;
+  // ^ Absent or true means the recorded voice as imported: the units at the lengths
+  //   they were recorded at, crossfaded, with nothing applied. This is the shipped
+  //   default for every preset. Only an explicit `false` switches the adjustments on.
   throatWarmth?: number; // low-band resonance, -10 to +10 dB
   oralClarity?: number; // mid-band resonance, -10 to +10 dB
   airPresence?: number; // high-band resonance, -10 to +10 dB
@@ -124,6 +127,7 @@ export const PRESET_VOICE_MODELS: VoiceModelConfig[] = [
     throatWarmth: 0,
     oralClarity: 0,
     airPresence: 0,
+    referenceRaw: true,
     samplePhrase: 'Author of the danger trail, Philip Ross.',
     avatarColor: '#22c55e',
   },
@@ -145,6 +149,7 @@ export const PRESET_VOICE_MODELS: VoiceModelConfig[] = [
     throatWarmth: 3,
     oralClarity: 2,
     airPresence: 1,
+    referenceRaw: true,
     samplePhrase: 'Author of the danger trail, Philip Steels, etc.',
     avatarColor: '#8b5cf6',
   },
@@ -166,6 +171,7 @@ export const PRESET_VOICE_MODELS: VoiceModelConfig[] = [
     throatWarmth: 7,
     oralClarity: -1,
     airPresence: -2,
+    referenceRaw: true,
     samplePhrase: 'Author of the danger trail, Philip Steels, etc.',
     avatarColor: '#f97316',
   },
@@ -187,6 +193,7 @@ export const PRESET_VOICE_MODELS: VoiceModelConfig[] = [
     throatWarmth: 4,
     oralClarity: 2,
     airPresence: 1,
+    referenceRaw: true,
     samplePhrase: 'For the twentieth time that evening the two men shook hands.',
     avatarColor: '#0284c7',
   },
@@ -208,6 +215,7 @@ export const PRESET_VOICE_MODELS: VoiceModelConfig[] = [
     throatWarmth: 1,
     oralClarity: 4,
     airPresence: 3,
+    referenceRaw: true,
     samplePhrase: 'For the twentieth time that evening the two men shook hands.',
     avatarColor: '#ec4899',
   },
@@ -229,6 +237,7 @@ export const PRESET_VOICE_MODELS: VoiceModelConfig[] = [
     throatWarmth: -1,
     oralClarity: 5,
     airPresence: 4,
+    referenceRaw: true,
     samplePhrase: 'Author of the danger trail, Philip Steels, etc.',
     avatarColor: '#3b82f6',
   },
@@ -250,6 +259,7 @@ export const PRESET_VOICE_MODELS: VoiceModelConfig[] = [
     throatWarmth: -4,
     oralClarity: 1,
     airPresence: 8,
+    referenceRaw: true,
     samplePhrase: 'Author of the danger trail, Philip Steels, etc.',
     avatarColor: '#84cc16',
   },
@@ -271,6 +281,7 @@ export const PRESET_VOICE_MODELS: VoiceModelConfig[] = [
     throatWarmth: -3,
     oralClarity: 6,
     airPresence: -6,
+    referenceRaw: true,
     samplePhrase: 'Author of the danger trail, Philip Steels, etc.',
     avatarColor: '#eab308',
   },
@@ -292,6 +303,7 @@ export const PRESET_VOICE_MODELS: VoiceModelConfig[] = [
     throatWarmth: 2,
     oralClarity: -3,
     airPresence: 4,
+    referenceRaw: true,
     samplePhrase: 'Author of the danger trail, Philip Steels, etc.',
     avatarColor: '#06b6d4',
   },

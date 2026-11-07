@@ -353,6 +353,11 @@ function voice(overrides: Partial<VoiceModelConfig> = {}): VoiceModelConfig {
   // profile. Those three fields are three peaking filters in the render path now, so
   // a fixture that means "neutral" has to say so explicitly - otherwise every check
   // below measures a voice that is quietly equalised by 3, 2 and 1 dB.
+  //
+  // `referenceRaw: false` switches the Vocalis adjustments ON. That is not what the
+  // application ships - the shipped default is the recorded voice, unadjusted - but
+  // nearly every band below measures the adjustment path, so the fixture asks for it
+  // by name instead of inheriting whichever way the default happens to point.
   return {
     ...aria,
     pitch: 1,
@@ -362,6 +367,7 @@ function voice(overrides: Partial<VoiceModelConfig> = {}): VoiceModelConfig {
     throatWarmth: 0,
     oralClarity: 0,
     airPresence: 0,
+    referenceRaw: false,
     ...overrides,
   };
 }
@@ -707,14 +713,13 @@ releaseSynthesis(controlNeutral);
 }
 
 // --- the reference: recorded units with nothing applied ---------------------
-// Asked for directly, and it is the honest way to judge every adjustment in the
-// application: the same words, assembled from the same licensed units, at the
-// lengths they were recorded at, with no plan, no re-timing, no pitch, no pace, no
-// character, no resonance and no regional rules. It is a labelled reference beside
-// the product and never the default, which is what finding A1 in
-// docs/APPLICATION_AUDIT.md is about: the product quietly becoming playback of a
-// recording is a defect, the product offering playback of a recording as a labelled
-// reference is a feature.
+// This is what the application ships: the same words, assembled from the same
+// licensed units, at the lengths they were recorded at, with no plan, no re-timing,
+// no pitch, no pace, no character, no resonance and no regional rules. The Vocalis
+// adjustments are opt-in beside it (`referenceRaw: false`), and both paths are
+// labelled in the UI, which is what finding A1 in docs/APPLICATION_AUDIT.md asks
+// for: the product must not *silently* become playback of a recording. This one says
+// so on the button.
 {
   const planned = await renderSpeech(CONTROL_TEXT, voice());
   const reference = await renderSpeech(CONTROL_TEXT, voice({ referenceRaw: true }));
@@ -924,14 +929,41 @@ eq('rendering the same text twice gives the same word count', again.diagnostics.
 releaseSynthesis(again);
 
 const shippedRender = await renderSpeech(PASSAGES[0].text, PRESET_VOICE_MODELS[0]);
+const explicitRecorded = await renderSpeech(PASSAGES[0].text, voice({ referenceRaw: true }));
 check(
-  'the shipped default renders exactly what an explicit neutral voice renders',
-  shippedRender.samples.length === warmUp.samples.length &&
-    shippedRender.samples.every((value, index) => value === warmUp.samples[index]),
-  'the default voice and a neutral voice disagreed',
+  'the shipped default renders exactly what an explicit recorded voice renders',
+  shippedRender.samples.length === explicitRecorded.samples.length &&
+    shippedRender.samples.every((value, index) => value === explicitRecorded.samples[index]),
+  'the default voice and an explicitly unadjusted voice disagreed',
 );
 eq('the shipped default speaks from the SLT recordings', shippedRender.diagnostics.speaker, 'slt');
+eq('the shipped default does not time the units from a plan', shippedRender.diagnostics.timedFromPlan, false);
+check(
+  'the shipped default is longer than the adjusted voice on the same words',
+  shippedRender.duration > warmUp.duration,
+  `${shippedRender.duration.toFixed(2)}s against ${warmUp.duration.toFixed(2)}s: the recorded units are not shortened`,
+);
 releaseSynthesis(shippedRender);
+releaseSynthesis(explicitRecorded);
+
+// And a profile saved before this change, which carries no `referenceRaw` at all,
+// gets the recorded voice too: absence means unadjusted, not "whatever the code
+// happened to do last release".
+{
+  const { referenceRaw: _ignored, ...predates } = PRESET_VOICE_MODELS[0];
+  void _ignored;
+  const legacy = await renderSpeech(PASSAGES[0].text, predates);
+  const current = await renderSpeech(PASSAGES[0].text, PRESET_VOICE_MODELS[0]);
+  check(
+    'a saved profile that predates the switch still gets the recorded voice',
+    legacy.samples.length === current.samples.length &&
+      legacy.samples.every((value, index) => value === current.samples[index]),
+    'a profile without referenceRaw rendered something else',
+  );
+  eq('and it is not timed from a plan either', legacy.diagnostics.timedFromPlan, false);
+  releaseSynthesis(legacy);
+  releaseSynthesis(current);
+}
 
 const exported = decodeWav(await warmUp.wavBlob.arrayBuffer());
 eq('the exported WAV carries the corpus sample rate', exported.sampleRate, 16000);
@@ -1041,6 +1073,12 @@ eq('the shipped default shifts no resonance band', [
   shippedDefault.oralClarity,
   shippedDefault.airPresence,
 ], [0, 0, 0]);
+eq('the shipped default is the recorded voice, unadjusted', shippedDefault.referenceRaw, true);
+check(
+  'every preset ships as the recorded voice, unadjusted',
+  PRESET_VOICE_MODELS.every((preset) => preset.referenceRaw === true),
+  PRESET_VOICE_MODELS.filter((preset) => preset.referenceRaw !== true).map((preset) => preset.id).join(', '),
+);
 const shippedUntouched = processCmuVoice(testSignal, shippedDefault);
 check(
   'the shipped default leaves the recording bit-exact',

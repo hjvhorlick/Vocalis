@@ -47,7 +47,7 @@ function dialogueKey(
     model.volume,
     model.toneStyle,
     model.accent,
-    model.referenceRaw ?? false,
+    model.referenceRaw === false,
     model.synthesisMethod ?? 'cmu-arctic',
     model.baseVoiceId ?? 'neutral',
   ];

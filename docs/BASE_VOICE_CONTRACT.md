@@ -51,6 +51,18 @@ technology *around* the base voice, and they are expected to keep improving.
    notice, names the original authors, and states that Vocalis modified the material. The
    in-app **Credits & licenses** view links the notices.
 
+**Note on the shipped default (2026-11-07).** The default render is the recorded units at the
+lengths they were recorded at, crossfaded, with no adjustment applied
+(`VoiceModelConfig.referenceRaw`, absent or `true`; every preset states `true`). This was directed
+by the person the application is for, who listened to the adjusted voice beside the recording and
+judged the recording better. It is not a break of §2 and not a reversion to playback: the units
+are still chosen by the dictionary-driven phone stream for the text that was typed and assembled
+per utterance — nothing plays a corpus file — and the Vocalis adjustments (duration model,
+re-timing on the voice cycle, pitch, pace, character, resonance) are still in the tree, reachable
+from a labelled switch in Speech Studio and the Voice Manipulator, and still held to every
+measured band in `tests/renderSpeech.test.ts`. What §2 forbids is a *silent* move to the path of
+least resistance; this one is on the button, in the audit, and in the commit message.
+
 ## 3. Original-code-only rule
 
 **No one else's code lives in this application.** Only the voices are taken from outside, and
