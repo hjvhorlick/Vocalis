@@ -83,7 +83,11 @@ that outlives the app, and say so in any marketplace copy rather than overclaimi
 ## The creator page, and the switch block
 
 `Voice File Creator` is where a file is made: the recorded voices are cards you can
-reorder, every setting has its own switch, and the export sits on the same page. The
+reorder, every setting has its own switch **on the same line as its slider**, and the
+export sits on the same page. Each row's **A/B** button plays the sentence once with
+the setting as set and once with it bypassed, so "which one is spoiling it?" is
+answered by listening to the difference. The Text to Speech page's panels carry the
+same switch beside each slider, which bypasses that control for the model in use. The
 settings block is the part that ends up in the file:
 
 ```json

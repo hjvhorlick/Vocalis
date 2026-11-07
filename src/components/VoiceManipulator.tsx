@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   VoiceModelConfig,
   NATURAL_HUMAN_SAMPLES,
@@ -19,6 +19,43 @@ import {
   Activity,
 } from 'lucide-react';
 
+/**
+ * The switch that sits on a slider.
+ *
+ * Every voice-changer control can be bypassed on its own, so one setting that spoils
+ * a voice can be ruled out without giving up the others. Off means "not applied":
+ * the model is set to that control's neutral value, the slider greys out, and the
+ * previous position is remembered so switching back restores it exactly.
+ */
+type BypassKey = 'pitch' | 'rate' | 'volume' | 'throatWarmth' | 'oralClarity' | 'airPresence';
+
+const BYPASS_NEUTRAL: Record<BypassKey, number> = {
+  pitch: 1,
+  rate: 1,
+  volume: 1,
+  throatWarmth: 0,
+  oralClarity: 0,
+  airPresence: 0,
+};
+
+const BypassSwitch: React.FC<{ on: boolean; onToggle: () => void; label: string }> = ({ on, onToggle, label }) => (
+  <button
+    type="button"
+    role="switch"
+    aria-checked={on}
+    aria-label={`${label} on or off`}
+    onClick={onToggle}
+    title={on ? `${label} is applied` : `${label} is bypassed`}
+    className={`flex h-4 w-8 shrink-0 items-center rounded-full border px-0.5 transition-colors ${
+      on ? 'border-emerald-400/60 bg-emerald-500' : 'border-slate-600 bg-slate-700'
+    }`}
+  >
+    <span
+      className={`h-3 w-3 rounded-full bg-white shadow transition-transform ${on ? 'translate-x-3.5' : 'translate-x-0'}`}
+    />
+  </button>
+);
+
 interface VoiceManipulatorProps {
   voice: VoiceModelConfig;
   onUpdateVoice: (updated: VoiceModelConfig) => void;
@@ -32,6 +69,41 @@ export const VoiceManipulator: React.FC<VoiceManipulatorProps> = ({
   onSaveAsCustom,
   onResetToDefault,
 }) => {
+  const [bypassed, setBypassed] = useState<Record<BypassKey, boolean>>({
+    pitch: false,
+    rate: false,
+    volume: false,
+    throatWarmth: false,
+    oralClarity: false,
+    airPresence: false,
+  });
+  const [remembered, setRemembered] = useState<Partial<Record<BypassKey, number>>>({});
+
+  // Selecting a different voice is a different set of switches.
+  useEffect(() => {
+    setBypassed({
+      pitch: false,
+      rate: false,
+      volume: false,
+      throatWarmth: false,
+      oralClarity: false,
+      airPresence: false,
+    });
+    setRemembered({});
+  }, [voice.id]);
+
+  const toggleBypass = (key: BypassKey) => {
+    const turningOff = !bypassed[key];
+    if (turningOff) {
+      const current = voice[key];
+      setRemembered((rest) => ({ ...rest, [key]: typeof current === 'number' ? current : BYPASS_NEUTRAL[key] }));
+      onUpdateVoice({ ...voice, [key]: BYPASS_NEUTRAL[key] });
+    } else {
+      onUpdateVoice({ ...voice, [key]: remembered[key] ?? BYPASS_NEUTRAL[key] });
+    }
+    setBypassed((current) => ({ ...current, [key]: turningOff }));
+  };
+
   // The engine caps every resonance control at ±3 dB; showing the stored number
   // when it is larger would describe audio that is not being produced.
   const shownDb = (value: number | undefined) => {
@@ -154,10 +226,11 @@ export const VoiceManipulator: React.FC<VoiceManipulatorProps> = ({
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         {/* Pitch Slider */}
         <div className="bg-slate-950/80 border border-slate-800/80 rounded-2xl p-4 space-y-2">
-          <div className="flex justify-between items-center text-xs">
+          <div className="flex items-center gap-2 text-xs">
+            <BypassSwitch on={!bypassed.pitch} onToggle={() => toggleBypass('pitch')} label="Pitch" />
             <span className="font-semibold text-slate-300">Vocal Pitch Height</span>
-            <span className="font-mono text-cyan-400 font-bold bg-cyan-500/10 px-2 py-0.5 rounded border border-cyan-500/20">
-              {voice.pitch.toFixed(2)}x
+            <span className="ml-auto font-mono text-cyan-400 font-bold bg-cyan-500/10 px-2 py-0.5 rounded border border-cyan-500/20">
+              {bypassed.pitch ? 'off' : `${voice.pitch.toFixed(2)}x`}
             </span>
           </div>
           <input
@@ -166,8 +239,9 @@ export const VoiceManipulator: React.FC<VoiceManipulatorProps> = ({
             max="1.75"
             step="0.05"
             value={voice.pitch}
+            disabled={bypassed.pitch}
             onChange={(e) => onUpdateVoice({ ...voice, pitch: parseFloat(e.target.value) })}
-            className="w-full accent-cyan-500 h-1.5 bg-slate-900 rounded cursor-pointer"
+            className="w-full accent-cyan-500 h-1.5 bg-slate-900 rounded cursor-pointer disabled:cursor-not-allowed disabled:opacity-40"
           />
           <div className="flex justify-between text-[10px] text-slate-500 font-medium">
             <span>0.50x (Deep Bass)</span>
@@ -178,10 +252,11 @@ export const VoiceManipulator: React.FC<VoiceManipulatorProps> = ({
 
         {/* Speed / Rate Slider */}
         <div className="bg-slate-950/80 border border-slate-800/80 rounded-2xl p-4 space-y-2">
-          <div className="flex justify-between items-center text-xs">
+          <div className="flex items-center gap-2 text-xs">
+            <BypassSwitch on={!bypassed.rate} onToggle={() => toggleBypass('rate')} label="Pace" />
             <span className="font-semibold text-slate-300">Speech Cadence Rate</span>
-            <span className="font-mono text-indigo-400 font-bold bg-indigo-500/10 px-2 py-0.5 rounded border border-indigo-500/20">
-              {voice.rate.toFixed(2)}x
+            <span className="ml-auto font-mono text-indigo-400 font-bold bg-indigo-500/10 px-2 py-0.5 rounded border border-indigo-500/20">
+              {bypassed.rate ? 'off' : `${voice.rate.toFixed(2)}x`}
             </span>
           </div>
           <input
@@ -190,8 +265,9 @@ export const VoiceManipulator: React.FC<VoiceManipulatorProps> = ({
             max="1.5"
             step="0.05"
             value={voice.rate}
+            disabled={bypassed.rate}
             onChange={(e) => onUpdateVoice({ ...voice, rate: parseFloat(e.target.value) })}
-            className="w-full accent-indigo-500 h-1.5 bg-slate-900 rounded cursor-pointer"
+            className="w-full accent-indigo-500 h-1.5 bg-slate-900 rounded cursor-pointer disabled:cursor-not-allowed disabled:opacity-40"
           />
           <div className="flex justify-between text-[10px] text-slate-500 font-medium">
             <span>0.60x (Deliberate)</span>
@@ -202,10 +278,11 @@ export const VoiceManipulator: React.FC<VoiceManipulatorProps> = ({
 
         {/* Volume Output */}
         <div className="bg-slate-950/80 border border-slate-800/80 rounded-2xl p-4 space-y-2">
-          <div className="flex justify-between items-center text-xs">
+          <div className="flex items-center gap-2 text-xs">
+            <BypassSwitch on={!bypassed.volume} onToggle={() => toggleBypass('volume')} label="Volume" />
             <span className="font-semibold text-slate-300">Volume Output</span>
-            <span className="font-mono text-amber-400 font-bold bg-amber-500/10 px-2 py-0.5 rounded border border-amber-500/20">
-              {Math.round(voice.volume * 100)}%
+            <span className="ml-auto font-mono text-amber-400 font-bold bg-amber-500/10 px-2 py-0.5 rounded border border-amber-500/20">
+              {bypassed.volume ? 'off' : `${Math.round(voice.volume * 100)}%`}
             </span>
           </div>
           <input
@@ -214,8 +291,9 @@ export const VoiceManipulator: React.FC<VoiceManipulatorProps> = ({
             max="1.0"
             step="0.05"
             value={voice.volume}
+            disabled={bypassed.volume}
             onChange={(e) => onUpdateVoice({ ...voice, volume: parseFloat(e.target.value) })}
-            className="w-full accent-amber-500 h-1.5 bg-slate-900 rounded cursor-pointer"
+            className="w-full accent-amber-500 h-1.5 bg-slate-900 rounded cursor-pointer disabled:cursor-not-allowed disabled:opacity-40"
           />
           <div className="flex justify-between text-[10px] text-slate-500 font-medium">
             <span>20% (Subtle)</span>
@@ -237,10 +315,11 @@ export const VoiceManipulator: React.FC<VoiceManipulatorProps> = ({
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
           {/* F1 Throat Warmth */}
           <div className="space-y-1">
-            <div className="flex justify-between text-[11px]">
+            <div className="flex items-center gap-2 text-[11px]">
+              <BypassSwitch on={!bypassed.throatWarmth} onToggle={() => toggleBypass('throatWarmth')} label="Throat & Chest Warmth" />
               <span className="text-slate-400">Throat & Chest Warmth (F1 450 Hz)</span>
-              <span className="font-mono text-cyan-300 font-bold">
-                {shownDb(voice.throatWarmth)} dB
+              <span className="ml-auto font-mono text-cyan-300 font-bold">
+                {bypassed.throatWarmth ? 'off' : `${shownDb(voice.throatWarmth)} dB`}
               </span>
             </div>
             <input
@@ -249,19 +328,21 @@ export const VoiceManipulator: React.FC<VoiceManipulatorProps> = ({
               max="3"
               step="1"
               value={Math.max(-3, Math.min(3, voice.throatWarmth ?? 0))}
+              disabled={bypassed.throatWarmth}
               onChange={(e) =>
                 onUpdateVoice({ ...voice, throatWarmth: parseFloat(e.target.value) })
               }
-              className="w-full accent-cyan-400 h-1 bg-slate-900 rounded cursor-pointer"
+              className="w-full accent-cyan-400 h-1 bg-slate-900 rounded cursor-pointer disabled:cursor-not-allowed disabled:opacity-40"
             />
           </div>
 
           {/* F2 Oral Clarity */}
           <div className="space-y-1">
-            <div className="flex justify-between text-[11px]">
+            <div className="flex items-center gap-2 text-[11px]">
+              <BypassSwitch on={!bypassed.oralClarity} onToggle={() => toggleBypass('oralClarity')} label="Oral Cavity Clarity" />
               <span className="text-slate-400">Oral Cavity Clarity (F2 1.8 kHz)</span>
-              <span className="font-mono text-indigo-300 font-bold">
-                {shownDb(voice.oralClarity)} dB
+              <span className="ml-auto font-mono text-indigo-300 font-bold">
+                {bypassed.oralClarity ? 'off' : `${shownDb(voice.oralClarity)} dB`}
               </span>
             </div>
             <input
@@ -270,19 +351,21 @@ export const VoiceManipulator: React.FC<VoiceManipulatorProps> = ({
               max="3"
               step="1"
               value={Math.max(-3, Math.min(3, voice.oralClarity ?? 0))}
+              disabled={bypassed.oralClarity}
               onChange={(e) =>
                 onUpdateVoice({ ...voice, oralClarity: parseFloat(e.target.value) })
               }
-              className="w-full accent-indigo-400 h-1 bg-slate-900 rounded cursor-pointer"
+              className="w-full accent-indigo-400 h-1 bg-slate-900 rounded cursor-pointer disabled:cursor-not-allowed disabled:opacity-40"
             />
           </div>
 
           {/* F3 Air Presence */}
           <div className="space-y-1">
-            <div className="flex justify-between text-[11px]">
+            <div className="flex items-center gap-2 text-[11px]">
+              <BypassSwitch on={!bypassed.airPresence} onToggle={() => toggleBypass('airPresence')} label="Air & Breath Presence" />
               <span className="text-slate-400">Air & Breath Presence (F3 4.2 kHz)</span>
-              <span className="font-mono text-purple-300 font-bold">
-                {shownDb(voice.airPresence)} dB
+              <span className="ml-auto font-mono text-purple-300 font-bold">
+                {bypassed.airPresence ? 'off' : `${shownDb(voice.airPresence)} dB`}
               </span>
             </div>
             <input
@@ -291,10 +374,11 @@ export const VoiceManipulator: React.FC<VoiceManipulatorProps> = ({
               max="3"
               step="1"
               value={Math.max(-3, Math.min(3, voice.airPresence ?? 0))}
+              disabled={bypassed.airPresence}
               onChange={(e) =>
                 onUpdateVoice({ ...voice, airPresence: parseFloat(e.target.value) })
               }
-              className="w-full accent-purple-400 h-1 bg-slate-900 rounded cursor-pointer"
+              className="w-full accent-purple-400 h-1 bg-slate-900 rounded cursor-pointer disabled:cursor-not-allowed disabled:opacity-40"
             />
           </div>
         </div>

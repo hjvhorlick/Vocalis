@@ -13,6 +13,7 @@ import {
   type LibraryState,
 } from '../utils/voiceLibrary';
 import { VOCALIS_EXTENSION, slugifyVoiceName, type VocalisVoiceProfile } from '../utils/vocalisVoiceFile';
+import { VoiceSettingRow } from './VoiceSettingRow';
 
 /**
  * The Voice File Creator: the whole voice-file job on one page.
@@ -138,6 +139,15 @@ function shortDescription(row: LibraryRow): string {
   return sentence.length > 120 ? `${sentence.slice(0, 117).trimEnd()}…` : sentence;
 }
 
+/** The model with one setting bypassed, everything else as it stands. */
+function bypassOne(model: VoiceModelConfig, key: SettingSpec['key']): VoiceModelConfig {
+  if (key === 'pitch') return { ...model, pitch: 1 };
+  if (key === 'rate') return { ...model, rate: 1 };
+  if (key === 'throatWarmth') return { ...model, throatWarmth: 0 };
+  if (key === 'oralClarity') return { ...model, oralClarity: 0 };
+  return { ...model, airPresence: 0 };
+}
+
 const ORDER_KEY = 'vocalis_voice_file_order';
 
 interface VoiceFileCreatorProps {
@@ -160,6 +170,7 @@ export const VoiceFileCreator: React.FC<VoiceFileCreatorProps> = ({ onOpenLibrar
   const [knobs, setKnobs] = useState<KnobState>(NEUTRAL_KNOBS);
   const [fileName, setFileName] = useState('');
   const [busy, setBusy] = useState<'preview' | 'export' | null>(null);
+  const [testingKey, setTestingKey] = useState<SettingSpec['key'] | null>(null);
   const [notice, setNotice] = useState<{ tone: 'ok' | 'error'; text: string } | null>(null);
 
   useEffect(() => {
@@ -242,6 +253,42 @@ export const VoiceFileCreator: React.FC<VoiceFileCreatorProps> = ({ onOpenLibrar
       },
     });
   }, [model, busy]);
+
+  /**
+   * Play the sentence twice: once with the settings as they stand, once with this
+   * one feature bypassed. "Which setting is spoiling it?" is answerable by ear in
+   * two listens, instead of by switching things off and re-exporting blind.
+   */
+  const handleTestSetting = useCallback(
+    async (key: SettingSpec['key']) => {
+      if (!model) return;
+      if (testingKey === key) {
+        stopSpeaking();
+        setTestingKey(null);
+        return;
+      }
+      const speak = (candidate: VoiceModelConfig) =>
+        new Promise<void>((resolve, reject) => {
+          void speakRealWords(AUDITION_PHRASE, candidate, {
+            onEnd: () => resolve(),
+            onError: (error) => reject(error),
+          });
+        });
+      setTestingKey(key);
+      setNotice(null);
+      try {
+        await speak(model);
+        await speak(bypassOne(model, key));
+        const label = SETTINGS.find((setting) => setting.key === key)?.label ?? key;
+        setNotice({ tone: 'ok', text: `${label}: first as set, then bypassed. Listen for what changed.` });
+      } catch (error) {
+        setNotice({ tone: 'error', text: error instanceof Error ? error.message : String(error) });
+      } finally {
+        setTestingKey(null);
+      }
+    },
+    [model, testingKey],
+  );
 
   const slug = slugifyVoiceName(fileName);
   const activeSwitches = SETTINGS.filter((setting) => switches[setting.key]).length;
@@ -394,64 +441,27 @@ export const VoiceFileCreator: React.FC<VoiceFileCreatorProps> = ({ onOpenLibrar
               </span>
             </div>
 
-            <div className="mt-3 space-y-3">
-              {SETTINGS.map((setting) => {
-                const on = switches[setting.key];
-                return (
-                  <div key={setting.key} className="rounded-xl border border-slate-800 bg-slate-950/40 px-3 py-2.5">
-                    <div className="flex items-center justify-between gap-3">
-                      <div className="min-w-0">
-                        <p className="flex items-center gap-2 text-xs font-semibold text-slate-200">
-                          {setting.label}
-                          <span
-                            className={`rounded px-1.5 py-0.5 text-[10px] font-medium ${
-                              on ? 'bg-emerald-500/15 text-emerald-300' : 'bg-slate-700/40 text-slate-400'
-                            }`}
-                          >
-                            {on ? 'on' : 'off'}
-                          </span>
-                        </p>
-                        <p className="mt-0.5 text-[11px] leading-snug text-slate-500">{setting.hint}</p>
-                      </div>
-                      {/* The switch. `role="switch"` so a screen reader announces on/off. */}
-                      <button
-                        role="switch"
-                        aria-checked={on}
-                        aria-label={`${setting.label} on or off`}
-                        onClick={() => setSwitches((current) => ({ ...current, [setting.key]: !current[setting.key] }))}
-                        className={`relative h-5 w-9 shrink-0 rounded-full transition-colors ${
-                          on ? 'bg-emerald-500' : 'bg-slate-700'
-                        }`}
-                      >
-                        <span
-                          className={`absolute top-0.5 h-4 w-4 rounded-full bg-white transition-all ${
-                            on ? 'left-4.5 translate-x-0' : 'left-0.5'
-                          }`}
-                          style={{ left: on ? 18 : 2 }}
-                        />
-                      </button>
-                    </div>
-                    <div className="mt-2 flex items-center gap-3">
-                      <input
-                        type="range"
-                        min={setting.min}
-                        max={setting.max}
-                        step={setting.step}
-                        value={knobs[setting.key]}
-                        disabled={!on}
-                        onChange={(event) =>
-                          setKnobs((current) => ({ ...current, [setting.key]: Number(event.target.value) }))
-                        }
-                        className="h-1 flex-1 cursor-pointer appearance-none rounded bg-slate-700 accent-indigo-500 disabled:cursor-not-allowed disabled:opacity-40"
-                        aria-label={setting.label}
-                      />
-                      <span className={`w-12 text-right text-[11px] tabular-nums ${on ? 'text-slate-300' : 'text-slate-600'}`}>
-                        {on ? setting.format(knobs[setting.key]) : 'off'}
-                      </span>
-                    </div>
-                  </div>
-                );
-              })}
+            <div className="mt-3 space-y-2">
+              {SETTINGS.map((setting) => (
+                <VoiceSettingRow
+                  key={setting.key}
+                  label={setting.label}
+                  hint={setting.hint}
+                  on={switches[setting.key]}
+                  value={knobs[setting.key]}
+                  min={setting.min}
+                  max={setting.max}
+                  step={setting.step}
+                  format={setting.format}
+                  testing={testingKey === setting.key}
+                  disabled={!selected}
+                  onToggle={() =>
+                    setSwitches((current) => ({ ...current, [setting.key]: !current[setting.key] }))
+                  }
+                  onChange={(value) => setKnobs((current) => ({ ...current, [setting.key]: value }))}
+                  onTest={() => void handleTestSetting(setting.key)}
+                />
+              ))}
             </div>
 
             <button
