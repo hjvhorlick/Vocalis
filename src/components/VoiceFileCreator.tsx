@@ -16,7 +16,7 @@ import { VOCALIS_EXTENSION, slugifyVoiceName, type VocalisVoiceProfile } from '.
 import { VoiceSettingRow, VoiceToneRow } from './VoiceSettingRow';
 
 /**
- * The Voice File Creator: the whole voice-file job on one page.
+ * The .vls Voice Creator: the whole voice-file job on one page.
  *
  * Pick a recorded voice, set the knobs, switch off whatever is spoiling it, name the
  * result and export it — one `.vls` file. Every control here has its own switch
@@ -388,7 +388,7 @@ export const VoiceFileCreator: React.FC<VoiceFileCreatorProps> = ({ onOpenLibrar
   return (
     <div className="space-y-6">
       <header className="rounded-2xl border border-slate-800 bg-slate-900/60 p-5">
-        <h1 className="text-lg font-bold text-slate-100">Voice File Creator</h1>
+        <h1 className="text-lg font-bold text-slate-100">.vls Voice Creator</h1>
         <p className="mt-1 max-w-3xl text-xs leading-relaxed text-slate-400">
           One page for the whole job: choose a recorded voice, set it up, switch off whatever spoils it, name
           it, export it as a single <span className="text-slate-200">.{VOCALIS_EXTENSION}</span> file. Each

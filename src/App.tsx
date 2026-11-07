@@ -36,7 +36,7 @@ export function App() {
   /**
    * The two pages own their own settings, and this is where that is enforced.
    *
-   * Text to Speech works from `models` — the factory voices and whatever has been
+   * The Spoken Word page works from `models` — the factory voices and whatever has been
    * **saved**. It deliberately does not pull in installed library packs: a recording
    * enters the studio only after it has been saved as a voice or exported as a
    * `.vls` file, so nothing from the workbench can leak into a spoken session.
@@ -248,7 +248,7 @@ export function App() {
                   : undefined
               }
               onSelectVoice={(model) => {
-                // A recorded voice enters Text to Speech by being saved first, and
+                // A recorded voice enters the Spoken Word page by being saved first, and
                 // only then; the studio never borrows a library pack directly.
                 handleSaveModel({ ...model, isCustom: true });
                 setActiveModel({ ...model, isCustom: true });

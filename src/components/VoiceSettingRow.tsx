@@ -1,7 +1,7 @@
 import React from 'react';
 
 /**
- * One settings row in the Voice File Creator: the switch, the label, the slider and
+ * One settings row in the .vls Voice Creator: the switch, the label, the slider and
  * the A/B test on a single line.
  *
  * It is a separate component so it can be rendered and asserted in a test without a

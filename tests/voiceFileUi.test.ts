@@ -103,7 +103,7 @@ check(
   }),
 );
 
-console.log('\nand on the Text to Speech panels');
+console.log('\nand on the Spoken Word panels');
 
 const model = { ...PRESET_VOICE_MODELS[0], pitch: 1.2, rate: 0.9, throatWarmth: 2, oralClarity: 1, airPresence: 1 };
 const panel = renderToStaticMarkup(
@@ -242,11 +242,25 @@ console.log('\nthe two pages are separate');
   // Structural, but it is the guarantee asked for: the studio takes its voices from
   // the saved list only, and never builds one out of the library's records.
   const app = readFileSync(join(ROOT, 'src', 'App.tsx'), 'utf8');
-  check('Text to Speech does not import the library rows', !/buildLibraryRows|modelForLibraryVoice|applyProfileToModel/.test(app));
+  check('the Spoken Word page does not import the library rows', !/buildLibraryRows|modelForLibraryVoice|applyProfileToModel/.test(app));
   check('and offers the saved models as its voice list', /const studioModels = models;/.test(app) && /voices=\{studioModels\}/.test(app));
   check('a library voice reaches it only by being saved', /handleSaveModel\(\{ \.\.\.model, isCustom: true \}\)/.test(app));
   const creator = readFileSync(join(ROOT, 'src', 'components', 'VoiceFileCreator.tsx'), 'utf8');
   check('the workbench keeps its own state and never writes the studio model', !/onSelectVoice=|setActiveModel/.test(creator));
+}
+
+console.log('\nthe pages are named for what they are');
+
+{
+  // The creator is the .vls page, and TTS is not a word this app uses: it describes
+  // an AI product we do not make, and these voices are recorded and cut by hand.
+  const nav = readFileSync(join(ROOT, 'src', 'components', 'VoiceNavbar.tsx'), 'utf8');
+  check('the creator tab is called the .vls Voice Creator', nav.includes("label: '.vls Voice Creator'"));
+  const creator = readFileSync(join(ROOT, 'src', 'components', 'VoiceFileCreator.tsx'), 'utf8');
+  check('and the page heading says it too', creator.includes('>.vls Voice Creator</h1>'));
+  const uiFiles = ['App.tsx', 'components/VoiceNavbar.tsx', 'components/VoiceFileCreator.tsx', 'components/SpeechStudio.tsx', 'components/VoiceManipulator.tsx', 'components/VoiceSettingRow.tsx'];
+  const offenders = uiFiles.filter((f) => /text[- ]to[- ]speech|\bTTS\b/i.test(readFileSync(join(ROOT, 'src', f), 'utf8')));
+  check('no page is called Text to Speech or TTS any more', offenders.length === 0, offenders.join(', '));
 }
 
 console.log(`\n${passed}/${passed + failures.length} switch checks passed.`);

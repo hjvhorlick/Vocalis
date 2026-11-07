@@ -69,8 +69,13 @@ export const VoiceNavbar: React.FC<VoiceNavbarProps> = ({
     }
   };
   const tabs = [
-    { id: 'studio', label: 'Text to Speech', icon: Sliders, desc: 'Type it, pick a voice, hear it' },
-    { id: 'voicefile', label: 'Voice File Creator', icon: FileAudio, desc: 'Settings, switches and export in one place' },
+    { id: 'studio', label: 'Spoken Word', icon: Sliders, desc: 'Type it, pick a voice, hear it read' },
+    {
+      id: 'voicefile',
+      label: '.vls Voice Creator',
+      icon: FileAudio,
+      desc: 'Clean slate, one switch at a time, saved as a .vls file',
+    },
     { id: 'dialogue', label: 'Dialogue Screenplay', icon: Users, desc: 'Two Voices in Conversation' },
     { id: 'library', label: 'Voice Library', icon: Library, desc: 'Recorded Voices & Saved Takes' },
   ] as const;
