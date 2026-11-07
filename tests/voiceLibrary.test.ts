@@ -82,6 +82,7 @@ const {
   progressFilePath,
 } = await import('../src/utils/voiceLibraryPaths');
 const {
+  auditionBlocker,
   buildLibraryRows,
   EMPTY_FILTERS,
   filterVoices,
@@ -941,6 +942,35 @@ eq('no pace change', model.rate, 1);
 eq('and no tone shaping', [model.throatWarmth, model.oralClarity, model.airPresence], [0, 0, 0]);
 eq('and the recorded engine', model.synthesisMethod, 'cmu-arctic');
 eq('bytes are formatted for humans', formatBytes(7034394), '6.7 MB');
+
+// What a card says when you press Audition on a voice that cannot play yet.
+{
+  const rowFor = (id: string) => rows.find((row) => row.id === id);
+  const labels = rowFor('arctic-eey');
+  const blocker = labels ? auditionBlocker(labels) : null;
+  check('a class-C voice explains itself in one sentence', typeof blocker === 'string' && blocker.length < 160, String(blocker));
+  check('and names the missing labels', /phone labels/i.test(blocker ?? ''), String(blocker));
+  check('and does not quote the catalogue paragraph', !/forced alignment|CMU Sphinx/.test(blocker ?? ''), String(blocker));
+  const installable = rowFor('arctic-clb');
+  check(
+    'an installable voice tells you to install it',
+    /Install/.test(installable ? auditionBlocker(installable) ?? '' : ''),
+    String(installable ? auditionBlocker(installable) : 'no row'),
+  );
+  const excluded = rowFor('mbrola-us1');
+  check(
+    'an excluded voice says it is the licence or the format',
+    /licence or format/i.test(excluded ? auditionBlocker(excluded) ?? '' : ''),
+    String(excluded ? auditionBlocker(excluded) : 'no row'),
+  );
+  const installedRow = rowFor('cmu-kal');
+  check(
+    'an installed voice has nothing blocking it',
+    installedRow
+      ? auditionBlocker({ ...installedRow, installed: { id: 'cmu-kal', units: 1578, bytes: 7034394, installedAt: 'now' } }) === null
+      : false,
+  );
+}
 
 rmSync(workDir, { recursive: true, force: true });
 

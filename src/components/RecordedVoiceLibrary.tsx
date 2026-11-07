@@ -32,6 +32,7 @@ import type { VoiceModelConfig } from '../utils/naturalVoiceEngine';
 import { speakRealWords, stopSpeaking } from '../utils/naturalVoiceEngine';
 import {
   EMPTY_FILTERS,
+  auditionBlocker,
   buildLibraryRows,
   fetchInstallProgress,
   fetchLibraryState,
@@ -210,12 +211,7 @@ export const RecordedVoiceLibrary: React.FC<RecordedVoiceLibraryProps> = ({
       // Auditioning plays the recordings on this machine. When they are not here
       // yet, say that plainly — a button that does nothing looks broken.
       if (!row.installed) {
-        say(
-          row.id,
-          row.install
-            ? 'Not on this machine yet. Install it first — auditioning plays its own recordings, not a sample.'
-            : `This voice cannot be installed: ${row.compatibilityNote}`,
-        );
+        say(row.id, auditionBlocker(row) ?? 'This voice is not installed.');
         return;
       }
       say(row.id, null);
@@ -472,6 +468,7 @@ export const RecordedVoiceLibrary: React.FC<RecordedVoiceLibraryProps> = ({
                   <button
                     type="button"
                     onClick={() => handleAudition(row)}
+                    title={auditionBlocker(row) ?? undefined}
                     className="flex items-center gap-1.5 rounded-lg border border-slate-700 bg-slate-900 px-2.5 py-1.5 text-[11px] font-semibold text-slate-300 hover:border-slate-500 hover:text-white"
                   >
                     <Play className="h-3.5 w-3.5" />

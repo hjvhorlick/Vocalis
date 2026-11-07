@@ -137,6 +137,27 @@ export function buildLibraryRows(state: LibraryState): LibraryRow[] {
   }));
 }
 
+/**
+ * One short sentence for the card: why this voice cannot be auditioned right now.
+ * The full reason lives in Info; a notice that quotes a paragraph of catalogue
+ * prose is a notice nobody reads.
+ */
+export function auditionBlocker(row: LibraryRow): string | null {
+  if (row.installed) return null;
+  if (row.install) {
+    return `Not installed yet. Press Install (${row.downloadLabel}) — auditioning plays this speaker's own recordings, not a sample.`;
+  }
+  if (row.compatibility === 'C') {
+    return row.language === 'English'
+      ? 'Cannot be installed: the publisher never released this speaker\'s phone labels. Info has the detail.'
+      : `Cannot be installed yet: Vocalis has no pronunciation front end for ${row.language}.`;
+  }
+  if (row.compatibility === 'D') {
+    return 'Excluded by its licence or format — it is listed so you can see why. Info has the detail.';
+  }
+  return 'No installer for this voice yet. Info has the detail.';
+}
+
 export function filterVoices(rows: LibraryRow[], filters: LibraryFilters): LibraryRow[] {
   const needle = filters.query.trim().toLowerCase();
   return rows.filter((row) => {
