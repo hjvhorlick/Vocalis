@@ -405,16 +405,50 @@ def install_arctic_tree(args: argparse.Namespace, work: Path, pack: Path, progre
 
 
 def install_festival_est(args: argparse.Namespace, work: Path, pack: Path, progress: Path) -> str:
-    archive = work / "source" / "archive.tar.gz"
-    archive.parent.mkdir(parents=True, exist_ok=True)
-    download(args.url, archive, progress, args.display_name)
-    unpacked = work / "unpacked"
-    extract_archive(archive, unpacked, progress)
+    # A Festival voice that is already unpacked on this machine — the Debian
+    # packages festvox-don, festvox-rablpc16k, festvox-kdlpc16k and
+    # festvox-kallpc16k install exactly this layout under
+    # /usr/share/festival/voices/english/<voice>_diphone/.
+    local = local_path_for(args.url)
+    if local is not None and local.is_dir():
+        write_progress(
+            progress,
+            stage="extract",
+            message=f"Using the unpacked Festival voice at {local.name}…",
+            percent=40,
+        )
+        unpacked = local
+    else:
+        if not args.url:
+            raise InstallError(
+                "This voice is installed by your distribution, not downloaded. Install the "
+                "package (for example `sudo apt install festvox-don`), then pass the voice "
+                "directory with --from, e.g. "
+                "--from /usr/share/festival/voices/english/don_diphone"
+            )
+        archive = work / "source" / "archive.tar.gz"
+        archive.parent.mkdir(parents=True, exist_ok=True)
+        download(args.url, archive, progress, args.display_name)
+        unpacked = work / "unpacked"
+        extract_archive(archive, unpacked, progress)
 
     if args.dic == "auto":
         candidates = sorted(unpacked.rglob("*.est"))
         if not candidates:
-            raise InstallError("No Festival EST index (*.est) in the archive.")
+            # Distributions group their voices one level down, e.g.
+            # /usr/share/festival/voices/english/<name>_diphone/dic/*.est, and the
+            # directory name differs per package (ked_diphone, don_diphone, …). If
+            # the user pointed at the group instead of the voice, use the single
+            # voice inside it rather than making them guess the exact spelling.
+            groups = [p for p in sorted(unpacked.iterdir()) if p.is_dir() and any(p.rglob("*.est"))] if unpacked.is_dir() else []
+            if len(groups) == 1:
+                unpacked = groups[0]
+                candidates = sorted(unpacked.rglob("*.est"))
+        if not candidates:
+            raise InstallError(
+                f"No Festival EST index (*.est) under {unpacked}. A Festival voice package "
+                "keeps it in dic/; point --from at the voice directory itself, not its parent."
+            )
         dic = candidates[0]
     else:
         dic = find_one(unpacked, Path(args.dic).name)
@@ -467,7 +501,11 @@ def install_festival_est(args: argparse.Namespace, work: Path, pack: Path, progr
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--id", required=True)
-    parser.add_argument("--kind", required=True, choices=["arctic-archive", "arctic-tree", "festival-est"])
+    parser.add_argument(
+        "--kind",
+        required=True,
+        choices=["arctic-archive", "arctic-tree", "festival-est", "festival-dir"],
+    )
     parser.add_argument("--url", default="", help="Archive URL (archive kinds).")
     parser.add_argument("--tree-url", default="", help="Published tree URL (arctic-tree).")
     parser.add_argument("--speaker", default="")

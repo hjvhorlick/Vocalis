@@ -231,6 +231,14 @@ async function startServer() {
     );
 
     const recipe = candidate.install;
+    if (recipe.kind === 'festival-dir') {
+      return res.status(400).json({
+        error:
+          `${candidate.displayName} comes from a distribution package, not a download. ` +
+          `Run \`sudo apt install ${id === 'festival-don' ? 'festvox-don' : 'festvox-kdlpc16k'}\`, then ` +
+          `\`npm run voices -- install ${id} --from /usr/share/festival/voices/english\` in a terminal.`,
+      });
+    }
     const args = [
       'scripts/install_voice.py',
       '--id', id,
@@ -249,7 +257,7 @@ async function startServer() {
     ];
     if (recipe.kind === 'arctic-archive') args.push('--speaker', recipe.speaker);
     else if (recipe.kind === 'arctic-tree') args.push('--speaker', recipe.speaker, '--tree-url', recipe.treeUrl);
-    else args.push('--dic', recipe.dicPath, '--wav', recipe.wavPath);
+    else if (recipe.kind === 'festival-est') args.push('--dic', recipe.dicPath, '--wav', recipe.wavPath);
 
     const logFile = path.join(PROGRESS_ROOT, `${id}.log`);
     let logHandle: number | null = null;

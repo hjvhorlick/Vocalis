@@ -158,10 +158,12 @@ check(
   INSTALLABLE_VOICES.every((voice) => voice.compatibility === 'A' || voice.compatibility === 'B'),
 );
 check(
-  'every installable voice states a download url',
+  'every installable voice states where its files come from',
   INSTALLABLE_VOICES.every((voice) => {
     const recipe = voice.install;
     if (!recipe) return false;
+    // A package voice has no download of its own: apt puts the files on disk.
+    if (recipe.kind === 'festival-dir') return true;
     const url = recipe.kind === 'arctic-tree' ? recipe.treeUrl : recipe.url;
     return /^https?:\/\//.test(url);
   }),
@@ -176,6 +178,46 @@ console.log(
 
 check('the KAL diphone voice is in the catalogue', Boolean(findVoiceCandidate('cmu-kal')));
 check('the KAL voice is installable', findVoiceCandidate('cmu-kal')?.install?.kind === 'festival-est');
+
+// Two Festival diphone voices arrive through the distribution package instead of
+// a download: Debian ships don_diphone and ked_diphone whole. They are real
+// recorded voices, so they belong in the catalogue, but there is nothing to curl —
+// the installer has to be pointed at the unpacked directory.
+{
+  const packageVoices = VOICE_CATALOGUE.filter((voice) => voice.install?.kind === 'festival-dir');
+  check(
+    'the package-supplied Festival voices are in the catalogue',
+    packageVoices.length === 2,
+    packageVoices.map((voice) => voice.id).join(', '),
+  );
+  check('and are ready to install', packageVoices.every((voice) => voice.compatibility === 'A'));
+  check(
+    'and say which package brings them',
+    packageVoices.every((voice) => /apt install festvox-/.test(voice.compatibilityNote ?? '')),
+    packageVoices.map((voice) => voice.id).join(', '),
+  );
+
+  const refused = (() => {
+    try {
+      const output = execFileSync('npx', ['tsx', join(ROOT, 'scripts', 'voice_library.ts'), 'install', 'festival-don'], {
+        cwd: ROOT,
+        encoding: 'utf8',
+        stdio: 'pipe',
+      });
+      return { code: 0, output };
+    } catch (error) {
+      const failure = error as { status?: number; stdout?: string; stderr?: string };
+      return { code: failure.status ?? 1, output: `${failure.stdout ?? ''}${failure.stderr ?? ''}` };
+    }
+  })();
+  check('installing one without its directory is refused', refused.code !== 0);
+  check('and the refusal names the apt package', /apt install festvox-don/.test(refused.output), refused.output.trim());
+  check(
+    'and the command it prints can be pasted as-is',
+    /--from \/usr\/share\/festival\/voices\/english/.test(refused.output) && !/<[a-z ]+>/.test(refused.output),
+    refused.output.trim(),
+  );
+}
 
 // FestVox publishes eighteen ARCTIC archives and only seven speakers' phone
 // labels. The eleven others are waveforms plus transcription: the LJM archive was
@@ -303,11 +345,13 @@ check(
 console.log('\nconversion and removal');
 
 /** Build a small but structurally real Festival EST diphone database on disk. */
-function buildFestivalFixture(dir: string): { dic: string; wavDir: string; units: number } {
+function buildFestivalFixture(
+  dir: string,
+  phones: string[] = ['aa', 'ae', 'ah', 'b', 'd', 'k', 'p', 's', 't', 'z', 'pau'],
+): { dic: string; wavDir: string; units: number } {
   const wavDir = join(dir, 'wav');
   mkdirSync(wavDir, { recursive: true });
   const sampleRate = 16000;
-  const phones = ['aa', 'ae', 'ah', 'b', 'd', 'k', 'p', 's', 't', 'z', 'pau'];
   const entries: string[] = ['EST_File index', 'DataType ascii', 'NumEntries 0', 'EST_Header_End'];
   let waveIndex = 0;
   let units = 0;
@@ -506,6 +550,45 @@ with tarfile.open(sys.argv[1],'w:bz2') as t:
   }
   const progressText = existsSync(arcticProgress) ? readFileSync(arcticProgress, 'utf8') : '';
   check('the progress file reports success for the UI', /"stage":\s*"done"/.test(progressText), progressText.slice(-120));
+}
+
+// The package layout is dic/*.est + wav/, one voice per directory under
+// /usr/share/festival/voices/english. This environment has no festival package and
+// cannot reach one, so the *conversion* is proved against a directory built in the
+// same layout from generated audio — and the installer is pointed at the group
+// directory (…/english), which is the copy-pasteable form the CLI prints.
+{
+  const voiceDir = join(workDir, 'festival', 'fix_diphone');
+  // A package voice is a whole diphone set, so the fixture has one too: 20 phones
+  // is 400 units, above the installer's "that is not a usable voice" floor.
+  const built = buildFestivalFixture(voiceDir, [
+    'pau', 'aa', 'ae', 'ah', 'ao', 'aw', 'ay', 'b', 'ch', 'd',
+    'dh', 'eh', 'er', 'ey', 'f', 'g', 'hh', 'ih', 'iy', 'jh',
+  ]);
+  mkdirSync(join(voiceDir, 'dic'), { recursive: true });
+  renameSync(built.dic, join(voiceDir, 'dic', 'fix_diph.est'));
+  writeFileSync(join(voiceDir, 'COPYING'), 'Synthetic fixture for the festival-dir install path.\n');
+
+  const festivalRoot = join(workDir, 'festival-voices');
+  const festivalProgress = join(workDir, 'festival-progress.json');
+  const outcome = installerOutcome([
+    '--id', 'festival-fix', '--kind', 'festival-dir', '--url', `file://${join(workDir, 'festival')}`,
+    '--out-root', festivalRoot, '--progress', festivalProgress,
+    '--display-name', 'Festival fixture', '--accent', 'US English', '--gender', 'Male',
+  ]);
+  check('the package-voice install recipe runs', outcome.code === 0, outcome.output.trim().split('\n').slice(-1)[0]);
+  const pack = join(festivalRoot, 'festival-fix', 'manifest.json');
+  check('and produces a pack from the unpacked directory', existsSync(pack));
+  if (existsSync(pack)) {
+    const manifest = JSON.parse(readFileSync(pack, 'utf8'));
+    check('with every diphone cut from the recordings', Object.keys(manifest.units).length >= 300, `${Object.keys(manifest.units).length}`);
+  }
+  const missing = installerOutcome([
+    '--id', 'festival-missing', '--kind', 'festival-dir', '--url', '',
+    '--out-root', festivalRoot, '--progress', join(workDir, 'festival-missing.json'),
+  ]);
+  check('and a package voice with no directory is refused', missing.code !== 0);
+  check('with an explanation, not a crash', /apt install festvox-don/.test(missing.output), missing.output.trim().slice(-200));
 }
 
 // ARCTIC archives are not uniform. Some call their label directory `labels/`,

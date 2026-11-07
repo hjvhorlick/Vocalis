@@ -60,6 +60,14 @@ export type InstallRecipe =
       speaker: string;
     }
   | {
+      /**
+       * A Festival voice already unpacked on this machine by a distribution
+       * package (festvox-don, festvox-kdlpc16k, …). There is no URL: the files
+       * arrive with the package, and the user points --from at the directory.
+       */
+      kind: 'festival-dir';
+    }
+  | {
       kind: 'festival-est';
       url: string;
       archive: 'tar.gz' | 'tar.bz2';
@@ -90,6 +98,56 @@ export interface VoiceCandidate {
 }
 
 export const VOICE_CATALOGUE: VoiceCandidate[] = [
+  {
+    id: "festival-don",
+    displayName: "Festival DON (diphone)",
+    language: "English",
+    accent: "British English (RP)",
+    gender: "Male",
+    sourceProject: "Festival diphone voices (CSTR / University of Edinburgh)",
+    sourceUrl: "https://packages.debian.org/stable/festvox-don",
+    downloadLabel: "package",
+    originalFormat: "Festival diphone voice: dic/*.est + wav/ (16 kHz mono WAV)",
+    licence: {
+      name: "Festival voice data, free software (see the package copyright file)",
+      url: "https://packages.debian.org/stable/festvox-don",
+      commercialUse: "permitted",
+      redistribution: "permitted with the copyright notice retained",
+      modification: "permitted",
+      attribution: "CSTR, University of Edinburgh / the FestVox project",
+    },
+    compatibility: "A",
+    compatibilityNote: "A complete diphone voice, recorded and labelled: the same shape as CMU KAL, which this builder already cuts. It ships in Debian's festvox-don package rather than as a download, so the files arrive through `sudo apt install festvox-don`, then `npm run voices -- install festival-don --from /usr/share/festival/voices/english`.",
+    install: {
+      kind: "festival-dir",
+    },
+    notes: "British male diphone voice, the smallest of the Festival voices",
+  },
+  {
+    id: "festival-ked",
+    displayName: "Festival KED (diphone)",
+    language: "English",
+    accent: "US English",
+    gender: "Male",
+    sourceProject: "Festival diphone voices (CSTR / University of Edinburgh)",
+    sourceUrl: "https://packages.debian.org/stable/festvox-kdlpc16k",
+    downloadLabel: "package",
+    originalFormat: "Festival diphone voice: dic/*.est + wav/ (16 kHz mono WAV)",
+    licence: {
+      name: "Festival voice data, free software (see the package copyright file)",
+      url: "https://packages.debian.org/stable/festvox-kdlpc16k",
+      commercialUse: "permitted",
+      redistribution: "permitted with the copyright notice retained",
+      modification: "permitted",
+      attribution: "CSTR, University of Edinburgh / the FestVox project",
+    },
+    compatibility: "A",
+    compatibilityNote: "A complete diphone voice built from the KED recordings, recorded and labelled, shipped in Debian's festvox-kdlpc16k package: `sudo apt install festvox-kdlpc16k`, then `npm run voices -- install festival-ked --from /usr/share/festival/voices/english`.",
+    install: {
+      kind: "festival-dir",
+    },
+    notes: "American male diphone voice; the largest of the Festival diphone packages",
+  },
   {
     id: "arctic-aew",
     displayName: "CMU ARCTIC AEW",

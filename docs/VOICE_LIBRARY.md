@@ -4,28 +4,34 @@ Vocalis speaks from recordings of people. This document is about adding *more*
 people — not more transformations — and it records what was found, what was
 verified, what is installable today, and what was excluded and why.
 
-The short version: **105 recorded, non-neural voice databases were investigated.
-7 of them have a working installer today** (five CMU ARCTIC speakers, the CMU KAL
-diphone database and CSTR RAB). **23 are class C** — the audio and the format are
+The short version: **107 recorded, non-neural voice databases were investigated.
+9 of them are English and have a working installer** — five CMU ARCTIC speakers, the
+CMU KAL and CSTR RAB diphone databases, and two Festival diphone voices (DON and KED)
+that Debian ships as packages. **23 are class C** — the audio and the format are
 right but something else is missing: for eleven of the ARCTIC speakers FestVox
 publishes waveforms and transcription but never the phone labels a diphone pack is
 cut from, and the other twelve are databases in languages the pronunciation front
 end cannot read. **75 are excluded** because their licence forbids using them outside
-MBROLA. Every one of the 105 is in the catalogue on screen, with its licence and its
+MBROLA. Every one of the 107 is in the catalogue on screen, with its licence and its
 reason, so a user can see what exists rather than trusting a claim.
 
-**What is proven, and what is not.** `cmu-kal` has been installed, spoken and removed
-here on a real archive: 1,578 recorded units, a rendered sentence with zero
-mathematical stand-ins. Nothing else is proved. The sixteen ARCTIC speakers were
-originally rated class A on the strength of the database documentation, which says the
-corpus ships with "automatic phone labels"; the first real download —
-`cmu_us_ljm_arctic.tar.bz2` — unpacked to 593 waveforms, **0 label files** and one
-Festival transcription file, because FestVox labels those speakers at build time with
-CMU Sphinx rather than shipping the labels. The converter refused it instead of
-writing an empty pack, and that refusal is why `npm run voices -- inspect` exists.
-Five ARCTIC speakers do have published labels (see §3), and their release builds are
-offered as class A with a "not yet proved" note until an archive passes `inspect` on a
-real machine. This document does not claim a voice works because it downloaded.
+**What is proven, and what is not.** Six English voices have been installed, spoken
+and measured here from real complete recordings — five ARCTIC speakers and KAL, and
+`npm run voices -- verify` renders a sentence with each and reports zero stand-ins
+(§3). The two package voices, DON and KED, are proved as far as this machine allows:
+the audio files are not downloadable from here, so their install path is proved
+against a directory built in the exact package layout and the real voice is one `apt
+install` away on a machine that has the package. RAB is still class B — its archive is
+not mirrored anywhere reachable from here. Nothing else is proved.
+
+The sixteen ARCTIC speakers outside the five were originally rated class A on the
+strength of the database documentation, which says the corpus ships with "automatic
+phone labels"; the first real download — `cmu_us_ljm_arctic.tar.bz2` — unpacked to 593
+waveforms, **0 label files** and one Festival transcription file, because FestVox
+labels those speakers at build time with CMU Sphinx rather than shipping the labels.
+The converter refused it instead of writing an empty pack, and that refusal is why
+`npm run voices -- inspect` exists. This document does not claim a voice works because
+it downloaded.
 
 Two voices are special and are not in that count: **CMU ARCTIC BDL and SLT are
 protected base voices**. Nothing here can install, replace, modify or remove them
@@ -125,19 +131,24 @@ Download URLs and sizes were read from the published index at
 
 ### Proved on real recordings, in this checkout
 
-Two voices have now been installed from real, complete recordings and spoken, with
-the render measured rather than assumed. Both go through the same HTTP path the
-browser uses (`/optional-voices/<id>/manifest.json` + `diphones.bin`):
+Six voices are installed from real, complete recordings and speak here, measured
+rather than assumed. All of them go through the same HTTP path the browser uses
+(`/optional-voices/<id>/manifest.json` + `diphones.bin`); `npm run voices -- verify`
+renders the audition sentence with each one and prints the result:
 
-| voice | source | units | rendered sentence | peak | exact units | stand-ins |
-|---|---|---|---|---|---|---|
-| `cmu-kal` | CMU KAL diphone database | 1,578 | 6.03 s | 0.78 | 44 | 0 |
-| `arctic-awb` | CMU ARCTIC 0.95, Scottish male, real `lab/` | 1,334 | 6.05 s | 0.78 | 43 | 0 |
+| voice | source | seconds | peak | units used | stand-ins |
+|---|---|---|---|---|---|
+| `arctic-awb` | CMU ARCTIC 0.95, Scottish male | 10.94 | 0.78 | 77 | 0 |
+| `arctic-clb` | CMU ARCTIC 0.95, US female | 11.22 | 0.78 | 78 | 0 |
+| `arctic-jmk` | CMU ARCTIC 0.95, Canadian male | 11.08 | 0.78 | 78 | 0 |
+| `arctic-ksp` | CMU ARCTIC 0.95, Indian male | 10.92 | 0.78 | 78 | 0 |
+| `arctic-rms` | CMU ARCTIC 0.95, US male | 11.77 | 0.78 | 78 | 0 |
+| `cmu-kal` | CMU KAL diphone database | 10.65 | 0.78 | 81 | 0 |
 
-The AWB figures come from 1,138 real utterances with phone labels; the labels were
-checked against the audio (speech starts at 0.64 s where the second `pau` label
-ends at 0.6245 s), and the render reports one missing diphone pair out of the
-sentence, no half-unit backoffs and no mathematical stand-ins.
+The ARCTIC figures come from 1,138 real utterances with phone labels; the labels were
+checked against the audio (speech starts at 0.64 s where the second `pau` label ends
+at 0.6245 s). A zero stand-in count means every unit the sentence asked for was cut
+from that speaker's own recordings.
 
 ### Installing from a directory you already have
 
@@ -191,6 +202,35 @@ for being unusably short.
 The download used here is a BSD-licensed GitHub mirror of the CMU archive, because
 `festvox.org` is not reachable from the build environment. The audio inside it is
 the untouched `cmu_us_kal_diphone_base` data.
+
+### Festival DON and KED — class A, supplied by the package manager
+
+Two more English diphone voices exist as Debian packages rather than downloads:
+`festvox-don` (British male, the small `don_diphone`) and `festvox-kdlpc16k`
+(American male, `ked_diphone`, built from the KED recordings). `festvox-kallpc16k`
+and `festvox-rablpc16k` carry the same KAL and RAB data already catalogued, so they
+are not counted twice. The packages install a complete voice — `dic/*.est` plus
+`wav/` — under `/usr/share/festival/voices/english/`.
+
+There is nothing to download, so these carry a different recipe: `kind:
+"festival-dir"` with no URL. The installer takes the unpacked directory instead:
+
+```sh
+sudo apt install festvox-don festvox-kdlpc16k
+npm run voices -- install festival-don --from /usr/share/festival/voices/english
+npm run voices -- install festival-ked --from /usr/share/festival/voices/english
+```
+
+Point `--from` at the group directory or at the voice directory itself
+(`…/english/don_diphone`) — the installer descends into the single voice it finds,
+because the directory name differs per package. Without `--from` it stops and prints
+the two commands above instead of failing on an empty URL.
+
+**What is proved.** The build machine cannot reach Debian's archive and has no
+festival package, so the conversion is proved against a directory built in the exact
+package layout (400 diphone entries, `dic/` + `wav/`, 16 kHz mono) — install from the
+group directory, pack written, then removed. The audio itself is not proved here.
+That is the whole difference between these and the six above.
 
 ### CSTR RAB — class B, not yet run against the real archive
 
@@ -434,12 +474,13 @@ Required checks and where they stand:
 
 ## 9. What is not done, honestly
 
-* **No ARCTIC archive has been converted end to end yet.** Their conversion path is
-  proved on fixture archives in the real layout, and the label format is checked
-  against the published `lab/` tree, but the first real download (LJM) had no labels
-  at all and the eleven speakers it represents are now class C. The five with
-  published labels are one `inspect` away from being confirmed or corrected — that is
-  the next step, on a machine that can reach `festvox.org`.
+* **The five label-bearing ARCTIC speakers are done; their eleven neighbours are not,
+  and cannot be without forced alignment.** AWB, CLB, JMK, KSP and RMS are installed
+  and speak (§3). The other eleven have no published phone labels at all.
+* **The two package-supplied voices have not heard their own audio here.** The
+  package files were not reachable from the build machine, so `festival-don` and
+  `festival-ked` are proved by layout, not by ear. One `apt install` and one
+  `npm run voices -- install` on a machine with the package settles it.
 * **Forced alignment is not implemented, on purpose.** It needs a trained acoustic
   model and a build toolchain, which the "no trained models, no AI" rule rules out.
 * **RAB is class B** until it is run against the real archive.
@@ -458,7 +499,7 @@ Required checks and where they stand:
 
 | File | What it is |
 |---|---|
-| `src/data/voiceCatalogue.ts` | the 105 investigated voices with sources, licences, classes and recipes |
+| `src/data/voiceCatalogue.ts` | the 107 investigated voices with sources, licences, classes and recipes |
 | `src/utils/optionalVoicePacks.ts` | the registry the engine resolves optional ids through; refuses base ids |
 | `src/utils/voiceLibraryPaths.ts` | the id/path guard shared by the server and the tests |
 | `src/utils/voiceLibrary.ts` | client: state, install/remove calls, filters, sorting, the neutral model |

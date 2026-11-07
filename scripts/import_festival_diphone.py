@@ -151,7 +151,10 @@ def main() -> int:
             # one wins, which is the order the EST file lists them in.
             skipped_mapping[key] = skipped_mapping.get(key, 0) + 1
             continue
-        wave_path = args.wav_dir / f"{wave_name}.wav"
+        # Some EST indexes list `w001` and some list `w001.wav`; accept both
+        # rather than requiring the caller to rewrite the database.
+        wave_file = wave_name if wave_name.lower().endswith(".wav") else f"{wave_name}.wav"
+        wave_path = args.wav_dir / wave_file
         samples, _rate = load_wave_cached(cache, wave_path)
         first = max(0, int(round(start * VOCALIS_RATE)))
         last = min(len(samples), int(round(end * VOCALIS_RATE)))

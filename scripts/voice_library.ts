@@ -210,7 +210,9 @@ function installerArgs(voice: VoiceCandidate, archiveOverride?: string): string[
       ? pathToFileURL(expandHome(archiveOverride)).href
       : recipe.kind === 'arctic-tree'
         ? recipe.treeUrl
-        : recipe.url,
+        : recipe.kind === 'festival-dir'
+          ? ''
+          : recipe.url,
     '--out-root', VOICE_ROOT,
     '--progress', resolve(PROGRESS_ROOT, `${voice.id}.json`),
     '--display-name', voice.displayName,
@@ -226,7 +228,7 @@ function installerArgs(voice: VoiceCandidate, archiveOverride?: string): string[
     args.push('--speaker', recipe.speaker);
   } else if (recipe.kind === 'arctic-tree') {
     args.push('--speaker', recipe.speaker, '--tree-url', recipe.treeUrl);
-  } else {
+  } else if (recipe.kind === 'festival-est') {
     args.push('--dic', recipe.dicPath, '--wav', recipe.wavPath);
   }
   return args;
@@ -262,6 +264,16 @@ function runInstaller(voice: VoiceCandidate, archiveOverride?: string): Promise<
   const args = installerArgs(voice, archiveOverride);
   const recipe = voice.install;
   if (!args || !recipe) return Promise.resolve(1);
+  if (recipe.kind === 'festival-dir' && !archiveOverride) {
+    console.error(
+      `\n▸ ${voice.displayName}  (${voice.id})\n` +
+        '  This voice arrives with a distribution package, not a download.\n' +
+        `  Install it first:  ${voice.install === recipe ? 'sudo apt install festvox-' : ''}` +
+        `${voice.id === 'festival-don' ? 'don' : 'kdlpc16k'}\n` +
+        `  Then:  npm run voices -- install ${voice.id} --from /usr/share/festival/voices/english\n`,
+    );
+    return Promise.resolve(1);
+  }
   const python = resolvePythonExecutable();
   if (!python) {
     console.error(`  ✗ ${pythonInstallHint()}`);
@@ -567,10 +579,21 @@ function urls(args: string[]): number {
       console.log(`npm run voices -- install ${voice.id}\n`);
       continue;
     }
+    if (recipe.kind === 'festival-dir') {
+      // The files arrive through the package manager, so there is nothing to curl.
+      const pkg = voice.id === 'festival-don' ? 'festvox-don' : 'festvox-kdlpc16k';
+      console.log(`sudo apt install ${pkg}`);
+      console.log(`npm run voices -- install ${voice.id} --from /usr/share/festival/voices/english\n`);
+      continue;
+    }
     console.log(`curl -L -o ${voice.id}.archive "${recipe.url}"`);
     console.log(`npm run voices -- install ${voice.id} --from ${voice.id}.archive\n`);
   }
-  console.log(`${rows.length} archives. Prefer \`npm run voices -- install ${classFilter ?? '<id>'}\` if npm and python3 are present: it unpacks, converts and validates too.`);
+  // Not a package voice: that one needs apt first and a --from argument.
+  const example = rows.find((voice) => voice.install?.kind !== 'festival-dir')?.id ?? 'cmu-kal';
+  console.log(
+    `${rows.length} sources. Prefer \`npm run voices -- install ${example}\` if npm and python3 are present: it unpacks, converts and validates too.`,
+  );
   return 0;
 }
 
