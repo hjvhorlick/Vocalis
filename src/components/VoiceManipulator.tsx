@@ -32,12 +32,6 @@ export const VoiceManipulator: React.FC<VoiceManipulatorProps> = ({
   onSaveAsCustom,
   onResetToDefault,
 }) => {
-  // The engine caps every resonance control at ±3 dB; showing the stored number
-  // when it is larger would describe audio that is not being produced.
-  const shownDb = (value: number | undefined) => {
-    const clamped = Math.max(-3, Math.min(3, value ?? 0));
-    return clamped > 0 ? `+${clamped}` : `${clamped}`;
-  };
   const [isAuditioning, setIsAuditioning] = useState(false);
   const [savedToast, setSavedToast] = useState(false);
 
@@ -139,11 +133,24 @@ export const VoiceManipulator: React.FC<VoiceManipulatorProps> = ({
           onChange={(e) => onUpdateVoice({ ...voice, baseSampleId: e.target.value })}
           className="w-full bg-slate-900 border border-slate-800 rounded-xl px-3 py-2 text-xs text-slate-200 font-medium focus:ring-1 focus:ring-indigo-500"
         >
-          {NATURAL_HUMAN_SAMPLES.map((s) => (
-            <option key={s.id} value={s.id}>
-              {s.name} ({s.speaker}) &bull; "{s.transcript}"
-            </option>
-          ))}
+          <optgroup label="CMU ARCTIC Multi-Speaker Human Recordings (16kHz Studio)">
+            {NATURAL_HUMAN_SAMPLES.filter(
+              (s) => s.category === 'CMU ARCTIC (Speech Science)'
+            ).map((s) => (
+              <option key={s.id} value={s.id}>
+                {s.name} ({s.speaker}) &bull; "{s.transcript.slice(0, 36)}..."
+              </option>
+            ))}
+          </optgroup>
+          <optgroup label="Open Speech Repository (IEEE Harvard Sentences)">
+            {NATURAL_HUMAN_SAMPLES.filter(
+              (s) => s.category === 'Open Speech Repository (Harvard Sentences)'
+            ).map((s) => (
+              <option key={s.id} value={s.id}>
+                {s.name} ({s.speaker}) &bull; "{s.transcript.slice(0, 36)}..."
+              </option>
+            ))}
+          </optgroup>
         </select>
         <p className="text-[10px] text-slate-500">
           Source: CMU ARCTIC Speech Corpus (Carnegie Mellon University). Free open scientific data.
@@ -229,26 +236,26 @@ export const VoiceManipulator: React.FC<VoiceManipulatorProps> = ({
         <div className="flex items-center justify-between">
           <label className="text-[11px] font-bold uppercase tracking-wider text-slate-300 flex items-center gap-1.5">
             <Waves className="w-3.5 h-3.5 text-cyan-400" />
-            Vocal Tract Tilt (Resonance & Timbre)
+            Vocal Tract Formant EQ Shaping (Resonance & Timbre)
           </label>
-          <span className="text-[10px] text-slate-500 font-mono">Wide-band tilt, ±3 dB</span>
+          <span className="text-[10px] text-slate-500 font-mono">Biquad Filter DSP</span>
         </div>
 
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
           {/* F1 Throat Warmth */}
           <div className="space-y-1">
             <div className="flex justify-between text-[11px]">
-              <span className="text-slate-400">Throat & Chest Warmth (F1 450 Hz)</span>
+              <span className="text-slate-400">Throat & Chest Warmth (F1 450Hz)</span>
               <span className="font-mono text-cyan-300 font-bold">
-                {shownDb(voice.throatWarmth)} dB
+                {(voice.throatWarmth ?? 0) > 0 ? `+${voice.throatWarmth}` : voice.throatWarmth ?? 0} dB
               </span>
             </div>
             <input
               type="range"
-              min="-3"
-              max="3"
+              min="-10"
+              max="10"
               step="1"
-              value={Math.max(-3, Math.min(3, voice.throatWarmth ?? 0))}
+              value={voice.throatWarmth ?? 0}
               onChange={(e) =>
                 onUpdateVoice({ ...voice, throatWarmth: parseFloat(e.target.value) })
               }
@@ -259,17 +266,17 @@ export const VoiceManipulator: React.FC<VoiceManipulatorProps> = ({
           {/* F2 Oral Clarity */}
           <div className="space-y-1">
             <div className="flex justify-between text-[11px]">
-              <span className="text-slate-400">Oral Cavity Clarity (F2 1.8 kHz)</span>
+              <span className="text-slate-400">Oral Cavity Clarity (F2 1.8kHz)</span>
               <span className="font-mono text-indigo-300 font-bold">
-                {shownDb(voice.oralClarity)} dB
+                {(voice.oralClarity ?? 0) > 0 ? `+${voice.oralClarity}` : voice.oralClarity ?? 0} dB
               </span>
             </div>
             <input
               type="range"
-              min="-3"
-              max="3"
+              min="-10"
+              max="10"
               step="1"
-              value={Math.max(-3, Math.min(3, voice.oralClarity ?? 0))}
+              value={voice.oralClarity ?? 0}
               onChange={(e) =>
                 onUpdateVoice({ ...voice, oralClarity: parseFloat(e.target.value) })
               }
@@ -280,17 +287,17 @@ export const VoiceManipulator: React.FC<VoiceManipulatorProps> = ({
           {/* F3 Air Presence */}
           <div className="space-y-1">
             <div className="flex justify-between text-[11px]">
-              <span className="text-slate-400">Air & Breath Presence (F3 4.2 kHz)</span>
+              <span className="text-slate-400">Air & Breath Presence (F3 4.2kHz)</span>
               <span className="font-mono text-purple-300 font-bold">
-                {shownDb(voice.airPresence)} dB
+                {(voice.airPresence ?? 0) > 0 ? `+${voice.airPresence}` : voice.airPresence ?? 0} dB
               </span>
             </div>
             <input
               type="range"
-              min="-3"
-              max="3"
+              min="-10"
+              max="10"
               step="1"
-              value={Math.max(-3, Math.min(3, voice.airPresence ?? 0))}
+              value={voice.airPresence ?? 0}
               onChange={(e) =>
                 onUpdateVoice({ ...voice, airPresence: parseFloat(e.target.value) })
               }

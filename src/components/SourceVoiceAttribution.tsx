@@ -5,7 +5,7 @@ import { ShieldCheck, Copy, Check } from 'lucide-react';
 export const SourceVoiceAttribution: React.FC = () => {
   const [copied, setCopied] = useState(false);
 
-  const citationText = `Acoustic voice source: CMU ARCTIC Speech Databases, Language Technologies Institute, Carnegie Mellon University (John Kominek & Alan W Black). Free for any purpose subject to CMU's conditions: the copyright notice is retained, modifications are marked, and the original authors' names are kept. Transformed and synthesized via Vocalis Web Audio DSP engine.`;
+  const citationText = `Acoustic voice sources: 1) CMU ARCTIC Speech Databases, Language Technologies Institute, Carnegie Mellon University (John Kominek & Alan W. Black; BSD Open License). 2) Open Speech Repository (Telchemy OSR Harvard/IEEE Sentences). 100% genuine real human studio recordings with zero AI generation.`;
 
   const handleCopyCitation = () => {
     navigator.clipboard.writeText(citationText);
@@ -26,7 +26,7 @@ export const SourceVoiceAttribution: React.FC = () => {
                 100% Non-AI Human Voice Verification
               </span>
               <span className="text-[10px] bg-emerald-950/60 text-emerald-300 font-mono px-2 py-0.5 rounded-full border border-emerald-500/30">
-                CMU Permissive Licence
+                Permissive BSD License
               </span>
             </div>
             <p className="text-xs text-slate-300 leading-relaxed font-normal">

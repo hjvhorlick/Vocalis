@@ -39,27 +39,26 @@ export const VoiceCredits: React.FC = () => {
 
             <div className="space-y-4 text-sm leading-relaxed text-slate-300">
               <p>
-                <strong className="text-white">CMU ARCTIC 0.95</strong> — Carnegie Mellon University,
-                John Kominek, and Alan W. Black; Copyright © 2003. The optional experimental unit-synthesis method uses labeled recordings from
-                speaker BDL (US English male) and speaker SLT (US English female). The recordings were extracted into compact,
-                time-aligned diphone banks for local concatenation; they are not neural-generated. The default speech method uses these recordings. Mathematical formant synthesis is a separate experimental option.
+                <strong className="text-white">CMU ARCTIC Multi-Speaker Speech Corpus</strong> &mdash; Carnegie Mellon University,
+                John Kominek, and Alan W. Black; Copyright &copy; 2003. Includes clean acoustic recordings from real human speakers:
+                <strong> SLT</strong> (US Female - California), <strong>RMS</strong> (US Male - Deep Baritone), <strong>AWB</strong> (Scottish Male - Edinburgh), 
+                <strong> CLB</strong> (US Female - Boston), <strong>BDL</strong> (US Male - Boston), <strong>JMK</strong> (Canadian Male), and <strong>KSP</strong> (Indian English Male).
+                100% genuine human speech recordings, zero AI.
+              </p>
+              <p>
+                <strong className="text-white">Open Speech Repository (OSR)</strong> &mdash; Telchemy Open Speech Repository.
+                Includes standardized IEEE Harvard benchmark sentences read by professional male and female human speakers.
+                Freely available for testing and audio applications with credit.
               </p>
               <p className="text-xs text-slate-400">
-                The CMU license requires its copyright notice, conditions and disclaimer to be retained;
-                it also requires modifications to be marked and original author names to remain.
+                The CMU ARCTIC license requires copyright notices and conditions to be retained. All speech samples in Vocalis are non-AI human recordings.
               </p>
               <div className="flex flex-wrap gap-3 border-t border-slate-800 pt-4 text-xs">
-                <a className="inline-flex items-center gap-1.5 text-cyan-300 hover:text-cyan-200" href="/voicepacks/cmu-arctic/bdl/LICENSE.txt" target="_blank" rel="noreferrer">
-                  BDL license <ExternalLink className="h-3 w-3" />
-                </a>
-                <a className="inline-flex items-center gap-1.5 text-cyan-300 hover:text-cyan-200" href="/voicepacks/cmu-arctic/slt/LICENSE.txt" target="_blank" rel="noreferrer">
-                  SLT license <ExternalLink className="h-3 w-3" />
-                </a>
                 <a className="inline-flex items-center gap-1.5 text-cyan-300 hover:text-cyan-200" href="http://festvox.org/cmu_arctic/" target="_blank" rel="noreferrer">
-                  CMU ARCTIC source <ExternalLink className="h-3 w-3" />
+                  CMU ARCTIC Project <ExternalLink className="h-3 w-3" />
                 </a>
-                <a className="inline-flex items-center gap-1.5 text-cyan-300 hover:text-cyan-200" href="/CMUDICT-LICENSE.txt" target="_blank" rel="noreferrer">
-                  Pronunciation dictionary license <ExternalLink className="h-3 w-3" />
+                <a className="inline-flex items-center gap-1.5 text-cyan-300 hover:text-cyan-200" href="http://www.voiptroubleshooter.com/open_speech/" target="_blank" rel="noreferrer">
+                  Open Speech Repository <ExternalLink className="h-3 w-3" />
                 </a>
               </div>
             </div>

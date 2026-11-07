@@ -1,86 +1,20 @@
-/**
- * Vocalis speech synthesis — pipeline orchestrator.
- *
- * Text in, audio out, by way of the stages the product promises:
- *
- *   text
- *     -> textAnalysis        words, numbers, punctuation, phones, stress, accent
- *     -> segmentUtterance    one continuous stream, split only at full stops
- *     -> prosody             phrase position, phrase-final, question
- *     -> UNIT PATH (default) renderCmuDiphones: recorded CMU ARCTIC units
- *     -> MATHS PATH          buildPhoneSamples: formant synthesis (experimental)
- *     -> processCmuVoice     pitch, rate and character (unit path only)
- *     -> normalise + encode  the same samples feed preview and export
- *
- * The requested text determines the audio. There is no fixed demonstration
- * recording anywhere in this path: a word the dictionary does not know is
- * spelled out by our own grapheme rules and reported as a guess, and a recorded
- * unit that does not exist is substituted in a way that is counted and shown
- * rather than hidden.
- *
- * Original Vocalis code. The two synthesis methods are kept deliberately
- * separate: the recorded-unit path is the product, the mathematical path below
- * is a preserved experimental subsystem (see docs/VOICE_SYNTHESIS_RESEARCH.md).
- */
 import type { VoiceModelConfig } from './naturalVoiceEngine';
 import { processCmuVoice, renderCmuDiphones } from './cmuDiphoneSynthesizer';
-import {
-  VOWELS,
-  analyzeText,
-  segmentUtterance,
-  preparePronunciation,
-  savePronunciationHint,
-  getPronunciationHints,
-  removePronunciationHint,
-  getDictionaryStats,
-  type DictionaryStats,
-  type PhoneToken,
-  type Segment,
-  type Stress,
-  type Utterance,
-} from './textAnalysis';
-
-export {
-  preparePronunciation,
-  savePronunciationHint,
-  getPronunciationHints,
-  removePronunciationHint,
-};
 
 const SAMPLE_RATE = 16000;
-
-/**
- * Longest render we will attempt.
- *
- * A ten-minute passage is a legitimate thing to ask a narrator to read, so the
- * limit exists to catch runaway input rather than to constrain a script. At
- * 16 kHz mono float that is about 38 MB of samples.
- */
-const MAX_SYNTHESIS_SECONDS = 600;
-
-/**
- * Phone classes used by the experimental mathematical synthesizer to decide how
- * to generate sound. Affricates sit with the fricatives here because they are
- * built from a frication burst; that is a generation detail, not a linguistic
- * claim, and it is deliberately separate from the classification the unit
- * synthesizer uses when choosing a neighbour.
- *
- * `VOWELS` comes from textAnalysis and does not contain AX. Nothing reaches this
- * file with AX in it: the analysis stage normalises that symbol to AH, which the
- * bundled dictionary also never emits.
- */
+const MAX_SYNTHESIS_SECONDS = 120;
+const VOWELS = new Set([
+  'AA', 'AE', 'AH', 'AO', 'AW', 'AY', 'AX', 'EH', 'ER', 'EY', 'IH', 'IY', 'OW', 'OY', 'UH', 'UW',
+]);
 const VOICED_CONSONANTS = new Set(['B', 'D', 'G', 'JH', 'V', 'DH', 'Z', 'ZH', 'M', 'N', 'NG', 'L', 'R', 'W', 'Y']);
 const STOP_CONSONANTS = new Set(['P', 'B', 'T', 'D', 'K', 'G']);
 const FRICATIVES = new Set(['F', 'V', 'TH', 'DH', 'S', 'Z', 'SH', 'ZH', 'HH', 'CH', 'JH']);
 
 type Formants = [number, number, number];
+type Timing = { charIndex: number; charLength: number; start: number; end: number };
+type SynthesisResult = { audioUrl: string; wordTimings: Timing[]; duration: number };
+type WordMatch = { word: string; start: number; end: number };
 type WordProsody = { phrasePosition: number; phraseFinal: boolean; question: boolean };
-
-const NEUTRAL_PROSODY: WordProsody = { phrasePosition: 0, phraseFinal: false, question: false };
-
-// ---------------------------------------------------------------------------
-// The preserved experimental formant synthesizer
-// ---------------------------------------------------------------------------
 
 const VOWEL_FORMANTS: Record<string, { start: Formants; end?: Formants }> = {
   AA: { start: [730, 1090, 2440] },
@@ -100,6 +34,218 @@ const VOWEL_FORMANTS: Record<string, { start: Formants; end?: Formants }> = {
   UH: { start: [440, 1020, 2240] },
   UW: { start: [300, 870, 2240] },
 };
+
+const DICT_FALLBACK: Record<string, string> = {
+  a: 'AH0', i: 'AY1', the: 'DH AH0', to: 'T UW1', of: 'AH1 V', and: 'AE1 N D',
+  is: 'IH1 Z', are: 'AA1 R', was: 'W AA1 Z', were: 'W ER1', you: 'Y UW1',
+};
+
+let pronunciationDictionary: Map<string, string[]> | null = null;
+let dictionaryRequest: Promise<Map<string, string[]>> | null = null;
+const customPronunciations = new Map<string, string[]>();
+const CUSTOM_PRONUNCIATIONS_KEY = 'vocalis_custom_pronunciations';
+let customPronunciationsLoaded = false;
+
+function loadCustomPronunciations(): void {
+  if (customPronunciationsLoaded || typeof localStorage === 'undefined') return;
+  customPronunciationsLoaded = true;
+  try {
+    const saved = JSON.parse(localStorage.getItem(CUSTOM_PRONUNCIATIONS_KEY) || '{}') as Record<string, string[]>;
+    for (const [word, phones] of Object.entries(saved)) {
+      if (Array.isArray(phones) && phones.every((phone) => typeof phone === 'string')) {
+        customPronunciations.set(word.toLowerCase(), phones);
+      }
+    }
+  } catch {
+    // Ignore corrupted or unavailable local pronunciation settings.
+  }
+}
+
+async function loadDictionary(): Promise<Map<string, string[]>> {
+  if (pronunciationDictionary) return pronunciationDictionary;
+  if (dictionaryRequest) return dictionaryRequest;
+  dictionaryRequest = (async () => {
+    const words = new Map<string, string[]>();
+    try {
+      const response = await fetch('/cmudict.txt');
+      if (response.ok) {
+        const source = await response.text();
+        for (const row of source.split('\n')) {
+          const divider = row.indexOf('|');
+          if (divider < 1) continue;
+          const word = row.slice(0, divider);
+          if (!words.has(word)) words.set(word, row.slice(divider + 1).trim().split(/\s+/));
+        }
+      }
+    } catch (error) {
+      console.warn('Local pronunciation dictionary unavailable; using built-in letter rules.', error);
+    }
+    pronunciationDictionary = words;
+    return words;
+  })();
+  return dictionaryRequest;
+}
+
+export function preparePronunciationDictionary(): Promise<void> {
+  return loadDictionary().then(() => undefined);
+}
+
+function numberWords(value: string): string[] | null {
+  if (!/^\d{1,9}$/.test(value)) return null;
+  const n = Number(value);
+  if (n === 0) return ['zero'];
+  const small = ['zero', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine', 'ten', 'eleven', 'twelve', 'thirteen', 'fourteen', 'fifteen', 'sixteen', 'seventeen', 'eighteen', 'nineteen'];
+  const tens = ['', '', 'twenty', 'thirty', 'forty', 'fifty', 'sixty', 'seventy', 'eighty', 'ninety'];
+  const underThousand = (x: number): string[] => {
+    const result: string[] = [];
+    if (x >= 100) {
+      result.push(small[Math.floor(x / 100)], 'hundred');
+      x %= 100;
+    }
+    if (x >= 20) {
+      result.push(tens[Math.floor(x / 10)]);
+      if (x % 10) result.push(small[x % 10]);
+    } else if (x > 0) result.push(small[x]);
+    return result;
+  };
+  if (n < 1000) return underThousand(n);
+  if (n < 1_000_000) return [...underThousand(Math.floor(n / 1000)), 'thousand', ...underThousand(n % 1000)];
+  if (n < 1_000_000_000) return [...underThousand(Math.floor(n / 1_000_000)), 'million', ...underThousand(n % 1_000_000)];
+  return null;
+}
+
+function fallbackGraphemeToPhones(word: string): string[] {
+  const text = word.toLowerCase().replace(/[^a-z']/g, '');
+  const phones: string[] = [];
+  const rules: Array<[RegExp, string]> = [
+    [/^kn/, 'N'], [/^wr/, 'R'], [/^wh/, 'W'], [/^x/, 'Z'],
+    [/tion/, 'SH AH N'], [/sion/, 'ZH AH N'], [/tch/, 'CH'], [/dge/, 'JH'],
+    [/igh/, 'AY'], [/eigh/, 'EY'], [/ph/, 'F'], [/sh/, 'SH'], [/ch/, 'CH'],
+    [/th/, 'TH'], [/ng/, 'NG'], [/ck/, 'K'], [/qu/, 'K W'], [/wh/, 'W'],
+    [/ee/, 'IY'], [/ea/, 'IY'], [/oo/, 'UW'], [/ou/, 'AW'], [/ow/, 'AW'],
+    [/oi/, 'OY'], [/oy/, 'OY'], [/ai/, 'EY'], [/ay/, 'EY'], [/au/, 'AO'],
+    [/aw/, 'AO'], [/er/, 'ER'], [/ir/, 'ER'], [/ur/, 'ER'], [/ar/, 'AA R'],
+    [/or/, 'AO R'], [/al/, 'AO L'],
+  ];
+  let i = 0;
+  while (i < text.length) {
+    let matched = false;
+    for (const [pattern, replacement] of rules) {
+      const candidate = text.slice(i);
+      const match = candidate.match(pattern);
+      if (match && match.index === 0) {
+        phones.push(...replacement.split(' '));
+        i += match[0].length;
+        matched = true;
+        break;
+      }
+    }
+    if (matched) continue;
+    const ch = text[i];
+    const next = text[i + 1] || '';
+    const previous = text[i - 1] || '';
+    if (ch === 'e' && i === text.length - 1 && text.length > 2) { i++; continue; }
+    const letterMap: Record<string, string> = {
+      a: 'AE', b: 'B', c: 'K', d: 'D', e: 'EH', f: 'F', g: 'G', h: 'HH', i: 'IH',
+      j: 'JH', k: 'K', l: 'L', m: 'M', n: 'N', o: 'AA', p: 'P', q: 'K', r: 'R',
+      s: 'S', t: 'T', u: 'AH', v: 'V', w: 'W', x: 'K S', y: i === text.length - 1 ? 'IY' : 'Y', z: 'Z',
+    };
+    let phone = letterMap[ch];
+    if ((ch === 'c' || ch === 'g') && /[eiy]/.test(next)) phone = ch === 'c' ? 'S' : 'JH';
+    if (ch === 'y' && i === 0 && /[aeiou]/.test(next)) phone = 'Y';
+    if (ch === 'a' && i + 2 < text.length && /[bcdfghjklmnpqrstvwxyz]/.test(text[i + 1]) && /e$/.test(text.slice(i + 2))) phone = 'EY';
+    if (ch === 'i' && i + 2 < text.length && /[bcdfghjklmnpqrstvwxyz]/.test(text[i + 1]) && /e$/.test(text.slice(i + 2))) phone = 'AY';
+    if (ch === 'o' && i + 2 < text.length && /[bcdfghjklmnpqrstvwxyz]/.test(text[i + 1]) && /e$/.test(text.slice(i + 2))) phone = 'OW';
+    if (ch === 'u' && /[aeiou]/.test(previous)) phone = 'W';
+    if (phone) phones.push(...phone.split(' '));
+    i++;
+  }
+  return phones.length ? phones : ['AH'];
+}
+
+export async function savePronunciationSpelling(word: string, spelling: string): Promise<void> {
+  const normalized = word.trim().toLowerCase().replace(/[’]/g, "'");
+  if (!normalized || !spelling.trim()) throw new Error('Enter both a word and a pronunciation hint.');
+  const dictionary = await loadDictionary();
+  loadCustomPronunciations();
+  const phones: string[] = [];
+  for (const match of getWordMatches(spelling)) {
+    const expansions = numberWords(match.word) || [match.word];
+    for (const item of expansions) {
+      const key = item.toLowerCase().replace(/[’]/g, "'");
+      const pronunciation = dictionary.get(key) || DICT_FALLBACK[key]?.split(' ') || fallbackGraphemeToPhones(key);
+      phones.push(...pronunciation);
+    }
+  }
+  if (!phones.length) throw new Error('The pronunciation hint did not contain any speakable words.');
+  customPronunciations.set(normalized, phones);
+  try {
+    localStorage.setItem(CUSTOM_PRONUNCIATIONS_KEY, JSON.stringify(Object.fromEntries(customPronunciations)));
+  } catch {
+    throw new Error('Could not save this pronunciation in browser storage.');
+  }
+}
+
+async function wordPhones(word: string, dictionary: Map<string, string[]>): Promise<string[]> {
+  loadCustomPronunciations();
+  const normalized = word.toLowerCase().replace(/[’]/g, "'");
+  const custom = customPronunciations.get(normalized);
+  if (custom) return [...custom];
+  const pronunciation = dictionary.get(normalized) || DICT_FALLBACK[normalized]?.split(' ') || fallbackGraphemeToPhones(normalized);
+  return pronunciation;
+}
+
+function applyAccent(phones: string[], accent: VoiceModelConfig['accent']): string[] {
+  if (accent === 'US' || accent === 'Global') return phones;
+  const result = [...phones];
+  // The CMU base is rhotic North American English. UK and Australian profiles
+  // use a deterministic non-rhotic rule: post-vowel R is silent before a pause
+  // or consonant, but remains when the next word begins with a vowel only in
+  // the simple within-word cases handled by the pronunciation stream.
+  for (let i = 1; i < result.length; i++) {
+    const current = result[i].replace(/[012]$/, '');
+    const previous = result[i - 1].replace(/[012]$/, '');
+    const next = result[i + 1]?.replace(/[012]$/, '');
+    if (current === 'R' && VOWELS.has(previous) && (!next || !VOWELS.has(next))) {
+      result[i] = '';
+    }
+  }
+  return result.filter(Boolean);
+}
+
+function getWordMatches(text: string): WordMatch[] {
+  const matches = [...text.matchAll(/[\p{L}]+(?:['’][\p{L}]+)*|\d+/gu)];
+  return matches.map((match) => ({ word: match[0], start: match.index ?? 0, end: (match.index ?? 0) + match[0].length }));
+}
+
+function getWordProsody(text: string, matches: WordMatch[], index: number): WordProsody {
+  const hasBoundary = (left: WordMatch, right: WordMatch) => /[.!?…;,]/.test(text.slice(left.end, right.start));
+  let phraseStart = index;
+  let phraseEnd = index;
+  while (phraseStart > 0 && !hasBoundary(matches[phraseStart - 1], matches[phraseStart])) phraseStart--;
+  while (phraseEnd < matches.length - 1 && !hasBoundary(matches[phraseEnd], matches[phraseEnd + 1])) phraseEnd++;
+  const phraseLast = matches[phraseEnd];
+  const nextWord = matches[phraseEnd + 1];
+  const ending = text.slice(phraseLast.end, nextWord?.start ?? text.length);
+  const phraseLength = phraseEnd - phraseStart;
+  return {
+    phrasePosition: phraseLength ? (index - phraseStart) / phraseLength : 1,
+    phraseFinal: index === phraseEnd,
+    question: /\?/.test(ending),
+  };
+}
+
+function getPauseAfter(text: string): number {
+  if (/[.!?…]/.test(text)) return 0.22;
+  if (/[,;:]/.test(text)) return 0.11;
+  // Ordinary spaces connect words; long artificial gaps made the old output choppy.
+  return 0.012;
+}
+
+function splitPhoneStress(phone: string): { phone: string; stress: string } {
+  const match = phone.toUpperCase().match(/^([A-Z]+)([012])?$/);
+  return match ? { phone: match[1], stress: match[2] || '0' } : { phone: phone.toUpperCase(), stress: '0' };
+}
 
 function getFormants(phone: string, progress: number, genderScale: number, accent: VoiceModelConfig['accent']): Formants {
   const vowel = VOWEL_FORMANTS[phone];
@@ -289,425 +435,147 @@ function buildPhoneSamples(
   return result;
 }
 
-
-// ---------------------------------------------------------------------------
-// Joining generated phones, with their positions measured as we go
-// ---------------------------------------------------------------------------
-
-const JOIN_OVERLAP_SECONDS = 0.004;
-
-/**
- * Join generated phone chunks with an equal-power crossfade and report where
- * each phone's midpoint landed.
- *
- * The overlap is short because these chunks are already continuous in phase and
- * amplitude; the crossfade exists to remove the seam, not to blur the join.
- * Midpoints are measured from the real write cursor, so timing comes from the
- * audio that was produced rather than from an estimate.
- */
-function joinPhonesWithOffsets(chunks: Float32Array[]): { samples: Float32Array; midpoints: number[] } {
-  if (!chunks.length) return { samples: new Float32Array(0), midpoints: [] };
-  const overlap = Math.floor(SAMPLE_RATE * JOIN_OVERLAP_SECONDS);
-  const total = chunks.reduce((sum, chunk) => sum + chunk.length, 0) - overlap * Math.max(0, chunks.length - 1);
-  const output = new Float32Array(Math.max(0, total));
-  const midpoints: number[] = [];
+function joinFormantPhones(chunks: Float32Array[]): Float32Array {
+  if (!chunks.length) return new Float32Array(0);
+  const overlap = Math.floor(SAMPLE_RATE * 0.004);
+  const totalLength = chunks.reduce((sum, chunk) => sum + chunk.length, 0) - overlap * Math.max(0, chunks.length - 1);
+  const output = new Float32Array(Math.max(0, totalLength));
   let cursor = 0;
   for (const chunk of chunks) {
     if (cursor === 0) {
       output.set(chunk);
-      midpoints.push(Math.floor(chunk.length / 2));
       cursor = chunk.length;
       continue;
     }
     const blend = Math.min(overlap, cursor, chunk.length);
     const start = cursor - blend;
-    for (let i = 0; i < blend; i += 1) {
-      const phase = ((i + 1) / (blend + 1)) * (Math.PI / 2);
+    for (let i = 0; i < blend; i++) {
+      const phase = (i + 1) / (blend + 1) * Math.PI / 2;
       output[start + i] = output[start + i] * Math.cos(phase) + chunk[i] * Math.sin(phase);
     }
     output.set(chunk.subarray(blend), cursor);
     cursor += chunk.length - blend;
-    midpoints.push(Math.max(0, cursor - Math.floor(chunk.length / 2)));
   }
-  return { samples: output, midpoints };
+  return output;
 }
 
-// ---------------------------------------------------------------------------
-// Prosody, read from the text itself
-// ---------------------------------------------------------------------------
-
-/**
- * Work out, for each word, where it sits in its phrase, whether it ends the
- * phrase, and whether the phrase is a question.
- *
- * These three facts drive stress, phrase-final lengthening, declination and the
- * boundary tone. They come from the punctuation the writer typed, not from a
- * guess about the sentence.
- */
-function buildWordProsody(utterance: Utterance, segments: Segment[]): WordProsody[] {
-  const prosody: WordProsody[] = utterance.words.map(() => ({ ...NEUTRAL_PROSODY }));
-  for (const segment of segments) {
-    const span = Math.max(1, segment.wordEnd - segment.wordStart);
-    const lastWord = utterance.words[segment.wordEnd];
-    const question = segment.terminal === '?' ||
-      (lastWord
-        ? /[?]/.test(
-            utterance.sourceText.slice(
-              lastWord.charIndex + lastWord.charLength,
-              lastWord.charIndex + lastWord.charLength + 4,
-            ),
-          )
-        : false);
-    for (let w = segment.wordStart; w <= segment.wordEnd && w < prosody.length; w += 1) {
-      prosody[w] = {
-        phrasePosition: Math.min(1, Math.max(0, (w - segment.wordStart) / span)),
-        phraseFinal: w === segment.wordEnd,
-        question,
-      };
-    }
-  }
-  return prosody;
-}
-
-// ---------------------------------------------------------------------------
-// Levels and encoding
-// ---------------------------------------------------------------------------
-
-/**
- * Peak the output is allowed to reach, the most make-up gain we apply, and the
- * peak below which a render counts as silence rather than as something quiet
- * that needs lifting.
- *
- * The make-up cap exists so a near-silent render is not amplified into noise.
- * It has to be generous enough that both synthesis paths reach the same level:
- * the recorded-unit path arrives near the ceiling already, while the
- * experimental formant path builds its signal from narrow-band resonators and
- * arrives about four times quieter. At 1.8x the experimental path peaked around
- * 0.31 while the unit path peaked at 0.78, so switching methods changed the
- * loudness of a voice for no acoustic reason.
- */
-const OUTPUT_CEILING = 0.78;
-const MAX_MAKEUP_GAIN = 4;
-const SILENCE_FLOOR = 0.02;
-
-/**
- * Bring a render to a consistent peak and apply the profile's volume.
- *
- * Preview and export both consume the result of this function, so what you hear
- * is byte for byte what you download.
- */
-export function normaliseSamples(samples: Float32Array, volume: number): Float32Array {
+function writeWav(samples: Float32Array, volume: number): Blob {
   let peak = 0;
-  for (let i = 0; i < samples.length; i += 1) peak = Math.max(peak, Math.abs(samples[i]));
-  const makeup = peak >= SILENCE_FLOOR ? Math.min(MAX_MAKEUP_GAIN, OUTPUT_CEILING / peak) : 1;
-  const level = Math.max(0, Math.min(1, volume));
-  const out = new Float32Array(samples.length);
-  for (let i = 0; i < samples.length; i += 1) {
-    const value = samples[i] * makeup * level;
-    out[i] = value > 1 ? 1 : value < -1 ? -1 : value;
-  }
-  return out;
-}
-
-/**
- * Encode mono float samples as a 16-bit PCM RIFF wave.
- *
- * Written from the RIFF/WAVE specification: a 44-byte canonical header (fmt
- * chunk, PCM tag 1, mono, 16 bits per sample) followed by little-endian
- * samples.
- */
-export function encodeWav(samples: Float32Array, sampleRate: number): Blob {
+  for (const sample of samples) peak = Math.max(peak, Math.abs(sample));
+  const normalizer = peak > 0 ? Math.min(1.8, 0.78 / peak) : 1;
   const dataBytes = samples.length * 2;
   const buffer = new ArrayBuffer(44 + dataBytes);
   const view = new DataView(buffer);
-  const ascii = (offset: number, text: string) => {
-    for (let i = 0; i < text.length; i += 1) view.setUint8(offset + i, text.charCodeAt(i));
+  const writeString = (offset: number, value: string) => {
+    for (let i = 0; i < value.length; i++) view.setUint8(offset + i, value.charCodeAt(i));
   };
-  ascii(0, 'RIFF');
+  writeString(0, 'RIFF');
   view.setUint32(4, 36 + dataBytes, true);
-  ascii(8, 'WAVE');
-  ascii(12, 'fmt ');
+  writeString(8, 'WAVE');
+  writeString(12, 'fmt ');
   view.setUint32(16, 16, true);
   view.setUint16(20, 1, true);
   view.setUint16(22, 1, true);
-  view.setUint32(24, sampleRate, true);
-  view.setUint32(28, sampleRate * 2, true);
+  view.setUint32(24, SAMPLE_RATE, true);
+  view.setUint32(28, SAMPLE_RATE * 2, true);
   view.setUint16(32, 2, true);
   view.setUint16(34, 16, true);
-  ascii(36, 'data');
+  writeString(36, 'data');
   view.setUint32(40, dataBytes, true);
   let offset = 44;
-  for (let i = 0; i < samples.length; i += 1) {
-    const value = samples[i] > 1 ? 1 : samples[i] < -1 ? -1 : samples[i];
-    view.setInt16(offset, value < 0 ? value * 0x8000 : value * 0x7fff, true);
+  const gain = Math.max(0, Math.min(1, volume));
+  for (const sample of samples) {
+    const clipped = Math.max(-1, Math.min(1, sample * normalizer * gain));
+    view.setInt16(offset, clipped < 0 ? clipped * 0x8000 : clipped * 0x7fff, true);
     offset += 2;
   }
   return new Blob([buffer], { type: 'audio/wav' });
 }
 
-// ---------------------------------------------------------------------------
-// Result types
-// ---------------------------------------------------------------------------
-
-export type SynthesisMethod = 'cmu-arctic' | 'formant';
-
-export interface WordTiming {
-  word: string;
-  charIndex: number;
-  charLength: number;
-  /** Seconds from the start of the rendered audio. */
-  start: number;
-  end: number;
-  /** True when the pronunciation was guessed by the grapheme rules. */
-  guessed: boolean;
-}
-
-export interface SynthesisDiagnostics {
-  method: SynthesisMethod;
-  speaker: string | null;
-  words: number;
-  phones: number;
-  segments: number;
-  /** Exact recorded units used. */
-  exactUnits: number;
-  /** Half units assembled from the same speaker. */
-  backoffUnits: number;
-  /** Times the experimental synthesizer stood in for a missing unit. */
-  fallbackPhones: number;
-  missingPairs: string[];
-  guessedWords: string[];
-  rejectedTokens: string[];
-  dictionary: DictionaryStats;
-  sampleRate: number;
-  durationSeconds: number;
-  /** Fraction of the utterance carried by exact recorded units, 0..1. */
-  recordedCoverage: number;
-}
-
-export interface SynthesisResult {
-  /** Final mono audio: normalised, volume applied, identical for play and export. */
-  samples: Float32Array;
-  sampleRate: number;
-  duration: number;
-  wordTimings: WordTiming[];
-  diagnostics: SynthesisDiagnostics;
-  wavBlob: Blob;
-  audioUrl: string;
-}
-
-/**
- * Turn measured phone midpoints into word start and end times.
- *
- * A diphone join lands exactly on a phone midpoint, so the boundary between two
- * phones is halfway between their midpoints. That gives a word's position
- * without any global rescaling, which is what made highlighted words drift away
- * from the audio as a passage got longer.
- */
-function wordTimingsFrom(
-  utterance: Utterance,
-  phoneOffsets: number[],
-  totalSamples: number,
-  scale: number,
-): WordTiming[] {
-  const boundaryBefore = (index: number): number => {
-    if (index <= 0) return 0;
-    if (index >= phoneOffsets.length) return totalSamples;
-    return (phoneOffsets[index - 1] + phoneOffsets[index]) / 2;
-  };
-  return utterance.words
-    .filter((word) => word.phoneEnd > word.phoneStart)
-    .map((word) => ({
-      word: word.text,
-      charIndex: word.charIndex,
-      charLength: word.charLength,
-      start: (boundaryBefore(word.phoneStart) / SAMPLE_RATE) * scale,
-      end: (boundaryBefore(word.phoneEnd) / SAMPLE_RATE) * scale,
-      guessed: word.guessed,
-    }));
-}
-
-// ---------------------------------------------------------------------------
-// The pipeline
-// ---------------------------------------------------------------------------
-
-/** Silence between segments on the experimental path, which has no pause units. */
-const SENTENCE_PAUSE_SECONDS = 0.26;
-
-function emptyResult(method: SynthesisMethod, utterance: Utterance): SynthesisResult {
-  const silence = new Float32Array(Math.floor(SAMPLE_RATE * 0.12));
-  const samples = normaliseSamples(silence, 1);
-  const wavBlob = encodeWav(samples, SAMPLE_RATE);
-  return {
-    samples,
-    sampleRate: SAMPLE_RATE,
-    duration: samples.length / SAMPLE_RATE,
-    wordTimings: [],
-    diagnostics: {
-      method,
-      speaker: null,
-      words: 0,
-      phones: 0,
-      segments: 0,
-      exactUnits: 0,
-      backoffUnits: 0,
-      fallbackPhones: 0,
-      missingPairs: [],
-      guessedWords: utterance.guessedWords,
-      rejectedTokens: utterance.rejectedTokens,
-      dictionary: getDictionaryStats(),
-      sampleRate: SAMPLE_RATE,
-      durationSeconds: samples.length / SAMPLE_RATE,
-      recordedCoverage: 0,
-    },
-    wavBlob,
-    audioUrl: URL.createObjectURL(wavBlob),
-  };
-}
-
-/**
- * Speak `text` in `model`'s voice.
- *
- * One render feeds everything: the preview player, the word highlighting and the
- * downloadable WAV are all built from the same `samples` array, so there is no
- * way for the export to differ from what was heard.
- */
 export async function synthesizeText(text: string, model: VoiceModelConfig): Promise<SynthesisResult> {
-  const method: SynthesisMethod = model.synthesisMethod ?? 'cmu-arctic';
-  const utterance = await analyzeText(text, model.accent);
-  const segments = segmentUtterance(utterance);
-  const prosody = buildWordProsody(utterance, segments);
-
-  if (!utterance.phones.length) return emptyResult(method, utterance);
-
+  const dictionary = await loadDictionary();
+  const synthesisMethod = model.synthesisMethod ?? 'cmu-arctic';
+  const matches = getWordMatches(text);
+  const samples: Float32Array[] = [];
+  const wordTimings: Timing[] = [];
   const random = makeRandom(0x564f4341);
-  // The experimental synthesizer receives a neutral profile: pitch and rate
-  // belong to the transformation stage, so applying them twice would compound.
   const fallbackModel: VoiceModelConfig = { ...model, pitch: 1, rate: 1, volume: 1, toneStyle: 'natural' };
-  const mathematicalPhone = (
-    phone: string,
-    stress: Stress,
-    offset: number,
-    wordProsody: WordProsody,
-    previous?: string,
-    next?: string,
-  ) => buildPhoneSamples(phone, stress, fallbackModel, offset, random, wordProsody, previous, next);
+  let sampleCount = 0;
+  let previousEnd = 0;
+  let previousWord: WordMatch | null = null;
 
-  let raw: Float32Array;
-  let phoneOffsets: number[];
-  let speaker: string | null = null;
-  let exactUnits = 0;
-  let backoffUnits = 0;
-  let fallbackPhones = 0;
-  let missingPairs: string[] = [];
-
-  if (method === 'cmu-arctic') {
-    const rendered = await renderCmuDiphones(
-      segments.map((segment) => ({
-        phones: segment.phones,
-        terminal: segment.terminal,
-      })),
-      model,
-      (phone, offset) => mathematicalPhone(phone, '0', offset, NEUTRAL_PROSODY),
-      0,
-    );
-    raw = rendered.samples;
-    phoneOffsets = rendered.phoneOffsets;
-    speaker = rendered.speaker;
-    exactUnits = rendered.diagnostics.exactUnits;
-    backoffUnits = rendered.diagnostics.backoffUnits;
-    fallbackPhones = rendered.diagnostics.fallbackPhones;
-    missingPairs = rendered.diagnostics.missingPairs;
-  } else {
-    const pieces: Float32Array[] = [];
-    const offsets: number[] = [];
-    let cursor = 0;
-    segments.forEach((segment, segmentIndex) => {
-      const chunks = segment.phones.map((token: PhoneToken, position: number) => {
-        const previous = position > 0 ? segment.phones[position - 1].phone : undefined;
-        const next = position + 1 < segment.phones.length ? segment.phones[position + 1].phone : undefined;
-        return mathematicalPhone(
-          token.phone,
-          token.stress,
-          cursor,
-          prosody[token.wordIndex] ?? NEUTRAL_PROSODY,
-          previous,
-          next,
-        );
-      });
-      const joined = joinPhonesWithOffsets(chunks);
-      for (const midpoint of joined.midpoints) offsets.push(cursor + midpoint);
-      pieces.push(joined.samples);
-      cursor += joined.samples.length;
-      if (segmentIndex < segments.length - 1) {
-        const pause = new Float32Array(Math.floor(SAMPLE_RATE * SENTENCE_PAUSE_SECONDS));
-        pieces.push(pause);
-        cursor += pause.length;
-      }
-    });
-    const totalLength = pieces.reduce((sum, piece) => sum + piece.length, 0);
-    raw = new Float32Array(totalLength);
-    let write = 0;
-    for (const piece of pieces) {
-      raw.set(piece, write);
-      write += piece.length;
+  const appendSilence = (seconds: number) => {
+    const length = Math.max(0, Math.floor(SAMPLE_RATE * seconds));
+    if (length) {
+      samples.push(new Float32Array(length));
+      sampleCount += length;
     }
-    phoneOffsets = offsets;
-  }
-
-  if (raw.length / SAMPLE_RATE > MAX_SYNTHESIS_SECONDS) {
-    throw new Error(`Rendered audio exceeds ${MAX_SYNTHESIS_SECONDS} seconds. Split the text into shorter passages.`);
-  }
-
-  const processed = method === 'cmu-arctic' ? processCmuVoice(raw, model) : raw;
-  const scale = raw.length ? processed.length / raw.length : 1;
-  const samples = normaliseSamples(processed, model.volume);
-  const duration = samples.length / SAMPLE_RATE;
-  const wordTimings = wordTimingsFrom(utterance, phoneOffsets, raw.length, scale);
-  const wavBlob = encodeWav(samples, SAMPLE_RATE);
-
-  const unitTotal = exactUnits + backoffUnits + fallbackPhones;
-  return {
-    samples,
-    sampleRate: SAMPLE_RATE,
-    duration,
-    wordTimings,
-    diagnostics: {
-      method,
-      speaker,
-      words: utterance.words.length,
-      phones: utterance.phones.length,
-      segments: segments.length,
-      exactUnits,
-      backoffUnits,
-      fallbackPhones,
-      missingPairs,
-      guessedWords: utterance.guessedWords,
-      rejectedTokens: utterance.rejectedTokens,
-      dictionary: getDictionaryStats(),
-      sampleRate: SAMPLE_RATE,
-      durationSeconds: duration,
-      recordedCoverage: unitTotal ? exactUnits / unitTotal : 0,
-    },
-    wavBlob,
-    audioUrl: URL.createObjectURL(wavBlob),
   };
-}
 
-/** Release the object URL of a render that is no longer needed. */
-export function releaseSynthesis(result: SynthesisResult | null): void {
-  if (result?.audioUrl) URL.revokeObjectURL(result.audioUrl);
-}
+  for (let matchIndex = 0; matchIndex < matches.length; matchIndex++) {
+    const match = matches[matchIndex];
+    const prosody = getWordProsody(text, matches, matchIndex);
+    if (previousWord) appendSilence(getPauseAfter(text.slice(previousEnd, match.start)));
+    const wordStart = sampleCount / SAMPLE_RATE;
+    const timing: Timing = { charIndex: match.start, charLength: match.end - match.start, start: wordStart, end: wordStart };
+    wordTimings.push(timing);
 
-// ---------------------------------------------------------------------------
-// Compatibility surface
-// ---------------------------------------------------------------------------
+    const spokenWords = numberWords(match.word) || [match.word];
+    const phones: string[] = [];
+    for (const spokenWord of spokenWords) {
+      phones.push(...applyAccent(await wordPhones(spokenWord, dictionary), model.accent));
+    }
+    let wordSamples: Float32Array;
+    if (synthesisMethod === 'cmu-arctic') {
+      const fallback = (phone: string, offset: number) => {
+        const normalizedPhone = phone === 'AX' ? 'AH' : phone;
+        return buildPhoneSamples(normalizedPhone, '0', fallbackModel, offset, random);
+      };
+      const cmuPhones = phones.map((phone) => splitPhoneStress(phone).phone);
+      const rendered = await renderCmuDiphones(cmuPhones, model, fallback, sampleCount);
+      wordSamples = rendered.samples;
+    } else {
+      let phoneOffset = sampleCount;
+      const phoneChunks = phones.map((phone, phoneIndex) => {
+        const parsed = splitPhoneStress(phone);
+        const normalizedPhone = parsed.phone === 'AX' ? 'AH' : parsed.phone;
+        const previousPhone = phoneIndex > 0 ? splitPhoneStress(phones[phoneIndex - 1]).phone : undefined;
+        const nextPhone = phoneIndex + 1 < phones.length ? splitPhoneStress(phones[phoneIndex + 1]).phone : undefined;
+        const chunk = buildPhoneSamples(normalizedPhone, parsed.stress, model, phoneOffset, random, prosody, previousPhone, nextPhone);
+        phoneOffset += chunk.length;
+        return chunk;
+      });
+      wordSamples = joinFormantPhones(phoneChunks);
+    }
+    samples.push(wordSamples);
+    sampleCount += wordSamples.length;
+    timing.end = sampleCount / SAMPLE_RATE;
+    previousEnd = match.end;
+    previousWord = match;
 
-/** Warm the dictionary and the pronunciation hints before the first render. */
-export function preparePronunciationDictionary(): Promise<void> {
-  return preparePronunciation();
-}
+    if (sampleCount / SAMPLE_RATE > MAX_SYNTHESIS_SECONDS) {
+      throw new Error(`Text is too long for one render. Limit audio to about ${MAX_SYNTHESIS_SECONDS} seconds.`);
+    }
+  }
 
-/** Older name for `savePronunciationHint`, kept so existing callers do not break. */
-export async function savePronunciationSpelling(word: string, spelling: string): Promise<void> {
-  await savePronunciationHint(word, spelling);
+  if (matches.length) appendSilence(getPauseAfter(text.slice(previousEnd)) * 0.65);
+  if (!samples.length) appendSilence(0.1);
+  const raw = new Float32Array(sampleCount);
+  let offset = 0;
+  for (const part of samples) {
+    raw.set(part, offset);
+    offset += part.length;
+  }
+
+  const combined = synthesisMethod === 'cmu-arctic' ? processCmuVoice(raw, model) : raw;
+  const timingScale = raw.length ? combined.length / raw.length : 1;
+  for (const timing of wordTimings) {
+    timing.start *= timingScale;
+    timing.end *= timingScale;
+  }
+  if (combined.length / SAMPLE_RATE > MAX_SYNTHESIS_SECONDS) {
+    throw new Error(`Rendered audio exceeds ${MAX_SYNTHESIS_SECONDS} seconds.`);
+  }
+  const audioUrl = URL.createObjectURL(writeWav(combined, model.volume));
+  return { audioUrl, wordTimings, duration: combined.length / SAMPLE_RATE };
 }

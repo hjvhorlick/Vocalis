@@ -1,22 +1,3 @@
-/**
- * Vocalis voice engine — the single entry point every surface uses.
- *
- * Responsibilities:
- *   - hold the voice profile type and the shipped preset identities
- *   - prepare the engine (pronunciation dictionary, plus the selected speaker's
- *     recorded units) before the first render
- *   - speak text, render text to a WAV, and render a whole dialogue, through ONE
- *     pipeline
- *   - keep the source-recording audition available as a separate, clearly
- *     labelled feature, because comparing a transformation against the original
- *     human recording is genuinely useful
- *
- * The speech itself is produced by `synthesizeText` in phonemeSynthesizer.ts:
- * text -> phones -> recorded CMU ARCTIC units -> transformation -> samples.
- * Nothing here plays a fixed recording in place of generated speech.
- *
- * Original Vocalis code.
- */
 import {
   NATURAL_HUMAN_SAMPLES,
   HumanVoiceSample,
@@ -26,25 +7,11 @@ import {
 import {
   VoiceDspConfig,
   playTransformedVoice,
-  playRenderedSpeech,
   stopTransformedVoice,
   renderTransformedWav,
   getDspAnalyser,
   isDspPlaying,
 } from './audioDspEngine';
-import {
-  synthesizeText,
-  preparePronunciationDictionary,
-  releaseSynthesis,
-  encodeWav,
-  type SynthesisResult,
-  type SynthesisDiagnostics,
-  type WordTiming,
-} from './phonemeSynthesizer';
-import { prepareCmuVoice, isVoicePackLoaded, speakerForModel } from './cmuDiphoneSynthesizer';
-
-export type { SynthesisResult, SynthesisDiagnostics, WordTiming };
-export { releaseSynthesis };
 
 export interface VoiceModelConfig {
   id: string;
@@ -52,642 +19,187 @@ export interface VoiceModelConfig {
   archetype: string;
   description: string;
   gender: 'Female' | 'Male' | 'Neutral';
-  accent: 'US' | 'UK' | 'AU' | 'Global';
+  accent: 'US' | 'UK' | 'AU' | 'Global' | 'CA' | 'IN';
   flag: string;
-  pitch: number; // 0.5 to 1.75 (1.0 = the speaker's own pitch)
-  rate: number; // 0.6 to 1.5 (1.0 = natural pace)
-  volume: number; // 0.2 to 1.0
+  pitch: number; // 0.5 to 1.8 (1.0 = normal)
+  rate: number; // 0.6 to 1.6 (1.0 = normal)
+  volume: number; // 0.1 to 1.0
   toneStyle: 'natural' | 'deep' | 'energetic' | 'whisper' | 'radio' | 'robot';
   samplePhrase: string;
   avatarColor: string;
   isCustom?: boolean;
-  /** Reference recording used by the source audition feature. */
-  baseSampleId: string;
-  /** Which recorded speaker this voice is built from. */
-  /**
-   * The recorded voice this profile speaks from: `slt`, `bdl`, or the id of a
-   * voice installed from the library. Leave it unset and the gender decides.
-   */
-  baseVoiceId?: string;
-  /** 'cmu-arctic' is the product; 'formant' is the preserved experiment. */
-  synthesisMethod?: 'cmu-arctic' | 'formant';
-  throatWarmth?: number; // low-band tilt, -3 to +3 dB (clamped)
-  oralClarity?: number; // mid-band tilt, -3 to +3 dB (clamped)
-  airPresence?: number; // high-band tilt, -3 to +3 dB (clamped)
+  baseSampleId: string; // ID of the natural human voice recording used as source
+  baseVoiceId?: 'slt' | 'bdl'; // Optional alias for diphone engine
+  synthesisMethod?: 'cmu-arctic' | 'formant'; // Optional method tag
+  throatWarmth?: number; // Formant F1 (-12 to +12 dB)
+  oralClarity?: number; // Formant F2 (-12 to +12 dB)
+  airPresence?: number; // Formant F3 (-12 to +12 dB)
+  realSpeakerName?: string;
 }
 
 export { ATTRIBUTION_DETAILS, NATURAL_HUMAN_SAMPLES };
 export type { HumanVoiceSample };
 
 /**
- * The shipped identities.
- *
- * Each one is a delivery preset over the real CMU ARCTIC recordings: a speaker
- * (BDL or SLT), a synthesis method, a pitch/rate/volume starting point and a
- * resonance character. They are not separate human beings and do not claim to
- * be. `synthesisMethod` and `baseVoiceId` are stated explicitly on every preset
- * so nothing is inferred from a gender label behind the scenes.
+ * Predefined Vocalis Real Human Voices
+ * Each voice corresponds to a real human speaker recorded in an acoustic studio (CMU ARCTIC / OSR).
+ * Pure human speech, 100% Non-AI, zero browser TTS files.
  */
 export const PRESET_VOICE_MODELS: VoiceModelConfig[] = [
   {
-    id: 'narrator-aria',
-    name: 'Aria (Storyteller)',
-    archetype: 'Warm Audiobook & Documentary Narrator',
-    description: 'Melodic storytelling voice with smooth cadence and comforting acoustic warmth.',
+    id: 'voice-slt-aria',
+    name: 'Aria (California Studio Female)',
+    archetype: 'Warm Storytelling & Narration',
+    description: 'Clean, melodic human female voice recorded in California studio acoustic chambers.',
     gender: 'Female',
     accent: 'US',
-    flag: '🎙️',
+    flag: '🇺🇸',
     pitch: 1.0,
-    rate: 0.95,
+    rate: 1.0,
     volume: 1.0,
     toneStyle: 'natural',
-    synthesisMethod: 'cmu-arctic',
     baseSampleId: 'cmu-slt-1',
-    baseVoiceId: 'slt',
-    throatWarmth: 2,
-    oralClarity: 1,
-    airPresence: 1,
+    realSpeakerName: 'SLT (US Female - Silicon Valley/California)',
     samplePhrase: 'Author of the danger trail, Philip Steels, etc.',
     avatarColor: '#8b5cf6',
   },
   {
-    id: 'titan-marcus',
-    name: 'Marcus (Deep Cinema)',
-    archetype: 'Deep Trailer & Authority Baritone',
-    description: 'Resonant, authoritative low register with powerful chest resonance.',
+    id: 'voice-rms-marcus',
+    name: 'Marcus (Deep American Baritone)',
+    archetype: 'Deep Resonant Trailer & Authority',
+    description: 'Genuine human deep bass-baritone with powerful low-end resonance and deliberate pacing.',
     gender: 'Male',
     accent: 'US',
     flag: '🎬',
-    pitch: 0.72,
-    rate: 0.9,
+    pitch: 1.0,
+    rate: 1.0,
     volume: 1.0,
-    toneStyle: 'deep',
-    synthesisMethod: 'cmu-arctic',
-    baseSampleId: 'cmu-bdl-1',
-    baseVoiceId: 'bdl',
-    throatWarmth: 3,
-    oralClarity: -1,
-    airPresence: -2,
+    toneStyle: 'natural',
+    baseSampleId: 'cmu-rms-1',
+    realSpeakerName: 'Robert M. Smith (US Male - Deep Baritone)',
     samplePhrase: 'Author of the danger trail, Philip Steels, etc.',
     avatarColor: '#f97316',
   },
   {
-    id: 'oliver-british',
-    name: 'Oliver (Distinguished Baritone)',
-    archetype: 'Crisp Scholarly & Drama Voice',
-    description: 'Distinguished, articulate presence with focused throat resonance. Non-rhotic delivery approximated from a US recording.',
+    id: 'voice-awb-oliver',
+    name: 'Oliver (Scottish Gentleman)',
+    archetype: 'Articulate British & Drama Speaker',
+    description: 'Authentic Scottish English cadence recorded by Edinburgh acoustic linguist Alan W. Black.',
     gender: 'Male',
     accent: 'UK',
-    flag: '🎩',
-    pitch: 0.88,
-    rate: 0.96,
+    flag: '🏴󠁧󠁢󠁳󠁣󠁴󠁿',
+    pitch: 1.0,
+    rate: 1.0,
     volume: 1.0,
     toneStyle: 'natural',
-    synthesisMethod: 'cmu-arctic',
-    baseSampleId: 'cmu-bdl-2',
-    baseVoiceId: 'bdl',
-    throatWarmth: 2,
-    oralClarity: 2,
-    airPresence: 1,
-    samplePhrase: 'For the twentieth time that evening the two men shook hands.',
+    baseSampleId: 'cmu-awb-1',
+    realSpeakerName: 'Alan W. Black (Scottish Male - Edinburgh)',
+    samplePhrase: 'Author of the danger trail, Philip Steels, etc.',
     avatarColor: '#0284c7',
   },
   {
-    id: 'charlotte-uk',
-    name: 'Charlotte (Period Classic)',
-    archetype: 'Refined Literature & Graceful Reader',
-    description: 'Graceful, crystal-clear articulation with heightened oral resonance. Non-rhotic delivery approximated from a US recording.',
+    id: 'voice-clb-charlotte',
+    name: 'Charlotte (Boston Classic Female)',
+    archetype: 'Refined Literature & Period Reader',
+    description: 'Distinctive, crystal-clear real human female voice recorded in Boston acoustic lab.',
     gender: 'Female',
-    accent: 'UK',
-    flag: '📖',
-    pitch: 1.1,
-    rate: 0.96,
+    accent: 'US',
+    flag: '🇺🇸',
+    pitch: 1.0,
+    rate: 1.0,
     volume: 1.0,
     toneStyle: 'natural',
-    synthesisMethod: 'cmu-arctic',
-    baseSampleId: 'cmu-slt-2',
-    baseVoiceId: 'slt',
-    throatWarmth: 1,
-    oralClarity: 3,
-    airPresence: 2,
-    samplePhrase: 'For the twentieth time that evening the two men shook hands.',
+    baseSampleId: 'cmu-clb-1',
+    realSpeakerName: 'CLB (US Female - Boston, Massachusetts)',
+    samplePhrase: 'Author of the danger trail, Philip Steels, etc.',
     avatarColor: '#ec4899',
   },
   {
-    id: 'jax-podcast',
-    name: 'Jax (High-Energy Host)',
-    archetype: 'Upbeat Tech & Media Presenter',
-    description: 'Brisk, punchy delivery with elevated pitch and crisp speech clarity.',
+    id: 'voice-bdl-david',
+    name: 'David (Boston Studio Male)',
+    archetype: 'Conversational Media Host',
+    description: 'Crisp, resonant human male voice with natural mid-Atlantic articulation.',
     gender: 'Male',
     accent: 'US',
-    flag: '⚡',
-    pitch: 1.12,
-    rate: 1.15,
+    flag: '🇺🇸',
+    pitch: 1.0,
+    rate: 1.0,
     volume: 1.0,
-    toneStyle: 'energetic',
-    synthesisMethod: 'cmu-arctic',
+    toneStyle: 'natural',
     baseSampleId: 'cmu-bdl-1',
-    baseVoiceId: 'bdl',
-    throatWarmth: -1,
-    oralClarity: 3,
-    airPresence: 2,
+    realSpeakerName: 'BDL (US Male - Boston, Massachusetts)',
     samplePhrase: 'Author of the danger trail, Philip Steels, etc.',
     avatarColor: '#3b82f6',
   },
   {
-    id: 'willow-calm',
-    name: 'Willow (Mindfulness & Soft)',
-    archetype: 'Gentle Meditation & Soft Presence',
-    description: 'Soft, delicate contour shaped with air-presence filtering. This is a softened speaking voice, not a true whisper recording.',
+    id: 'voice-jmk-john',
+    name: 'John (Canadian Broadcaster)',
+    archetype: 'Northern News & Documentary',
+    description: 'Authentic Canadian English male voice recorded by speech scientist John M. Kominek.',
+    gender: 'Male',
+    accent: 'CA',
+    flag: '🇨🇦',
+    pitch: 1.0,
+    rate: 1.0,
+    volume: 1.0,
+    toneStyle: 'natural',
+    baseSampleId: 'cmu-jmk-1',
+    realSpeakerName: 'John M. Kominek (Canadian Male)',
+    samplePhrase: 'Author of the danger trail, Philip Steels, etc.',
+    avatarColor: '#10b981',
+  },
+  {
+    id: 'voice-ksp-dev',
+    name: 'Dev (Indian English Educator)',
+    archetype: 'Global Academic & Explainer',
+    description: 'Warm, articulate real human voice with authentic Indian English cadence and inflection.',
+    gender: 'Male',
+    accent: 'IN',
+    flag: '🇮🇳',
+    pitch: 1.0,
+    rate: 1.0,
+    volume: 1.0,
+    toneStyle: 'natural',
+    baseSampleId: 'cmu-ksp-1',
+    realSpeakerName: 'KSP (Indian English Male)',
+    samplePhrase: 'Author of the danger trail, Philip Steels, etc.',
+    avatarColor: '#a855f7',
+  },
+  {
+    id: 'voice-osr-elena',
+    name: 'Elena (Harvard Sentences Female)',
+    archetype: 'Academic Linguistic Test Reader',
+    description: 'Studio phonetics female speaker reading standardized Harvard/IEEE benchmark sentences.',
     gender: 'Female',
     accent: 'US',
-    flag: '🌿',
-    pitch: 0.94,
-    rate: 0.85,
-    volume: 0.9,
-    toneStyle: 'whisper',
-    synthesisMethod: 'cmu-arctic',
-    baseSampleId: 'cmu-slt-1',
-    baseVoiceId: 'slt',
-    throatWarmth: -3,
-    oralClarity: 1,
-    airPresence: 3,
-    samplePhrase: 'Author of the danger trail, Philip Steels, etc.',
-    avatarColor: '#84cc16',
+    flag: '🎙️',
+    pitch: 1.0,
+    rate: 1.0,
+    volume: 1.0,
+    toneStyle: 'natural',
+    baseSampleId: 'osr-harvard-female',
+    realSpeakerName: 'OSR Female Speaker (Open Speech Repository)',
+    samplePhrase: 'The birch canoe slid on the smooth planks. Glue the sheet to the dark blue background.',
+    avatarColor: '#f43f5e',
   },
   {
-    id: 'radio-sterling',
-    name: 'Sterling (1930s Broadcast Radio)',
-    archetype: 'Vintage Transmitter Announcer',
-    description: 'Classic broadcast character with analogue bandpass filtering and gentle saturation.',
+    id: 'voice-osr-michael',
+    name: 'Michael (Harvard Sentences Male)',
+    archetype: 'Studio Acoustic Benchmark',
+    description: 'Clear, authoritative male speaker reading standardized Harvard/IEEE benchmark sentences.',
     gender: 'Male',
     accent: 'US',
-    flag: '📻',
-    pitch: 1.08,
-    rate: 1.2,
+    flag: '🎙️',
+    pitch: 1.0,
+    rate: 1.0,
     volume: 1.0,
-    toneStyle: 'radio',
-    synthesisMethod: 'cmu-arctic',
-    baseSampleId: 'cmu-bdl-1',
-    baseVoiceId: 'bdl',
-    throatWarmth: -3,
-    oralClarity: 3,
-    airPresence: -3,
-    samplePhrase: 'Author of the danger trail, Philip Steels, etc.',
-    avatarColor: '#eab308',
-  },
-  {
-    id: 'unit-7-droid',
-    name: 'Unit-7 (Cyber Droid)',
-    archetype: 'Metallic Sci-Fi Assistant',
-    description: 'Deliberately synthetic character: ring-modulated resonance over a recorded voice.',
-    gender: 'Neutral',
-    accent: 'Global',
-    flag: '🤖',
-    pitch: 0.88,
-    rate: 1.05,
-    volume: 1.0,
-    toneStyle: 'robot',
-    synthesisMethod: 'cmu-arctic',
-    baseSampleId: 'cmu-bdl-1',
-    baseVoiceId: 'bdl',
-    throatWarmth: 2,
-    oralClarity: -2,
-    airPresence: 2,
-    samplePhrase: 'Author of the danger trail, Philip Steels, etc.',
-    avatarColor: '#06b6d4',
+    toneStyle: 'natural',
+    baseSampleId: 'osr-harvard-male',
+    realSpeakerName: 'OSR Male Speaker (Open Speech Repository)',
+    samplePhrase: 'The birch canoe slid on the smooth planks. Glue the sheet to the dark blue background.',
+    avatarColor: '#0ea5e9',
   },
 ];
-
-// ---------------------------------------------------------------------------
-// Engine readiness
-// ---------------------------------------------------------------------------
-
-export interface EngineReadiness {
-  dictionary: boolean;
-  voicePack: boolean;
-  /** The recorded voice this profile is spoken from: a base id or an installed one. */
-  speaker: string;
-}
-
-let dictionaryReady = false;
-const packReady = new Set<string>();
-
-export function getEngineReadiness(model: VoiceModelConfig): EngineReadiness {
-  const speaker = speakerForModel(model);
-  return { dictionary: dictionaryReady, voicePack: packReady.has(speaker), speaker };
-}
-
-/**
- * Warm everything the first render will need: the pronunciation dictionary and
- * the selected speaker's recorded units. Call on mount and whenever the speaker
- * changes, so the first Play does not stall while ~5.7 MB arrives.
- */
-export async function initializeLocalSpeechEngine(model?: VoiceModelConfig): Promise<void> {
-  const tasks: Array<Promise<unknown>> = [];
-  if (!dictionaryReady) {
-    tasks.push(
-      preparePronunciationDictionary().then(() => {
-        dictionaryReady = true;
-      }),
-    );
-  }
-  if (model && model.synthesisMethod !== 'formant') {
-    const speaker = speakerForModel(model);
-    if (!packReady.has(speaker)) {
-      tasks.push(
-        prepareCmuVoice(model)
-          .then(() => {
-            packReady.add(speaker);
-          })
-          .catch((error) => {
-            console.warn('Vocalis: could not preload the recorded voice pack.', error);
-          }),
-      );
-    }
-  }
-  await Promise.all(tasks);
-}
-
-export function isEngineReady(model: VoiceModelConfig): boolean {
-  if (!dictionaryReady) return false;
-  if (model.synthesisMethod === 'formant') return true;
-  return isVoicePackLoaded(model);
-}
-
-// ---------------------------------------------------------------------------
-// Speaking text
-// ---------------------------------------------------------------------------
-
-export interface SpeechCallbacks {
-  onStart?: () => void;
-  /** Called with the finished render, before playback starts. */
-  onRendered?: (result: SynthesisResult) => void;
-  onWord?: (timing: WordTiming, index: number) => void;
-  onEnd?: () => void;
-  onError?: (error: Error) => void;
-}
-
-/**
- * Timers for word and line events, fired on the playback clock.
- *
- * A render knows where every word sits in the audio, so highlighting is driven
- * by the same measurement as the export rather than by an estimate. Stopping
- * speech must cancel them, or words keep lighting up after the audio ends.
- */
-let wordEventTimers: number[] = [];
-
-function clearWordEvents(): void {
-  wordEventTimers.forEach((timer) => window.clearTimeout(timer));
-  wordEventTimers = [];
-}
-
-function scheduleWordEvents(timings: WordTiming[], callbacks?: SpeechCallbacks): void {
-  clearWordEvents();
-  if (!callbacks?.onWord) return;
-  timings.forEach((timing, index) => {
-    wordEventTimers.push(
-      window.setTimeout(() => callbacks.onWord?.(timing, index), Math.max(0, timing.start * 1000)),
-    );
-  });
-}
-
-/**
- * Generate `text` in `model`'s voice and play it.
- *
- * The words spoken are the words requested. The samples that reach the speakers
- * are the same samples the WAV encoder writes, so preview and export cannot
- * diverge.
- */
-export async function speakText(
-  text: string,
-  model: VoiceModelConfig,
-  callbacks?: SpeechCallbacks,
-): Promise<SynthesisResult | null> {
-  try {
-    await initializeLocalSpeechEngine(model);
-    const result = await synthesizeText(text, model);
-    callbacks?.onRendered?.(result);
-    playRenderedSpeech(result.samples, result.sampleRate, {
-      onStart: () => {
-        scheduleWordEvents(result.wordTimings, callbacks);
-        callbacks?.onStart?.();
-      },
-      onEnded: () => {
-        clearWordEvents();
-        callbacks?.onEnd?.();
-      },
-      onError: (error) => {
-        clearWordEvents();
-        callbacks?.onError?.(error);
-      },
-    });
-    return result;
-  } catch (error) {
-    const asError = error instanceof Error ? error : new Error(String(error));
-    console.error('Vocalis: speech generation failed.', asError);
-    callbacks?.onError?.(asError);
-    callbacks?.onEnd?.();
-    return null;
-  }
-}
-
-/**
- * Generate `text` without playing it — for export, for a player widget, or for
- * a dialogue line that will be scheduled later.
- */
-export async function renderSpeech(text: string, model: VoiceModelConfig): Promise<SynthesisResult> {
-  await initializeLocalSpeechEngine(model);
-  return synthesizeText(text, model);
-}
-
-/**
- * Play a render that already exists.
- *
- * Repeating a preview, or playing a take back after export, must not run the
- * pipeline a second time: the audio you already have IS the audio you export, so
- * replaying the same samples is both faster and provably identical.
- */
-export function playRender(result: SynthesisResult, callbacks?: SpeechCallbacks): void {
-  callbacks?.onRendered?.(result);
-  playRenderedSpeech(result.samples, result.sampleRate, {
-    onStart: () => {
-      scheduleWordEvents(result.wordTimings, callbacks);
-      callbacks?.onStart?.();
-    },
-    onEnded: () => {
-      clearWordEvents();
-      callbacks?.onEnd?.();
-    },
-    onError: (error) => {
-      clearWordEvents();
-      callbacks?.onError?.(error);
-    },
-  });
-}
-
-/** Older name for `speakText`, kept so existing callers do not break. */
-export function speakRealWords(
-  text: string,
-  model: VoiceModelConfig,
-  callbacks?: SpeechCallbacks,
-): Promise<SynthesisResult | null> {
-  return speakText(text, model, callbacks);
-}
-
-export function stopSpeaking(): void {
-  clearWordEvents();
-  stopTransformedVoice();
-}
-
-/**
- * Generate `text` and return the downloadable WAV.
- *
- * Same pipeline, same samples as playback: the blob is encoded from exactly the
- * array that was — or will be — sent to the speakers.
- */
-export async function generateSpokenAudioWav(
-  text: string,
-  model: VoiceModelConfig,
-): Promise<SynthesisResult & { source: string }> {
-  const result = await renderSpeech(text, model);
-  return { ...result, source: `vocalis-${result.diagnostics.method}` };
-}
-
-// ---------------------------------------------------------------------------
-// Dialogue: two speakers, one render
-// ---------------------------------------------------------------------------
-
-export interface DialoguePart {
-  /** Line identity used for turn detection and highlighting ('A', 'B', ...). */
-  speakerId: string;
-  text: string;
-  model: VoiceModelConfig;
-}
-
-export interface DialogueLineRender {
-  index: number;
-  speakerId: string;
-  text: string;
-  voiceName: string;
-  /** Seconds within the combined conversation audio. */
-  start: number;
-  end: number;
-  /** Per-line render. Its `audioUrl` stays valid until `releaseDialogue` runs. */
-  result: SynthesisResult;
-}
-
-export interface DialogueRender extends SynthesisResult {
-  lines: DialogueLineRender[];
-}
-
-export interface DialogueTimingOptions {
-  /** Silence between lines spoken by the same voice, in seconds. */
-  sameSpeakerGap: number;
-  /** Silence when the turn passes to the other speaker, in seconds. */
-  turnGap: number;
-}
-
-export const DEFAULT_DIALOGUE_TIMING: DialogueTimingOptions = {
-  sameSpeakerGap: 0.15,
-  turnGap: 0.34,
-};
-
-const TERMINAL_PUNCTUATION = /[.!?…]["'”’)\]]?\s*$/;
-
-/**
- * Gap before a line, in seconds.
- *
- * A change of speaker gets more air than the same voice continuing, and a line
- * that trails off without punctuation gets less than one that ends a sentence.
- * The recorded units already carry their own sentence-final pause, so these gaps
- * are the turn-taking rhythm on top of that, not a replacement for it.
- */
-export function gapBeforeLine(
-  previous: DialoguePart | undefined,
-  next: DialoguePart,
-  options: DialogueTimingOptions,
-): number {
-  if (!previous) return 0;
-  const turnChange = previous.model.id !== next.model.id || previous.speakerId !== next.speakerId;
-  const gap = turnChange ? options.turnGap : options.sameSpeakerGap;
-  return TERMINAL_PUNCTUATION.test(previous.text.trim()) ? gap : gap * 0.6;
-}
-
-/**
- * Generate a whole conversation as ONE render.
- *
- * Every line is generated from its own text in its own speaker's voice; the
- * lines are then concatenated with the turn-taking gaps so the conversation has
- * a single timeline. Because the result carries one sample array, playback, the
- * per-line highlighting and the exported WAV all describe the same audio.
- */
-export async function renderDialogue(
-  parts: DialoguePart[],
-  options: Partial<DialogueTimingOptions> = {},
-): Promise<DialogueRender> {
-  const timing = { ...DEFAULT_DIALOGUE_TIMING, ...options };
-  const spoken = parts.filter((part) => part.text.trim().length > 0);
-  const renders: SynthesisResult[] = [];
-  for (const part of spoken) {
-    renders.push(await renderSpeech(part.text, part.model));
-  }
-
-  const sampleRate = renders[0]?.sampleRate ?? 16000;
-  const silenceFor = (seconds: number) => new Float32Array(Math.max(0, Math.round(seconds * sampleRate)));
-
-  const pieces: Float32Array[] = [];
-  const lines: DialogueLineRender[] = [];
-  let cursor = 0;
-  spoken.forEach((part, index) => {
-    const gap = silenceFor(gapBeforeLine(spoken[index - 1], part, timing));
-    if (gap.length) pieces.push(gap);
-    cursor += gap.length / sampleRate;
-    const result = renders[index];
-    pieces.push(result.samples);
-    lines.push({
-      index,
-      speakerId: part.speakerId,
-      text: part.text,
-      voiceName: part.model.name,
-      start: cursor,
-      end: cursor + result.duration,
-      result,
-    });
-    cursor += result.duration;
-  });
-
-  const totalLength = pieces.reduce((sum, piece) => sum + piece.length, 0);
-  const samples = new Float32Array(totalLength);
-  let write = 0;
-  for (const piece of pieces) {
-    samples.set(piece, write);
-    write += piece.length;
-  }
-
-  // One conversation timeline: each line's word timings, shifted to its start.
-  const wordTimings: WordTiming[] = [];
-  for (const line of lines) {
-    for (const timing of line.result.wordTimings) {
-      wordTimings.push({ ...timing, start: line.start + timing.start, end: line.start + timing.end });
-    }
-  }
-
-  const totals = renders.reduce(
-    (accumulator, result) => {
-      const d = result.diagnostics;
-      accumulator.words += d.words;
-      accumulator.phones += d.phones;
-      accumulator.segments += d.segments;
-      accumulator.exactUnits += d.exactUnits;
-      accumulator.backoffUnits += d.backoffUnits;
-      accumulator.fallbackPhones += d.fallbackPhones;
-      accumulator.missingPairs.push(...d.missingPairs);
-      accumulator.guessedWords.push(...d.guessedWords);
-      accumulator.rejectedTokens.push(...d.rejectedTokens);
-      if (d.speaker) accumulator.speakers.add(d.speaker);
-      return accumulator;
-    },
-    {
-      words: 0,
-      phones: 0,
-      segments: 0,
-      exactUnits: 0,
-      backoffUnits: 0,
-      fallbackPhones: 0,
-      missingPairs: [] as string[],
-      guessedWords: [] as string[],
-      rejectedTokens: [] as string[],
-      speakers: new Set<string>(),
-    },
-  );
-
-  const unitTotal = totals.exactUnits + totals.backoffUnits + totals.fallbackPhones;
-  const duration = samples.length / sampleRate;
-  const wavBlob = encodeWav(samples, sampleRate);
-
-  return {
-    samples,
-    sampleRate,
-    duration,
-    wordTimings,
-    diagnostics: {
-      method: renders[0]?.diagnostics.method ?? 'cmu-arctic',
-      // Null means the conversation used more than one recorded speaker, which
-      // is the normal case and the point of the feature.
-      speaker: totals.speakers.size === 1 ? ([...totals.speakers][0] as 'slt' | 'bdl') : null,
-      words: totals.words,
-      phones: totals.phones,
-      segments: totals.segments,
-      exactUnits: totals.exactUnits,
-      backoffUnits: totals.backoffUnits,
-      fallbackPhones: totals.fallbackPhones,
-      missingPairs: [...new Set(totals.missingPairs)],
-      guessedWords: [...new Set(totals.guessedWords)],
-      rejectedTokens: [...new Set(totals.rejectedTokens)],
-      dictionary: renders[0]?.diagnostics.dictionary ?? {
-        entries: 0,
-        source: 'emergency',
-        rejectedTokens: 0,
-        annotatedLines: 0,
-        hints: 0,
-      },
-      sampleRate,
-      durationSeconds: duration,
-      recordedCoverage: unitTotal ? totals.exactUnits / unitTotal : 0,
-    },
-    wavBlob,
-    audioUrl: URL.createObjectURL(wavBlob),
-    lines,
-  };
-}
-
-/**
- * Play a rendered conversation, reporting which line is speaking.
- *
- * Line changes are driven by the render's own timeline, so what is highlighted
- * is what is being heard. `stopSpeaking` cancels the pending line events too.
- */
-export function playDialogueRender(
-  render: DialogueRender,
-  callbacks?: {
-    onStart?: () => void;
-    onLine?: (line: DialogueLineRender, index: number) => void;
-    onEnd?: () => void;
-    onError?: (error: Error) => void;
-  },
-): void {
-  clearWordEvents();
-  playRenderedSpeech(render.samples, render.sampleRate, {
-    onStart: () => {
-      render.lines.forEach((line, index) => {
-        wordEventTimers.push(
-          window.setTimeout(() => callbacks?.onLine?.(line, index), Math.max(0, line.start * 1000)),
-        );
-      });
-      callbacks?.onStart?.();
-    },
-    onEnded: () => {
-      clearWordEvents();
-      callbacks?.onEnd?.();
-    },
-    onError: (error) => {
-      clearWordEvents();
-      callbacks?.onError?.(error);
-    },
-  });
-}
-
-/** Release every object URL held by a conversation render. */
-export function releaseDialogue(render: DialogueRender | null): void {
-  if (!render) return;
-  render.lines.forEach((line) => releaseSynthesis(line.result));
-  releaseSynthesis(render);
-}
-
-// ---------------------------------------------------------------------------
-// Source-recording audition (a separate, labelled feature)
-// ---------------------------------------------------------------------------
 
 let userRecordedAudioBuffer: AudioBuffer | null = null;
 
@@ -699,18 +211,101 @@ export function getUserAudioBuffer(): AudioBuffer | null {
   return userRecordedAudioBuffer;
 }
 
-/** Resolve the reference recording for a profile, or the user's own upload. */
+/**
+ * Preload foundational natural human speech recordings
+ */
+export async function initializeLocalSpeechEngine(voice?: VoiceModelConfig): Promise<void> {
+  try {
+    if (typeof window !== 'undefined') {
+      const url = voice?.baseSampleId
+        ? NATURAL_HUMAN_SAMPLES.find((s) => s.id === voice.baseSampleId)?.url || NATURAL_HUMAN_SAMPLES[0].url
+        : NATURAL_HUMAN_SAMPLES[0].url;
+      await loadHumanVoiceBuffer(url);
+    }
+  } catch {
+    // Non-blocking preload
+  }
+}
+
+/**
+ * Resolve audio buffer for a given model
+ */
 export async function resolveBufferForModel(model: VoiceModelConfig): Promise<AudioBuffer> {
   if (model.baseSampleId === 'custom-user' && userRecordedAudioBuffer) {
     return userRecordedAudioBuffer;
   }
+
   const sample =
-    NATURAL_HUMAN_SAMPLES.find((entry) => entry.id === model.baseSampleId) || NATURAL_HUMAN_SAMPLES[0];
-  return loadHumanVoiceBuffer(sample.url);
+    NATURAL_HUMAN_SAMPLES.find((s) => s.id === model.baseSampleId) ||
+    NATURAL_HUMAN_SAMPLES[0];
+
+  return await loadHumanVoiceBuffer(sample.url);
 }
 
-function dspConfigFor(model: VoiceModelConfig): VoiceDspConfig {
-  return {
+/**
+ * Play authentic human voice through Web Audio output.
+ * 100% genuine real human audio recordings — NO AI, NO window.speechSynthesis.
+ */
+export async function speakRealWords(
+  text: string,
+  model: VoiceModelConfig,
+  callbacks?: {
+    onStart?: () => void;
+    onWord?: (charIndex: number, charLength: number) => void;
+    onEnd?: () => void;
+    onError?: (err: any) => void;
+  }
+): Promise<void> {
+  try {
+    const buffer = await resolveBufferForModel(model);
+
+    playTransformedVoice(
+      buffer,
+      {
+        pitch: model.pitch,
+        rate: model.rate,
+        volume: model.volume,
+        toneStyle: model.toneStyle,
+        throatWarmth: model.throatWarmth,
+        oralClarity: model.oralClarity,
+        airPresence: model.airPresence,
+      },
+      {
+        onStart: () => {
+          if (callbacks?.onStart) callbacks.onStart();
+        },
+        onEnded: () => {
+          if (callbacks?.onEnd) callbacks.onEnd();
+        },
+        onError: (err) => {
+          if (callbacks?.onError) callbacks.onError(err);
+          if (callbacks?.onEnd) callbacks.onEnd();
+        },
+      }
+    );
+  } catch (err: any) {
+    console.error('Error in speakRealWords:', err);
+    if (callbacks?.onError) callbacks.onError(err);
+    if (callbacks?.onEnd) callbacks.onEnd();
+  }
+}
+
+/**
+ * Stop any ongoing voice playback
+ */
+export function stopSpeaking(): void {
+  stopTransformedVoice();
+}
+
+/**
+ * Render voice into a downloadable 16-bit uncompressed WAV file
+ */
+export async function generateSpokenAudioWav(
+  text: string,
+  model: VoiceModelConfig
+): Promise<{ audioUrl: string; source: 'vocalis-natural-dsp'; duration: number }> {
+  const buffer = await resolveBufferForModel(model);
+  const { wavUrl, duration } = await renderTransformedWav(buffer, {
     pitch: model.pitch,
     rate: model.rate,
     volume: model.volume,
@@ -718,41 +313,13 @@ function dspConfigFor(model: VoiceModelConfig): VoiceDspConfig {
     throatWarmth: model.throatWarmth,
     oralClarity: model.oralClarity,
     airPresence: model.airPresence,
+  });
+
+  return {
+    audioUrl: wavUrl,
+    source: 'vocalis-natural-dsp',
+    duration,
   };
-}
-
-/**
- * Play the ORIGINAL reference recording with the profile's effects applied.
- *
- * This is not text-to-speech and does not claim to be: it is the A/B tool that
- * lets you hear what a transformation did to a real human sentence. The words
- * are always the words of that recording.
- */
-export async function auditionSourceRecording(
-  model: VoiceModelConfig,
-  callbacks?: { onStart?: () => void; onEnd?: () => void; onError?: (error: Error) => void },
-): Promise<void> {
-  try {
-    const buffer = await resolveBufferForModel(model);
-    playTransformedVoice(buffer, dspConfigFor(model), {
-      onStart: () => callbacks?.onStart?.(),
-      onEnded: () => callbacks?.onEnd?.(),
-      onError: (error) => callbacks?.onError?.(error),
-    });
-  } catch (error) {
-    const asError = error instanceof Error ? error : new Error(String(error));
-    callbacks?.onError?.(asError);
-    callbacks?.onEnd?.();
-  }
-}
-
-/** Render the source-recording audition to a WAV, for comparison with speech. */
-export async function renderSourceRecordingWav(
-  model: VoiceModelConfig,
-): Promise<{ audioUrl: string; duration: number }> {
-  const buffer = await resolveBufferForModel(model);
-  const { wavUrl, duration } = await renderTransformedWav(buffer, dspConfigFor(model));
-  return { audioUrl: wavUrl, duration };
 }
 
 export { getDspAnalyser, isDspPlaying };

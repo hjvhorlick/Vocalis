@@ -62,65 +62,9 @@ def unit_quality(samples: array.array[int], start: int, end: int, phone_a: str, 
     return -duration_score - max(0.0, math.log(1400 / max(1, rms))) * 0.12
 
 
-def find_label_dir(source: Path) -> Path | None:
-    """The directory holding the phone labels, wherever the distribution put it.
-
-    Most ARCTIC archives use `lab/`, but not all of them ship labels at all — the
-    clustergen distributions leave labelling to the build, and only carry
-    `wav/` and `etc/`. So look for a `lab` directory first, then for any directory
-    that actually contains `.lab` files, and report honestly when there is none.
-    """
-    conventional = source / "lab"
-    if conventional.is_dir() and any(conventional.glob("*.lab")):
-        return conventional
-    for candidate in sorted(source.rglob("*.lab")):
-        if candidate.parent.name.lower() in ("lab", "labels", "labelled", "labeled"):
-            return candidate.parent
-    for candidate in sorted(source.rglob("*.lab")):
-        return candidate.parent
-    return None
-
-
-def describe_archive(source: Path, wav_dir: Path) -> str:
-    """A short inventory, so a failure says what the archive actually contains."""
-    top = sorted(entry.name for entry in source.iterdir())[:12]
-    wavs = len(list(wav_dir.glob("*.wav"))) if wav_dir.is_dir() else 0
-    labs = len(list(source.rglob("*.lab")))
-    counters = {name: len(list(wav_dir.glob(f"*.{name}"))) for name in ("wav", "lab", "txt", "mcep")}
-    return (
-        f"top level: {', '.join(top)}; "
-        f"{wavs} wav, {labs} lab "
-        f"(wav/lab/txt/mcep = {counters['wav']}/{counters['lab']}/{counters['txt']}/{counters['mcep']})"
-    )
-
-
-def build_pack(
-    source: Path,
-    output: Path,
-    speaker_id: str,
-    display_name: str,
-    accent: str,
-    gender: str,
-    lab_dir_override: Path | None = None,
-) -> dict:
+def build_pack(source: Path, output: Path, speaker_id: str, display_name: str, accent: str, gender: str) -> dict:
     wav_dir = source / "wav"
-    if not wav_dir.is_dir():
-        # Some archives nest the waveforms one level down.
-        nested = sorted(path.parent for path in source.rglob("*.wav"))
-        if nested:
-            wav_dir = nested[0]
-    lab_dir = lab_dir_override or find_label_dir(source)
-    if lab_dir is not None and lab_dir_override is not None and not any(lab_dir.glob("*.lab")):
-        raise SystemExit(
-            f"{speaker_id}: --lab-dir {lab_dir} holds no .lab files, so there is nothing to cut. "
-            f"{describe_archive(source, wav_dir)}"
-        )
-    if lab_dir is None:
-        raise SystemExit(
-            f"{speaker_id}: this distribution has no phone labels (.lab) — {describe_archive(source, wav_dir)}.\n"
-            "  Vocalis cuts one slice per phone transition, so without labels there is nothing to cut. "
-            "This voice needs forced alignment before it can be used; it is reported, not guessed at."
-        )
+    lab_dir = source / "lab"
     output.mkdir(parents=True, exist_ok=True)
     candidates: dict[str, tuple[float, array.array[int]]] = {}
     seen_phones: set[str] = set()
@@ -188,15 +132,6 @@ def build_pack(
     source_license = source / "COPYING"
     if source_license.exists():
         (output / "LICENSE.txt").write_text(source_license.read_text(encoding="utf-8", errors="replace"), encoding="utf-8")
-    if not index:
-        first_lab = sorted(lab_dir.glob("*.lab"))[:1]
-        first_wav = sorted(wav_dir.glob("*.wav"))[:1]
-        raise SystemExit(
-            f"{speaker_id}: the labels and the waveforms do not line up — "
-            f"{len(list(lab_dir.glob('*.lab')))} lab files, {len(list(wav_dir.glob('*.wav')))} wav files. "
-            f"e.g. {first_lab[0].name if first_lab else 'no lab'} against "
-            f"{first_wav[0].name if first_wav else 'no wav'}. {describe_archive(source, wav_dir)}"
-        )
     print(f"{speaker_id}: {len(index)} diphones, {len(raw):,} bytes")
     return manifest
 
@@ -209,17 +144,8 @@ def main() -> None:
     parser.add_argument("--display-name", required=True)
     parser.add_argument("--accent", required=True)
     parser.add_argument("--gender", required=True)
-    parser.add_argument("--lab-dir", type=Path, default=None, help="Override the label directory")
     args = parser.parse_args()
-    build_pack(
-        args.source,
-        args.output,
-        args.speaker_id,
-        args.display_name,
-        args.accent,
-        args.gender,
-        args.lab_dir,
-    )
+    build_pack(args.source, args.output, args.speaker_id, args.display_name, args.accent, args.gender)
 
 
 if __name__ == "__main__":
