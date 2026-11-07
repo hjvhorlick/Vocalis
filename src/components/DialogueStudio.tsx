@@ -2,6 +2,10 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   VoiceModelConfig,
   speakText,
+  produceVoiceTake,
+  playRender,
+  textMatchesRecording,
+  voiceNeedsGeneration,
   stopSpeaking,
   renderDialogue,
   playDialogueRender,
@@ -226,7 +230,29 @@ export const DialogueStudio: React.FC<DialogueStudioProps> = ({ models }) => {
     stopSpeaking();
     setPlayingLineId(line.id);
     setLineErrors((previous) => ({ ...previous, [line.id]: '' }));
-    await speakText(line.text, voiceFor(line.speakerId), {
+    const model = voiceFor(line.speakerId);
+    // Same rule as the studio: a voice that is the recording, speaking its own
+    // sentence, plays the file. Anything else builds the words.
+    if (!voiceNeedsGeneration(model) && textMatchesRecording(model, line.text)) {
+      try {
+        const { result } = await produceVoiceTake(model, line.text);
+        playRender(result, {
+          onEnd: () => setPlayingLineId(null),
+          onError: (error) => {
+            setPlayingLineId(null);
+            setLineErrors((previous) => ({ ...previous, [line.id]: error.message }));
+          },
+        });
+      } catch (error) {
+        setPlayingLineId(null);
+        setLineErrors((previous) => ({
+          ...previous,
+          [line.id]: error instanceof Error ? error.message : String(error),
+        }));
+      }
+      return;
+    }
+    await speakText(line.text, model, {
       onEnd: () => setPlayingLineId(null),
       onError: (error) => {
         setPlayingLineId(null);

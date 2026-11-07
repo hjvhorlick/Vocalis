@@ -1160,6 +1160,27 @@ export function textMatchesRecording(model: VoiceModelConfig, text: string): boo
   return spoken.length > 0 && spoken === normalise(recordingFor(model).transcript);
 }
 
+/**
+ * What the studio's script should say after the selected voice changes.
+ *
+ * Three cases, and the middle one is the one that was wrong:
+ *
+ *   - the script is still exactly what the previous voice's recording says, so it was
+ *     never edited: move it to the new voice's sentence. This is what makes the first
+ *     play button play the file instead of rebuilding words that were never asked for.
+ *   - the script was edited: keep it. Nobody's own words get overwritten by a click.
+ *   - there was no previous voice: show the new voice's sentence.
+ */
+export function scriptForVoice(
+  previousModel: VoiceModelConfig | undefined,
+  currentScript: string,
+  nextModel: VoiceModelConfig,
+): string {
+  if (!previousModel) return nextModel.samplePhrase;
+  const untouched = textMatchesRecording(previousModel, currentScript);
+  return untouched ? nextModel.samplePhrase : currentScript;
+}
+
 /** The recording a profile is built from: its id, sentence and duration. */
 export function recordingFor(
   model: VoiceModelConfig,

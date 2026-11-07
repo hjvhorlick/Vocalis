@@ -12,6 +12,7 @@ import {
   getUserAudioBuffer,
   releaseSynthesis,
   produceVoiceTake,
+  scriptForVoice,
   textMatchesRecording,
   voiceNeedsGeneration,
   type SynthesisResult,
@@ -79,6 +80,10 @@ export const SpeechStudio: React.FC<SpeechStudioProps> = ({
   // The words to speak. This is the studio's real input: what is typed here is
   // what gets generated.
   const [script, setScript] = useState<string>(activeModel.samplePhrase);
+  // Which voice the script currently belongs to. Used to tell "the text changed
+  // because you typed" apart from "the text changed because you picked another
+  // voice", because only the second one may be updated automatically.
+  const [scriptVoiceId, setScriptVoiceId] = useState<string>(activeModel.id);
 
   // Generated-speech playback
   const [isSpeaking, setIsSpeaking] = useState(false);
@@ -124,6 +129,16 @@ export const SpeechStudio: React.FC<SpeechStudioProps> = ({
 
   const wordCount = useMemo(() => script.trim().split(/\s+/).filter(Boolean).length, [script]);
 
+  /**
+   * Will the first button play the file, or build the words?
+   *
+   * One place decides, and the button label, its tooltip and the hint under the box
+   * all read from it, so the interface cannot claim one thing while doing another.
+   */
+  const willPlayFile =
+    !voiceNeedsGeneration(activeModel) && textMatchesRecording(activeModel, script);
+  const voiceSentence = activeModel.samplePhrase;
+
   const applyResult = useCallback(
     (result: SynthesisResult, key: string) => {
       // A sound take has no phones and no segments; a speech take always has phones.
@@ -145,6 +160,27 @@ export const SpeechStudio: React.FC<SpeechStudioProps> = ({
     },
     [script],
   );
+
+  /**
+   * Follow the voice you selected.
+   *
+   * The script starts as the voice's own sentence, but it was only ever set once, at
+   * mount, from whichever voice happened to be first. Selecting another recording
+   * left the previous voice's sentence in the box - and since the box no longer said
+   * what that voice's file says, the first button had to rebuild the words instead of
+   * playing the file. That is the difference between the two play buttons.
+   *
+   * The rule: if the script is still untouched (it is exactly what the previous
+   * voice's recording says), move it to the new voice's sentence. If it has been
+   * typed into, leave it alone - a person's own words are not to be overwritten.
+   */
+  useEffect(() => {
+    if (activeModel.id === scriptVoiceId) return;
+    const previousModel = models.find((m) => m.id === scriptVoiceId);
+    setScript(scriptForVoice(previousModel, script, activeModel));
+    setScriptVoiceId(activeModel.id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeModel.id]);
 
   // Stop cleanly if the studio unmounts mid-sentence.
   useEffect(
@@ -716,10 +752,14 @@ export const SpeechStudio: React.FC<SpeechStudioProps> = ({
               )}
               <button
                 onClick={() => setScript(activeSample.transcript)}
-                className="text-[10px] text-slate-400 hover:text-slate-200 px-2 py-1 rounded-lg bg-slate-950 border border-slate-800 transition-colors cursor-pointer"
-                title="Put the source recording's sentence into the script"
+                className={`text-[10px] px-2 py-1 rounded-lg bg-slate-950 border transition-colors cursor-pointer ${
+                  willPlayFile
+                    ? 'text-slate-500 border-slate-800'
+                    : 'text-amber-300 border-amber-600/50 hover:text-amber-200'
+                }`}
+                title={`This voice's recording says: "${voiceSentence}"`}
               >
-                Use reference sentence
+                {willPlayFile ? 'Reference sentence' : 'Use reference sentence'}
               </button>
             </div>
           </div>
@@ -792,6 +832,13 @@ export const SpeechStudio: React.FC<SpeechStudioProps> = ({
             <button
               onClick={handlePlayLive}
               disabled={isRendering}
+              title={
+                willPlayFile
+                  ? `Plays ${activeSample.name} with this voice's settings on it. No words are built.`
+                  : voiceNeedsGeneration(activeModel)
+                    ? 'This voice changes words (an accent or the rhythm engine), so it has to be generated.'
+                    : `The text differs from what this voice's recording says, so the words have to be built. Press "Use reference sentence" to hear the file instead.`
+              }
               className={`px-6 py-3.5 rounded-2xl font-bold text-sm flex items-center gap-2.5 shadow-xl transition-all active:scale-[0.98] select-none cursor-pointer disabled:opacity-60 ${
                 isSpeaking
                   ? 'bg-rose-600 hover:bg-rose-500 text-white shadow-rose-600/40 animate-pulse'
@@ -805,11 +852,7 @@ export const SpeechStudio: React.FC<SpeechStudioProps> = ({
               ) : (
                 <>
                   <Volume2 className="w-4 h-4" />
-                  {isRendering
-                    ? 'Working…'
-                    : !voiceNeedsGeneration(activeModel) && textMatchesRecording(activeModel, script)
-                      ? 'Play This Recording'
-                      : 'Speak This Text'}
+                  {isRendering ? 'Working…' : willPlayFile ? 'Play This Recording' : 'Speak This Text'}
                 </>
               )}
             </button>

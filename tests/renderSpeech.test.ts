@@ -44,6 +44,7 @@ import {
   DEFAULT_DIALOGUE_TIMING,
   PRESET_VOICE_MODELS,
   generationReason,
+  scriptForVoice,
   textMatchesRecording,
   voiceNeedsGeneration,
   gapBeforeLine,
@@ -1314,6 +1315,48 @@ check(
   'both accent voices speak the sentence of the file they name',
   ADAPTED_VOICE_MODELS.every((model) => textMatchesRecording(model, model.samplePhrase)),
   ADAPTED_VOICE_MODELS
+    .filter((model) => !textMatchesRecording(model, model.samplePhrase))
+    .map((model) => model.id)
+    .join(', '),
+);
+
+// Selecting a voice must not leave the previous voice's sentence in the box. When it
+// did, the first play button stopped saying what the file says and rebuilt the words
+// - the bug where "Speak This Text" sounded nothing like the recording.
+check(
+  'after switching voices, the studio script is what the new voice records',
+  PRESET_VOICE_MODELS.every((next) =>
+    PRESET_VOICE_MODELS.every((previous) =>
+      textMatchesRecording(next, scriptForVoice(previous, previous.samplePhrase, next)),
+    ),
+  ),
+  'switching between two voices left the old sentence in the studio',
+);
+check(
+  'switching from sentence 1 to sentence 2 updates the script',
+  textMatchesRecording(
+    PRESET_VOICE_MODELS[2],
+    scriptForVoice(PRESET_VOICE_MODELS[0], PRESET_VOICE_MODELS[0].samplePhrase, PRESET_VOICE_MODELS[2]),
+  ),
+  'the sentence-2 voice kept the sentence-1 text',
+);
+check(
+  'text a person typed is never overwritten by selecting a voice',
+  scriptForVoice(PRESET_VOICE_MODELS[0], 'my own words entirely', PRESET_VOICE_MODELS[1]) ===
+    'my own words entirely',
+  'a click on the voice list discarded typed text',
+);
+check(
+  'with no previous voice, the script is the new voice\'s sentence',
+  scriptForVoice(undefined, '', PRESET_VOICE_MODELS[1]) === PRESET_VOICE_MODELS[1].samplePhrase,
+  'the studio opened without a sentence',
+);
+check(
+  'for every preset in the list, the studio can show that voice\'s own sentence',
+  [...PRESET_VOICE_MODELS, ...ADAPTED_VOICE_MODELS].every(
+    (model) => textMatchesRecording(model, model.samplePhrase),
+  ),
+  [...PRESET_VOICE_MODELS, ...ADAPTED_VOICE_MODELS]
     .filter((model) => !textMatchesRecording(model, model.samplePhrase))
     .map((model) => model.id)
     .join(', '),

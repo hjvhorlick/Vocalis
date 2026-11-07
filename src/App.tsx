@@ -25,10 +25,15 @@ export function App() {
       const saved = localStorage.getItem('vocalis_natural_models');
       if (saved) {
         const parsed = JSON.parse(saved);
-        // Predefined voices first, then the adapted ones, then anything saved. The
-        // saved list is only ever custom voices (see handleSaveModel), so it cannot
-        // shadow a predefined entry.
-        return [...PRESET_VOICE_MODELS, ...ADAPTED_VOICE_MODELS, ...parsed];
+        // Predefined voices first, then the adapted ones, then anything saved. A saved
+        // entry is dropped if it claims one of their ids: an older browser could have
+        // stored a voice under the same id with different settings, and that shadowed
+        // the shipped voice - which is exactly how "the wrong voice" survived a fix.
+        const shipped = new Set([...PRESET_VOICE_MODELS, ...ADAPTED_VOICE_MODELS].map((m) => m.id));
+        const custom = (Array.isArray(parsed) ? parsed : []).filter(
+          (m: VoiceModelConfig) => m && typeof m.id === 'string' && !shipped.has(m.id),
+        );
+        return [...PRESET_VOICE_MODELS, ...ADAPTED_VOICE_MODELS, ...custom];
       }
     } catch {
       // ignore
