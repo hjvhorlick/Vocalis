@@ -50,9 +50,26 @@ class InstallError(RuntimeError):
 
 
 def write_progress(path: Path, **fields: object) -> None:
+    """Publish progress for the server/UI to read.
+
+    Written to a temporary file and renamed into place, so a reader never sees a
+    half-written file. The retry loop is for Windows: a rename over a file that
+    another process has open raises PermissionError there, and it is transient.
+    """
     payload = {"at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()), **fields}
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
+    staging = path.with_suffix(path.suffix + ".tmp")
+    staging.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
+    for attempt in range(6):
+        try:
+            os.replace(staging, path)
+            return
+        except PermissionError:
+            if attempt == 5:
+                # Progress reporting must never be the thing that fails an install.
+                print(f"warning: could not update {path}", file=sys.stderr)
+                return
+            time.sleep(0.05 * (attempt + 1))
 
 
 def sanitise_id(voice_id: str) -> str:

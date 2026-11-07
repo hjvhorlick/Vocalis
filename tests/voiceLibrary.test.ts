@@ -34,7 +34,7 @@ import {
   statSync,
   writeFileSync,
 } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { homedir, tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -98,6 +98,8 @@ const { renderSpeech, initializeLocalSpeechEngine, PRESET_VOICE_MODELS } = await
   '../src/utils/naturalVoiceEngine'
 );
 const { releaseVoicePack } = await import('../src/utils/cmuDiphoneSynthesizer');
+const { expandHome } = await import('../scripts/voice_library');
+const { pythonCandidates, resolvePythonExecutable } = await import('../src/utils/pythonRuntime');
 
 let passed = 0;
 const failures: string[] = [];
@@ -535,6 +537,31 @@ check(
   (survivor.diagnostics?.exactUnits ?? 0) > 5 && (survivor.diagnostics?.fallbackPhones ?? 0) === 0,
   `${survivor.diagnostics?.exactUnits} exact, ${survivor.diagnostics?.fallbackPhones} fallback`,
 );
+
+// The installers are Python scripts, so the machine has to have a Python 3 under
+// one of the names its platform uses — `python`/`py` on Windows, `python3` first
+// elsewhere. This is checked rather than assumed: the CLI prints the install hint
+// and stops when there is none, instead of failing halfway through a download.
+console.log('\npython runtime');
+const python = resolvePythonExecutable();
+check('a Python 3 is found on this machine', Boolean(python), String(python));
+const candidates = pythonCandidates();
+check(
+  'the candidate list covers every platform spelling',
+  ['python3', 'python', 'py'].every((name) => candidates.includes(name)),
+  candidates.join(', '),
+);
+check(
+  "the platform's own spelling is tried first",
+  process.platform === 'win32' ? candidates[0] === 'python' : candidates[0] === 'python3',
+  candidates[0],
+);
+
+// `--from ~/Downloads/x` must work in a terminal on both platforms: `~` is the
+// shell's convention, and it arrives here unexpanded.
+eq('a home-relative archive path expands', expandHome('~/Downloads/awb.tar.bz2'),
+  join(homedir(), 'Downloads', 'awb.tar.bz2'));
+eq('a bare tilde is the home directory', expandHome('~'), homedir());
 
 // ---------------------------------------------------------------------------
 // 5. Browsing: filters, sorting and the neutral model

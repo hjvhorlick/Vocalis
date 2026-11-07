@@ -25,6 +25,7 @@
  */
 import { spawn } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync } from 'node:fs';
+import { homedir } from 'node:os';
 import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
@@ -40,6 +41,7 @@ import {
   installedVoiceDir,
   isProtectedVoiceId,
 } from '../src/utils/voiceLibraryPaths';
+import { pythonInstallHint, resolvePythonExecutable } from '../src/utils/pythonRuntime';
 
 const ROOT = resolve(import.meta.dirname, '..');
 const VOICE_ROOT = resolve(ROOT, 'public', 'optional-voices');
@@ -67,6 +69,15 @@ function humanBytes(bytes?: number): string {
   if (!bytes) return '—';
   if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} KB`;
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+/** `~` is a shell convention, not a path: expand it before resolving. */
+export function expandHome(candidate: string): string {
+  if (candidate === '~') return homedir();
+  if (candidate.startsWith('~/') || candidate.startsWith('~\\')) {
+    return resolve(homedir(), candidate.slice(2));
+  }
+  return resolve(candidate);
 }
 
 function pad(value: string, width: number): string {
@@ -174,7 +185,7 @@ function runInstaller(voice: VoiceCandidate, archiveOverride?: string): Promise<
     resolve(ROOT, 'scripts', 'install_voice.py'),
     '--id', voice.id,
     '--kind', recipe.kind,
-    '--url', archiveOverride ? pathToFileURL(resolve(archiveOverride)).href : recipe.url,
+    '--url', archiveOverride ? pathToFileURL(expandHome(archiveOverride)).href : recipe.url,
     '--out-root', VOICE_ROOT,
     '--progress', progressFile,
     '--display-name', voice.displayName,
@@ -192,12 +203,18 @@ function runInstaller(voice: VoiceCandidate, archiveOverride?: string): Promise<
     args.push('--dic', recipe.dicPath, '--wav', recipe.wavPath);
   }
 
+  const python = resolvePythonExecutable();
+  if (!python) {
+    console.error(`  ✗ ${pythonInstallHint()}`);
+    return Promise.resolve(1);
+  }
+
   console.log(`\n▸ ${voice.displayName}  (${voice.id})`);
   console.log(`  ${archiveOverride ? `from ${archiveOverride}` : recipe.url}`);
   console.log(`  licence: ${voice.licence.name}`);
 
   return new Promise((resolvePromise) => {
-    const child = spawn('python3', args, { cwd: ROOT, stdio: ['ignore', 'pipe', 'pipe'] });
+    const child = spawn(python, args, { cwd: ROOT, stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true });
     let lastLine = '';
     const timer = setInterval(() => {
       if (!existsSync(progressFile)) return;
@@ -277,7 +294,7 @@ async function install(args: string[]): Promise<number> {
       console.log(`\n▸ ${voice.displayName} (${id}) is already installed — skipping. Remove it first to reinstall.`);
       continue;
     }
-    if (fromArchive && !existsSync(resolve(fromArchive))) {
+    if (fromArchive && !existsSync(expandHome(fromArchive))) {
       console.error(`✗ ${fromArchive} does not exist.`);
       failures += 1;
       continue;

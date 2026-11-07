@@ -202,7 +202,19 @@ uses the same catalogue, the same installer and the same guards:
 
 `install` prints the download URL, the licence, and each stage as it happens; it
 refuses `slt`/`bdl` with the reason, skips anything already installed, and returns a
-non-zero exit code on any failure, so it can be used in a script. `--from` is what
+non-zero exit code on any failure, so it can be used in a script.
+
+Requirements are Node and Python 3 — the installers are Python scripts, because
+unpacking archives and cutting WAV spans is not a job worth hand-rolling twice in
+two languages. The Python executable is discovered rather than assumed: `python3`
+first on Linux and macOS, `python`/`py` on Windows, and the Microsoft Store's
+"python" stub (which opens the Store instead of running) is rejected by asking it
+for its version. If there is no Python 3, `install` and the install endpoint both
+stop with an explanation before downloading anything.
+
+On Windows the same commands work from PowerShell or `cmd` (`--` included); quote
+any `--from` path containing spaces, and prefer a real Python from python.org or
+`winget install Python.Python.3.12` over the Store alias. `--from` is what
 makes the command useful on a machine that cannot reach festvox.org: fetch the
 archive however you like (browser, `curl`, a mirror), then install it locally.
 
@@ -234,7 +246,7 @@ they cannot drift from the data.
 
 ## 8. Testing
 
-`npm run test:voices` — **79 checks**, all passing, no network access:
+`npm run test:voices` — **84 checks**, all passing, no network access:
 
 * catalogue: unique ids, ≥80 candidates, no protected id offered, every entry has a
   source URL, licence, attribution, class and a reason; nothing class D installable;
@@ -258,6 +270,9 @@ they cannot drift from the data.
   speakers use, exercised on a fixture because the real host is unreachable here
 * the terminal command: `list --ready`, `urls --class A` and `install slt` (refused,
   with the reason) run as subprocesses and are checked on their output and exit code
+* the runtime: a Python 3 is found on this machine, the candidate list covers every
+  platform spelling with the platform's own name first, and `--from ~/Downloads/x`
+  expands the way a terminal user expects
 
 Required checks and where they stand:
 

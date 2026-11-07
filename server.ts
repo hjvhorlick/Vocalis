@@ -11,6 +11,7 @@ import {
   isProtectedVoiceId,
   progressFilePath,
 } from './src/utils/voiceLibraryPaths';
+import { pythonInstallHint, resolvePythonExecutable } from './src/utils/pythonRuntime';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -186,6 +187,8 @@ async function startServer() {
 
   app.post('/api/voices/:id/install', (req: Request, res: Response) => {
     const id = req.params.id;
+    const python = resolvePythonExecutable();
+    if (!python) return res.status(503).json({ error: pythonInstallHint() });
     const candidate = findVoiceCandidate(id);
     if (!candidate) return res.status(404).json({ error: `Unknown voice "${id}"` });
     if (!candidate.install) {
@@ -225,7 +228,12 @@ async function startServer() {
     if (recipe.kind === 'arctic-archive') args.push('--speaker', recipe.speaker);
     else args.push('--dic', recipe.dicPath, '--wav', recipe.wavPath);
 
-    const child = spawn('python3', args, { cwd: process.cwd(), detached: true, stdio: 'ignore' });
+    const child = spawn(python, args, {
+      cwd: process.cwd(),
+      detached: true,
+      stdio: 'ignore',
+      windowsHide: true,
+    });
     child.unref();
     res.json({ started: true, id, progressUrl: `/api/voices/${id}/progress` });
   });
