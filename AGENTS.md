@@ -82,8 +82,13 @@ rather than repeating them.
   suites read the real assets in `public/` from disk, so they measure the shipped dictionary and
   the shipped unit packs. A failing check is a blocker in the same sense as a failing contract
   check: fix the code or the claim, never delete the check.
-- Verified call graph with line numbers: `docs/PIPELINE_MAP.md`.
-- What was broken, what was built and every measurement: `docs/PHASE2_PIPELINE_CORRECTION.md`.
+- Verified call graph with line numbers: `docs/PIPELINE_MAP.md`. The transformation stage is
+  `src/utils/voiceTransform.ts`, used by generated speech and by the reference-recording
+  audition alike; there is no second implementation. `npm run test:render` now also measures
+  that stage on known signals (aliasing, pitch accuracy, pace/pitch independence).
+- What was broken, what was built and every measurement: `docs/PHASE2_PIPELINE_CORRECTION.md`,
+  and for the transformation stage (pitch, pace, formants, tone, resonance)
+  `docs/PHASE3_VOICE_TRANSFORM.md`.
 - Known state of the product, finding by finding: `docs/APPLICATION_AUDIT.md`.
 - What to build next, and how each idea will be implemented originally:
   `docs/VOICE_IMPROVEMENT_PLAN.md`.
