@@ -125,7 +125,7 @@ rather than opened on a guess.
 | File | What it is |
 |---|---|
 | `src/utils/vocalisVoiceFile.ts` | the format: encode, decode, header read, typed errors |
-| `tests/vocalisFile.test.ts` | 40 checks — quality, exclusivity, integrity, CLI round trip |
+| `tests/vocalisFile.test.ts` | 42 checks — quality, exclusivity, integrity, CLI and browser round trips |
 | `scripts/voice_library.ts` | `pack` and `import`, and the shared pack loader |
 | `server.ts` | `GET /api/voices/<id>/export` |
 | `src/components/RecordedVoiceLibrary.tsx` | the Export control on an installed card |

@@ -29,6 +29,7 @@ import {
   looksLikeVocalisVoice,
   readVocalisVoiceHeader,
 } from '../src/utils/vocalisVoiceFile';
+import { httpOptionalVoiceSource } from '../src/utils/optionalVoicePacks';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const WORK = mkdtempSync(join(tmpdir(), 'vocalis-file-'));
@@ -245,6 +246,31 @@ check('re-importing the same voice succeeds rather than breaking it', reImported
 const refused = cli(['import', join(PACK, 'manifest.json')]);
 check('importing something that is not a .vocalis file is refused', refused.code !== 0);
 check('with the reason, not a stack trace', /not a Vocalis voice file/i.test(refused.out), refused.out.trim().split('\n').slice(-1)[0]);
+
+// The browser loader is a second reader of the same files, and it was the reader
+// that mattered least-tested: it fetches, so the test serves it from disk.
+{
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = (async (input: RequestInfo | URL) => {
+    const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
+    const file = join(scratchRoot, decodeURIComponent(url.replace('/optional-voices/', '')));
+    if (!existsSync(file)) return new Response('', { status: 404 });
+    const data = readFileSync(file);
+    return new Response(data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength) as ArrayBuffer);
+  }) as typeof fetch;
+  try {
+    const source = httpOptionalVoiceSource('cmu-kal', 'CMU KAL (diphone)');
+    const loaded = await source.loadPack();
+    check(
+      'the browser loader opens a sealed install',
+      Buffer.from(loaded.audio).equals(audioFile),
+      `${Buffer.from(loaded.audio).length} bytes`,
+    );
+    equal('and gets the whole unit index back', Object.keys(loaded.manifest.units).length, Object.keys(manifest.units).length);
+  } finally {
+    globalThis.fetch = realFetch;
+  }
+}
 
 console.log(`\n${passed}/${passed + failures.length} .vocalis checks passed.`);
 if (failures.length) {
