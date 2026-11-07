@@ -76,7 +76,18 @@ export interface VoiceModelConfig {
    * than running it at a neutral value, so "pitch off" is the recording.
    */
   bypass?: Partial<
-    Record<'pitch' | 'rate' | 'volume' | 'tone' | 'throatWarmth' | 'oralClarity' | 'airPresence' | 'contour', boolean>
+    Record<
+      | 'pitch'
+      | 'rate'
+      | 'volume'
+      | 'tone'
+      | 'throatWarmth'
+      | 'oralClarity'
+      | 'airPresence'
+      | 'contour'
+      | 'joinLevel',
+      boolean
+    >
   >;
   throatWarmth?: number; // low-band tilt, -3 to +3 dB (clamped)
   oralClarity?: number; // mid-band tilt, -3 to +3 dB (clamped)

@@ -249,6 +249,7 @@ export function applyProfileToModel(
       // A file sealed before this switch existed had the contour applied, so an
       // absent key must keep it on rather than silently changing how it sounds.
       contour: profile.enabled.contour === false,
+      joinLevel: profile.enabled.joinLevel === false,
     },
   };
 }

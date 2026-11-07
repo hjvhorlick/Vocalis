@@ -172,10 +172,10 @@ const creatorRows = ['Pitch', 'Pace', 'Volume', 'Warmth', 'Clarity', 'Air'].map(
   ),
 );
 check(
-  'six numeric settings, the tone row and intonation: eight switches for eight controls',
+  'six numeric settings, the tone row, intonation and join levels: nine switches for nine controls',
   creatorRows.every((markup) => /role="switch"/.test(markup)) &&
     /role="switch"/.test(toneOn) &&
-    Object.keys(ALL_OFF).length === 8,
+    Object.keys(ALL_OFF).length === 9,
   `${creatorRows.length + 1} slider rows and ${Object.keys(ALL_OFF).length} switches`,
 );
 

@@ -67,7 +67,7 @@ export interface VoiceTransformSettings {
    * something and one that only looks like it does.
    */
   bypass?: Partial<
-    Record<'pitch' | 'rate' | 'tone' | 'throatWarmth' | 'oralClarity' | 'airPresence' | 'contour', boolean>
+    Record<'pitch' | 'rate' | 'tone' | 'throatWarmth' | 'oralClarity' | 'airPresence' | 'contour' | 'joinLevel', boolean>
   >;
 }
 

@@ -103,7 +103,7 @@ const SETTINGS: SettingSpec[] = [
   },
 ];
 
-export type SwitchState = Record<SettingSpec['key'] | 'tone' | 'contour', boolean>;
+export type SwitchState = Record<SettingSpec['key'] | 'tone' | 'contour' | 'joinLevel', boolean>;
 export type KnobState = Record<SettingSpec['key'], number>;
 
 /**
@@ -121,6 +121,9 @@ export const ALL_OFF: SwitchState = {
   // The phrase contour is a stage of its own — the one that re-pitches every unit
   // onto one line. Off means the units are joined as they were cut.
   contour: false,
+  // Levelling each splice to the one before it. Off is the plain crossfade: the
+  // units are joined exactly as they were cut, loudness steps and all.
+  joinLevel: false,
   throatWarmth: false,
   oralClarity: false,
   airPresence: false,
@@ -163,6 +166,7 @@ export function effectiveModel(
       oralClarity: !switches.oralClarity,
       airPresence: !switches.airPresence,
       contour: !switches.contour,
+      joinLevel: !switches.joinLevel,
     },
   };
 }
@@ -191,7 +195,7 @@ function shortDescription(row: LibraryRow): string {
  */
 function bypassOne(
   model: VoiceModelConfig,
-  key: SettingSpec['key'] | 'tone' | 'contour',
+  key: SettingSpec['key'] | 'tone' | 'contour' | 'joinLevel',
 ): VoiceModelConfig {
   return { ...model, bypass: { ...(model.bypass ?? {}), [key]: true } };
 }
@@ -219,7 +223,7 @@ export const VoiceFileCreator: React.FC<VoiceFileCreatorProps> = ({ onOpenLibrar
   const [tone, setTone] = useState<string>('natural');
   const [fileName, setFileName] = useState('');
   const [busy, setBusy] = useState<'preview' | 'export' | 'source' | null>(null);
-  const [testingKey, setTestingKey] = useState<SettingSpec['key'] | 'tone' | 'contour' | null>(null);
+  const [testingKey, setTestingKey] = useState<SettingSpec['key'] | 'tone' | 'contour' | 'joinLevel' | null>(null);
   const [notice, setNotice] = useState<{ tone: 'ok' | 'error'; text: string } | null>(null);
 
   useEffect(() => {
@@ -364,7 +368,7 @@ export const VoiceFileCreator: React.FC<VoiceFileCreatorProps> = ({ onOpenLibrar
    * two listens, instead of by switching things off and re-exporting blind.
    */
   const handleTestSetting = useCallback(
-    async (key: SettingSpec['key'] | 'tone' | 'contour') => {
+    async (key: SettingSpec['key'] | 'tone' | 'contour' | 'joinLevel') => {
       if (!model) return;
       if (testingKey === key) {
         stopSpeaking();
@@ -388,7 +392,9 @@ export const VoiceFileCreator: React.FC<VoiceFileCreatorProps> = ({ onOpenLibrar
             ? 'Tone'
             : key === 'contour'
               ? 'Intonation'
-              : SETTINGS.find((setting) => setting.key === key)?.label ?? key;
+              : key === 'joinLevel'
+                ? 'Join levels'
+                : SETTINGS.find((setting) => setting.key === key)?.label ?? key;
         setNotice({ tone: 'ok', text: `${label}: first as set, then bypassed. Listen for what changed.` });
       } catch (error) {
         setNotice({ tone: 'error', text: error instanceof Error ? error.message : String(error) });
@@ -589,6 +595,15 @@ export const VoiceFileCreator: React.FC<VoiceFileCreatorProps> = ({ onOpenLibrar
                   onTest={() => void handleTestSetting(setting.key)}
                 />
               ))}
+              <VoiceSwitchRow
+                label="Join levels"
+                hint="Levels each splice to the one before it, within +3/−6 dB, so the joins stop stepping in loudness. Off is the plain crossfade: the units meet exactly as they were cut, which steps by a median of 6 dB at every join."
+                on={switches.joinLevel}
+                testing={testingKey === 'joinLevel'}
+                disabled={!selected}
+                onToggle={() => setSwitches((current) => ({ ...current, joinLevel: !current.joinLevel }))}
+                onTest={() => void handleTestSetting('joinLevel')}
+              />
               <VoiceSwitchRow
                 label="Intonation"
                 hint="The phrase contour: every unit is re-pitched onto one falling line, with a rise at a question. It is the stage that puts a slightly different timbre on each join, so it is the first one to switch off when a voice sounds processed."

@@ -630,6 +630,7 @@ function applyProsody(chunks: Float32Array[], prosody: ChunkProsody[]): Float32A
 function crossfadeJoinWithOffsets(
   chunks: Float32Array[],
   overlapSeconds = HALF_UNIT_JOIN_SECONDS,
+  matchLevels = true,
 ): { samples: Float32Array; starts: number[] } {
   if (!chunks.length) return { samples: new Float32Array(0), starts: [] };
   const overlap = Math.floor(SAMPLE_RATE * overlapSeconds);
@@ -647,7 +648,10 @@ function crossfadeJoinWithOffsets(
     const blendBase = Math.min(overlap, cursor, rawChunk.length);
     // Straighten the splice before fading it: level and colour are matched to the
     // audio already written, so the join is a continuation rather than a step.
-    const chunk = blendBase > 0 ? matchJoin(rawChunk, output.subarray(0, cursor), blendBase, SAMPLE_RATE) : rawChunk;
+    const chunk =
+      matchLevels && blendBase > 0
+        ? matchJoin(rawChunk, output.subarray(0, cursor), blendBase, SAMPLE_RATE)
+        : rawChunk;
     const blend = Math.min(overlap, cursor, chunk.length);
     const fadeStart = cursor - blend;
     // The boundary itself is where the previous chunk ended, not where the fade
@@ -830,7 +834,10 @@ export async function renderCmuDiphones(
     const incoming = pack ? incomingHalfOf(pack, right) : null;
     if (outgoing && incoming) {
       diagnostics.backoffUnits += 1;
-      return crossfadeJoinWithOffsets([outgoing, incoming], HALF_UNIT_JOIN_SECONDS).samples;
+      // The two halves of one phone are joined the same way the stream is, so they
+      // follow the same switch.
+      return crossfadeJoinWithOffsets([outgoing, incoming], HALF_UNIT_JOIN_SECONDS, !model.bypass?.joinLevel)
+        .samples;
     }
     // No recorded audio for either side of this transition. Synthesise the two
     // half-phones so the timing model still holds: one chunk, one boundary.
@@ -925,7 +932,7 @@ export async function renderCmuDiphones(
   // timbre on every unit. Switched off, the chunks go to the crossfade exactly as
   // they were cut, so a clean file is the recordings and nothing else.
   const shapedChunks = model.bypass?.contour ? chunks : applyProsody(chunks, chunkProsody);
-  const joined = crossfadeJoinWithOffsets(shapedChunks);
+  const joined = crossfadeJoinWithOffsets(shapedChunks, HALF_UNIT_JOIN_SECONDS, !model.bypass?.joinLevel);
   // Chunk i begins on the midpoint of phone i-1 within its segment, so the
   // offsets of a segment's phones are the starts of the chunks after its lead.
   for (const { chunkIndex, phoneCount } of segmentStarts) {

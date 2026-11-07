@@ -11,7 +11,18 @@ export interface VoiceDspConfig {
   airPresence?: number; // -3 to +3 dB (F3 tilt, clamped by voiceTransform)
   /** Stages switched off by name; a bypassed stage is skipped, not neutralised. */
   bypass?: Partial<
-    Record<'pitch' | 'rate' | 'volume' | 'tone' | 'throatWarmth' | 'oralClarity' | 'airPresence' | 'contour', boolean>
+    Record<
+      | 'pitch'
+      | 'rate'
+      | 'volume'
+      | 'tone'
+      | 'throatWarmth'
+      | 'oralClarity'
+      | 'airPresence'
+      | 'contour'
+      | 'joinLevel',
+      boolean
+    >
   >;
 }
 

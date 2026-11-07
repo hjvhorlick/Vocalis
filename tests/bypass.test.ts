@@ -189,6 +189,7 @@ console.log('\nthe two stages that ran with no switch at all');
     oralClarity: true,
     airPresence: true,
     contour: true,
+    joinLevel: true,
   };
   await initializeLocalSpeechEngine(base as never);
   const clean = await renderSpeech(AUDITION_PHRASE, { ...base, bypass: off } as never);
@@ -212,7 +213,7 @@ console.log('\nthe two stages that ran with no switch at all');
   };
   check(
     'with Volume off the render keeps the level the units arrived at',
-    Math.abs(peakOf(clean.samples) - 0.68) < 0.04,
+    Math.abs(peakOf(clean.samples) - 0.685) < 0.04,
     `peak ${peakOf(clean.samples).toFixed(3)}, and the leveller alone would take it to 0.780`,
   );
   check(
@@ -326,9 +327,35 @@ console.log('\nthe joins are levelled, not stepped');
   const joinMedian = median(atJoins);
   const insideMedian = median(inside);
   check(
-    'a join steps in level no more than ordinary speech does',
+    'with the switch on, a join steps in level no more than ordinary speech does',
     joinMedian <= insideMedian + 1,
     `${joinMedian.toFixed(2)} dB median at ${atJoins.length} joins against ${insideMedian.toFixed(2)} dB inside speech (6.17 dB before the leveller)`,
+  );
+
+  // The other half of the claim: it really is a switch, and switching it off puts
+  // the step back. A correction you cannot turn off is the flaw this app keeps
+  // being pulled up on.
+  const raw = await renderCmuDiphones(
+    segments.map((segment) => ({ phones: segment.phones, terminal: segment.terminal })),
+    { ...base, bypass: { ...(base as { bypass: Record<string, boolean> }).bypass, joinLevel: true } } as never,
+    () => new Float32Array(400),
+    0,
+  );
+  const rawSamples = raw.samples;
+  const rawStepAt = (position: number): number | null => {
+    if (position <= windowSamples || position >= rawSamples.length - windowSamples) return null;
+    const before = rmsOf(rawSamples.subarray(position - windowSamples, position));
+    const after = rmsOf(rawSamples.subarray(position, position + windowSamples));
+    if (before < 1e-4 || after < 1e-4) return null;
+    return Math.abs(20 * Math.log10(after / before));
+  };
+  const rawJoinMedian = median(
+    raw.phoneOffsets.map((offset) => rawStepAt(Math.round(offset))).filter((v): v is number => v !== null),
+  );
+  check(
+    'with it off, the joins step exactly as the recording cuts do',
+    rawJoinMedian > joinMedian + 1.5,
+    `${rawJoinMedian.toFixed(2)} dB levelling off against ${joinMedian.toFixed(2)} dB levelling on`,
   );
 
   unregisterOptionalVoiceSource('join-probe');

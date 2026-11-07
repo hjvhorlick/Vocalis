@@ -83,9 +83,9 @@ that outlives the app, and say so in any marketplace copy rather than overclaimi
 ## The creator page, and the switch block
 
 The `.vls Voice Creator` tab is where a file is made: the recorded voices are cards you can
-reorder, **all eight settings** each have a switch on the same line as their control —
-Pitch, Pace, Volume, Warmth, Clarity, Air, the Tone character and Intonation (the phrase
-contour, which re-pitches every unit onto one line) — and the export sits
+reorder, **all nine settings** each have a switch on the same line as their control —
+Pitch, Pace, Volume, Warmth, Clarity, Air, the Tone character, Intonation (the phrase
+contour, which re-pitches every unit onto one line) and Join levels — and the export sits
 on the same page. There is no control on that page that cannot be switched off, which
 is the only way to find out which one a particular voice file does not want. Each row's **A/B** button plays the sentence once with
 the setting as set and once with it bypassed, so "which one is spoiling it?" is
@@ -97,7 +97,7 @@ settings block is the part that ends up in the file:
 "profile": {
   "enabled":  { "pitch": true, "rate": true, "volume": true, "tone": false,
                 "throatWarmth": false, "oralClarity": true, "airPresence": false,
-                "contour": false },
+                "contour": false, "joinLevel": false },
   "settings": { "pitch": 1.12, "rate": 0.92, "volume": 1, "throatWarmth": 0,
                 "oralClarity": 0.2, "airPresence": 0 },
   "tone": "deep"
