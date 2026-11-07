@@ -23,14 +23,19 @@
  *     keeps a periodic signal periodic: without it the two overlapping grains
  *     cancel each other's harmonics and the voice goes hollow and buzzy.
  *   - Moving pitch by resampling moves the formants with it, which changes who
- *     the speaker sounds like. `formantPreservation` measures the long-term
- *     spectral envelope before and after the shift and puts part of the
- *     envelope back, so a lower pitch sounds like the same person in a lower
+ *     the speaker sounds like. The timbre correction measures the long-term
+ *     spectrum before and after the shift and puts part of it back, over five
+ *     wide bands, so a lower pitch sounds like the same person in a lower
  *     register rather than a different, larger creature.
  *   - The three resonance sliders (throat, oral, air) are applied here, which is
  *     the whole point of having them: before this module existed they were only
  *     heard on the reference-recording audition and silently did nothing to
  *     generated speech.
+ *   - Every character filter is capped at COLOUR_MAX_GAIN_DB and made wide
+ *     enough not to ring. That cap is what the second listening test required:
+ *     the algorithms were clean, but the *sum* of the character filters put
+ *     +13 dB through the 315–500 Hz region of a deep profile, and a barrel
+ *     around a 90 Hz fundamental reads as a buzz, not as warmth.
  *
  * All of it is original Vocalis code. Where an idea is borrowed it is a
  * published concept, credited in docs/VOICE_SYNTHESIS_RESEARCH.md and
@@ -85,25 +90,48 @@ const STRETCH_HOP_SECONDS = 0.02;
 const STRETCH_ALIGN_SECONDS = 0.01;
 const STRETCH_STEP = 4;
 
-/** Spectral envelope analysis for formant preservation. */
+/** Spectral analysis for timbre matching: wide bands, one frame per 16 ms. */
 const ENVELOPE_FRAME = 512;
 const ENVELOPE_HOP = 256;
-const ENVELOPE_BANDS = 18;
-const ENVELOPE_LOW_HZ = 90;
-const ENVELOPE_HIGH_HZ = 7200;
 /**
- * Bounds on the formant correction.
+ * The number of wide bands the timbre correction is allowed to use.
  *
- * The correction only restores the vocal tract, not the recording: it is
- * limited to the range where vowels and consonants carry identity, it never
- * moves a band by more than 6 dB, and neighbouring bands are smoothed together
- * so a single noisy measurement cannot become a whistle. Without these bounds a
- * down-shift asks for a large high-frequency lift, which turns room noise into
- * hiss and makes the voice harsher than the un-corrected version.
+ * This is the second version of the correction. The first measured eighteen
+ * narrow bands and corrected each with its own peaking section, which put
+ * eighteen filters in series behind every profile; measured against the
+ * pitch-shifted voice it drove neighbouring third-octave bands more than 6 dB
+ * apart and left a comb through the vowel region — colour, not correction.
+ * Five overlapping wide bands can only express a tilt, and a tilt is the whole
+ * of what "same speaker, lower register" means.
  */
-const ENVELOPE_MIN_HZ = 100;
+const ENVELOPE_BANDS = 5;
+/**
+ * Bounds on the timbre correction, in dB, applied to the shifted voice.
+ *
+ * The correction restores the vocal tract, not the recording: three decibels is
+ * roughly the difference between two vowels of the same speaker, and staying
+ * inside it keeps a deep profile sounding like the speaker rather than like a
+ * resonant tube. Every colouring filter in this module is bounded by the same
+ * budget — see COLOUR_MAX_GAIN_DB.
+ */
+const ENVELOPE_MIN_HZ = 150;
 const ENVELOPE_MAX_HZ = 5000;
-const ENVELOPE_MAX_GAIN_DB = 6;
+const ENVELOPE_MAX_GAIN_DB = 3;
+
+/**
+ * The most any single profile control may move one region of the spectrum.
+ *
+ * This constant is the fix for what actually made the profiles sound wrong.
+ * Pitch, pace and the resampler measured clean: no jitter, no aliases, no grain
+ * buzz. What did not measure clean was the sum of the character filters. The
+ * eight shipped profiles asked for throatWarmth up to +7 dB at 450 Hz *and* a
+ * "deep" tone style that boosted 150 and 420 Hz, so Marcus's finished render
+ * carried +13 dB between 315 and 500 Hz against the recording it was built
+ * from — a barrel, on a voice whose fundamental is 90 Hz, which is exactly what
+ * a boom plus buzz sounds like. Each control is now capped here and given a
+ * bandwidth wide enough that the bands cannot stack into a resonance peak.
+ */
+export const COLOUR_MAX_GAIN_DB = 3;
 
 // ---------------------------------------------------------------------------
 // Small signal-processing primitives
@@ -380,16 +408,18 @@ function peakingBand(input: Float32Array, frequency: number, bandwidth: number, 
 // Formant preservation
 // ---------------------------------------------------------------------------
 
-/** Log-spaced band centres used by the envelope measurement. */
+/** Wide, overlapping band centres used by the timbre measurement. */
+const TIMBRE_BANDS: Array<{ centre: number; width: number }> = [
+  { centre: 180, width: 300 },
+  { centre: 450, width: 400 },
+  { centre: 1100, width: 800 },
+  { centre: 2400, width: 1500 },
+  { centre: 4500, width: 2000 },
+];
+
+/** The bands actually used, trimmed to `ENVELOPE_BANDS` and to Nyquist. */
 function envelopeBands(sampleRate: number): Array<{ centre: number; width: number }> {
-  const bands: Array<{ centre: number; width: number }> = [];
-  const ratio = Math.pow(ENVELOPE_HIGH_HZ / ENVELOPE_LOW_HZ, 1 / (ENVELOPE_BANDS - 1));
-  for (let index = 0; index < ENVELOPE_BANDS; index += 1) {
-    const centre = ENVELOPE_LOW_HZ * Math.pow(ratio, index);
-    if (centre >= sampleRate / 2) break;
-    bands.push({ centre, width: centre * (ratio - 1) });
-  }
-  return bands;
+  return TIMBRE_BANDS.filter((band) => band.centre < sampleRate / 2).slice(0, ENVELOPE_BANDS);
 }
 
 /**
@@ -445,6 +475,9 @@ function measureEnvelope(input: Float32Array, sampleRate: number): Float32Array 
  * `original` is the audio before the shift and `shifted` the audio after it.
  * The correction is the difference between the two measured envelopes, scaled by
  * `amount`: at 0 nothing changes, at 1 the vocal tract is back where it was.
+ * Both the band set (five wide bands) and the gain bound
+ * (`ENVELOPE_MAX_GAIN_DB`) keep this a tilt; see the note on ENVELOPE_BANDS for
+ * why a finer measurement made the voice worse rather than better.
  */
 export function preserveFormants(
   original: Float32Array,
@@ -471,7 +504,9 @@ export function preserveFormants(
     gains[band] = (before[band] - after[band]) * amount;
   }
   // Smooth across neighbouring bands before clamping, so the correction is a
-  // tilt rather than a row of independent spikes.
+  // tilt rather than a row of independent spikes. With wide bands there is
+  // little left for this to do, which is the point: it can no longer build a
+  // row of spikes out of a noisy measurement.
   const smoothed = new Float32Array(bands.length);
   for (let band = 0; band < bands.length; band += 1) {
     const left = gains[Math.max(0, band - 1)];
@@ -505,9 +540,13 @@ export function preserveFormants(
 function applyToneStyle(input: Float32Array, style: ToneStyle, sampleRate: number): Float32Array {
   switch (style) {
     case 'deep':
-      return peakingBand(peakingBand(input, 150, 220, 4.5, sampleRate), 420, 320, 2, sampleRate);
+      // One wide band below the first formant, at half the budget. The previous
+      // version stacked two bands here *and* was stacked on top of the throat
+      // slider, which is where the +13 dB barrel came from. Deepness itself is
+      // the pitch control, not this filter: this only takes the edge off.
+      return peakingBand(input, 190, 300, COLOUR_MAX_GAIN_DB * 0.5, sampleRate);
     case 'energetic':
-      return peakingBand(peakingBand(input, 3000, 1600, 3.5, sampleRate), 6200, 3000, 2, sampleRate);
+      return peakingBand(input, 2800, 2200, COLOUR_MAX_GAIN_DB * 0.5, sampleRate);
     case 'whisper':
     case 'radio':
     case 'robot':
@@ -543,6 +582,39 @@ function applyCharacterEffect(input: Float32Array, style: ToneStyle, sampleRate:
       output[index] = sample * 0.42 + highPassed * 0.42;
     }
   }
+  return output;
+}
+
+/**
+ * Keep the level where it was, so a profile changes the shape of the voice and
+ * not its volume.
+ *
+ * Every filter in this module is a wide boost, and a wide boost is not free: it
+ * lifts its own region and, because the addition carries phase, leans on the
+ * neighbourhood too. Broadband measurement showed the three sliders at their cap
+ * moving the root-mean-square level by about 12 %, which is heard as "this
+ * profile is quieter" whenever nothing downstream re-normalises — the audition
+ * path, for one. The render path normalises by peak afterwards, so this is the
+ * only place where a stable level can be guaranteed for both.
+ *
+ * Note what it does not do: it cannot stop a boost from raising the crest
+ * factor, and a peak normaliser then has to turn the whole render down a
+ * decibel. That is physics, not a bug, and it is why the shipped profiles keep
+ * their colouring inside three decibels.
+ */
+function levelMatched(reference: Float32Array, shaped: Float32Array): Float32Array {
+  const meanSquare = (samples: Float32Array) => {
+    let total = 0;
+    for (let index = 0; index < samples.length; index += 1) total += samples[index] * samples[index];
+    return samples.length > 0 ? total / samples.length : 0;
+  };
+  const before = meanSquare(reference);
+  const after = meanSquare(shaped);
+  if (before <= 0 || after <= 0) return shaped;
+  const scale = Math.sqrt(before / after);
+  if (Math.abs(scale - 1) < 1e-6) return shaped;
+  const output = new Float32Array(shaped.length);
+  for (let index = 0; index < shaped.length; index += 1) output[index] = shaped[index] * scale;
   return output;
 }
 
@@ -585,14 +657,18 @@ export function transformRecordedVoice(
   // full preservation F1 stays at 450 Hz, at none it moves with F0.
   const tractScale = Math.pow(pitch, 1 - preservation);
   let resonated = styled;
+  // Wide bands on purpose: at a quarter of an octave wide these three sections
+  // overlapped around 400 Hz and added up to a resonance. At a little over one
+  // octave each they tilt, and the cap keeps every one of them inside the same
+  // three-decibel budget as the timbre correction.
   const bands: Array<[number, number, number]> = [
-    [(settings.throatWarmth ?? 0), 450, 260],
-    [(settings.oralClarity ?? 0), 1800, 700],
-    [(settings.airPresence ?? 0), 4200, 1600],
+    [clamp(settings.throatWarmth ?? 0, -COLOUR_MAX_GAIN_DB, COLOUR_MAX_GAIN_DB), 450, 450],
+    [clamp(settings.oralClarity ?? 0, -COLOUR_MAX_GAIN_DB, COLOUR_MAX_GAIN_DB), 1800, 1800],
+    [clamp(settings.airPresence ?? 0, -COLOUR_MAX_GAIN_DB, COLOUR_MAX_GAIN_DB), 4200, 2600],
   ];
   for (const [gain, frequency, bandwidth] of bands) {
     resonated = peakingBand(resonated, frequency * tractScale, bandwidth * tractScale, gain, sampleRate);
   }
 
-  return resonated;
+  return levelMatched(paced, resonated);
 }

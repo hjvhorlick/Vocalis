@@ -28,7 +28,7 @@ through an effects chain, whatever text you type. That single fact explains most
 ## Status after the pipeline correction (2026-11-07)
 
 The P0 wiring defect is closed and the Phase 1 naturalness work is built. Measurements come
-from `tests/renderSpeech.test.ts` (544 checks) and `tests/textAnalysis.test.ts` (212 checks);
+from `tests/renderSpeech.test.ts` (550 checks) and `tests/textAnalysis.test.ts` (212 checks);
 the full before-and-after record is
 [`PHASE2_PIPELINE_CORRECTION.md`](PHASE2_PIPELINE_CORRECTION.md), and the phase that rebuilt
 the transformation stage is [`PHASE3_VOICE_TRANSFORM.md`](PHASE3_VOICE_TRANSFORM.md).
@@ -59,6 +59,7 @@ the transformation stage is [`PHASE3_VOICE_TRANSFORM.md`](PHASE3_VOICE_TRANSFORM
 | B11 | One tone-character implementation. `deep`/`energetic` are resonance shapes, not hidden pitch/pace multipliers (they were 0.92×/1.06× before); `whisper`/`radio`/`robot` live in one function used by both generated speech and the audition, so the character cannot differ by path. |
 | D3 | The audition's Web Audio node graph — and the ring oscillator it never stopped — is deleted. The buffer is transformed on the samples and played through `playRenderedSpeech`. |
 | D4 | The audition's export is the transformed sample array, so it includes the robot character and is byte-identical to what was played. |
+| D10 (partly) | The three static EQ bands are now wide (Q ≈ 1) and clamped to ±3 dB in the engine and in the sliders, so they cannot clip material and cannot sum into a resonance peak. The naming caveat — they are tilts, not vowel-tracking formants — stays open. |
 
 **Partly resolved**
 
@@ -339,7 +340,7 @@ base64 audio would exceed it and the user would see nothing but lost data.
 
 **D6. Three contradictory control ranges.** `VoiceDspConfig` comments say pitch 0.5–1.8,
 rate 0.6–1.6, formants ±12 dB. `VoiceManipulator` sliders: pitch 0.5–1.75, rate 0.6–1.5,
-volume 0.2–1.0, formants ±10. `SpeechStudio` sliders: pitch 0.5–1.7, rate 0.6–1.5. The DSP
+volume 0.2–1.0, formant tilt ±3 (the engine clamps it; the sliders now say 3). `SpeechStudio` sliders: pitch 0.5–1.7, rate 0.6–1.5. The DSP
 then clamps the *product* to 0.4–2.5, silently overriding extremes. One shared, published
 range per control.
 
@@ -365,10 +366,12 @@ permission for this path. Per contract §2.2 this must never be presented as, or
 become, a new base voice.
 
 **D10. "Formant" controls are three static EQ bands.** `throatWarmth`/`oralClarity`/
-`airPresence` are peaking biquads fixed at 450 Hz (Q 1.2), 1800 Hz (Q 1.4) and 4200 Hz
-(Q 1.0), ±10 dB, described in code comments as "Formant F1/F2/F3". They do not track vowel
-formants, cannot change vocal-tract length, and at +10 dB on three bands will clip material
-that is already peak-normalised. The labels promise articulatory modelling that is not there.
+`airPresence` are peaking sections fixed at 450 / 1800 / 4200 Hz. *Partly closed by the
+transformation rebuild:* each is now a wide band (bandwidth equal to its centre, Q ≈ 1) clamped
+to **±3 dB** by the engine and by the sliders, and the three of them can no longer sum into a
+resonance (measured: the worst profile used to colour the voice by +10.8 dB in one region, now
++3.0 — see `PHASE3_VOICE_TRANSFORM.md` §3.5). What remains open is the naming: they are tilts,
+not vowel-tracking formants, and they still cannot change vocal-tract length.
 
 ---
 

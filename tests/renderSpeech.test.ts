@@ -624,6 +624,42 @@ function totalPower(samples: Float32Array): number {
   return total;
 }
 
+/** In-place radix-2 FFT, used only to measure spectra in this suite. */
+function fftInPlace(re: Float64Array, im: Float64Array): void {
+  const size = re.length;
+  for (let index = 1, reversed = 0; index < size; index += 1) {
+    let bit = size >> 1;
+    for (; reversed & bit; bit >>= 1) reversed ^= bit;
+    reversed ^= bit;
+    if (index < reversed) {
+      [re[index], re[reversed]] = [re[reversed], re[index]];
+      [im[index], im[reversed]] = [im[reversed], im[index]];
+    }
+  }
+  for (let span = 2; span <= size; span <<= 1) {
+    const angle = (-2 * Math.PI) / span;
+    const stepReal = Math.cos(angle);
+    const stepImaginary = Math.sin(angle);
+    for (let block = 0; block < size; block += span) {
+      let phasorReal = 1;
+      let phasorImaginary = 0;
+      for (let offset = 0; offset < span / 2; offset += 1) {
+        const evenIndex = block + offset;
+        const oddIndex = evenIndex + span / 2;
+        const oddReal = re[oddIndex] * phasorReal - im[oddIndex] * phasorImaginary;
+        const oddImaginary = re[oddIndex] * phasorImaginary + im[oddIndex] * phasorReal;
+        re[oddIndex] = re[evenIndex] - oddReal;
+        im[oddIndex] = im[evenIndex] - oddImaginary;
+        re[evenIndex] += oddReal;
+        im[evenIndex] += oddImaginary;
+        const nextReal = phasorReal * stepReal - phasorImaginary * stepImaginary;
+        phasorImaginary = phasorReal * stepImaginary + phasorImaginary * stepReal;
+        phasorReal = nextReal;
+      }
+    }
+  }
+}
+
 /** Power in a narrow band around `frequency`, absolute. */
 function bandPower(samples: Float32Array, frequency: number): number {
   const size = 8192;
@@ -633,47 +669,75 @@ function bandPower(samples: Float32Array, frequency: number): number {
   for (let index = 0; index < size; index += 1) {
     real[index] = (samples[start + index] ?? 0) * (0.5 - 0.5 * Math.cos((2 * Math.PI * index) / size));
   }
-  const fft = (re: Float64Array, im: Float64Array) => {
-    const size = re.length;
-    for (let index = 1, reversed = 0; index < size; index += 1) {
-      let bit = size >> 1;
-      for (; reversed & bit; bit >>= 1) reversed ^= bit;
-      reversed ^= bit;
-      if (index < reversed) {
-        [re[index], re[reversed]] = [re[reversed], re[index]];
-        [im[index], im[reversed]] = [im[reversed], im[index]];
-      }
-    }
-    for (let span = 2; span <= size; span <<= 1) {
-      const angle = (-2 * Math.PI) / span;
-      const stepReal = Math.cos(angle);
-      const stepImaginary = Math.sin(angle);
-      for (let block = 0; block < size; block += span) {
-        let phasorReal = 1;
-        let phasorImaginary = 0;
-        for (let offset = 0; offset < span / 2; offset += 1) {
-          const evenIndex = block + offset;
-          const oddIndex = evenIndex + span / 2;
-          const oddReal = re[oddIndex] * phasorReal - im[oddIndex] * phasorImaginary;
-          const oddImaginary = re[oddIndex] * phasorImaginary + im[oddIndex] * phasorReal;
-          re[oddIndex] = re[evenIndex] - oddReal;
-          im[oddIndex] = im[evenIndex] - oddImaginary;
-          re[evenIndex] += oddReal;
-          im[evenIndex] += oddImaginary;
-          const nextReal = phasorReal * stepReal - phasorImaginary * stepImaginary;
-          phasorImaginary = phasorReal * stepImaginary + phasorImaginary * stepReal;
-          phasorReal = nextReal;
-        }
-      }
-    }
-  };
-  fft(real, imaginary);
+  fftInPlace(real, imaginary);
   const centre = Math.round((frequency * size) / 16000);
   let band = 0;
   for (let bin = centre - 2; bin <= centre + 2; bin += 1) {
     if (bin > 0 && bin < size / 2) band += real[bin] * real[bin] + imaginary[bin] * imaginary[bin];
   }
   return band;
+}
+
+/** Third-octave centres used by the colour-budget measurement. */
+const COLOUR_CENTRES = [160, 200, 250, 315, 400, 500, 630, 800, 1000, 1250, 1600, 2000, 2500, 3150, 4000, 5000];
+
+/**
+ * Long-term average spectrum, one number per third-octave band.
+ *
+ * Welch-style over the whole render with silent frames skipped, which is what
+ * makes it a measurement of timbre rather than of one lucky vowel.
+ */
+function longTermSpectrum(samples: Float32Array): number[] {
+  const size = 2048;
+  const re = new Float64Array(size);
+  const im = new Float64Array(size);
+  const bins = new Float64Array(size / 2 + 1);
+  let frames = 0;
+  for (let start = 0; start + size <= samples.length; start += 512) {
+    let energy = 0;
+    for (let index = 0; index < size; index += 1) {
+      const sample = samples[start + index];
+      energy += sample * sample;
+      re[index] = sample * (0.5 - 0.5 * Math.cos((2 * Math.PI * index) / size));
+      im[index] = 0;
+    }
+    if (energy / size < 1e-5) continue;
+    fftInPlace(re, im);
+    for (let bin = 0; bin <= size / 2; bin += 1) bins[bin] += re[bin] * re[bin] + im[bin] * im[bin];
+    frames += 1;
+  }
+  if (!frames) return COLOUR_CENTRES.map(() => 0);
+  return COLOUR_CENTRES.map((centre) => {
+    const low = Math.max(1, Math.round(centre / Math.pow(2, 1 / 6) / (16000 / size)));
+    const high = Math.min(size / 2, Math.round(centre * Math.pow(2, 1 / 6) / (16000 / size)));
+    let power = 0;
+    for (let bin = low; bin <= high; bin += 1) power += bins[bin];
+    return power / frames;
+  });
+}
+
+/**
+ * How far one render's timbre sits from another's, in dB, per band.
+ *
+ * The overall level is subtracted first, so a quieter render is not reported as
+ * a coloured one: this measures shape, which is the only thing a profile is
+ * allowed to change.
+ */
+function timbreDeviation(measured: Float32Array, reference: Float32Array): { worst: number; atHz: number } {
+  const a = longTermSpectrum(measured);
+  const b = longTermSpectrum(reference);
+  const deviations = a.map((value, index) => 10 * Math.log10((value + 1e-20) / (b[index] + 1e-20)));
+  const offset = deviations.reduce((sum, value) => sum + value, 0) / Math.max(1, deviations.length);
+  let worst = 0;
+  let atHz = COLOUR_CENTRES[0];
+  deviations.forEach((value, index) => {
+    const centred = value - offset;
+    if (Math.abs(centred) > Math.abs(worst)) {
+      worst = centred;
+      atHz = COLOUR_CENTRES[index];
+    }
+  });
+  return { worst, atHz };
 }
 
 /** A steady tone, which is the easiest signal to hear a resampling artefact in. */
@@ -742,6 +806,62 @@ check(
   'the throat resonance slider reaches generated speech',
   bandShare(resonated, 450) > bandShare(warmUp.samples, 450) * 1.15,
   `450 Hz share ${bandShare(warmUp.samples, 450).toFixed(4)} -> ${bandShare(resonated, 450).toFixed(4)}`,
+);
+
+// The budget, enforced. A slider dragged past the cap must not deliver more
+// than the cap: the old stage let eight separate filters sum to +13 dB in one
+// region, and that sum — not any one algorithm — is what made the profiles
+// sound like a tube rather than like the speaker.
+const pushed = transformRecordedVoice(
+  warmUp.samples,
+  { pitch: 1, rate: 1, toneStyle: 'natural', throatWarmth: 10, oralClarity: 10, airPresence: 10 },
+  16000,
+);
+const pushedDeviation = timbreDeviation(pushed, untouched);
+check(
+  'a slider past the cap cannot colour the voice more than the cap',
+  Math.abs(pushedDeviation.worst) <= 4.5,
+  `worst ${pushedDeviation.worst.toFixed(2)} dB at ${pushedDeviation.atHz} Hz with every slider at +10`,
+);
+
+// The same budget measured on the voices people actually hear. Each preset is
+// compared with the same speaker, pitch and pace with no character applied, so
+// the only difference left is the colouring — which is where the second
+// listening test said the damage was. Deliberate characters (whisper, radio,
+// robot) are exempt: they are filters on purpose, and the interface says so.
+const colourBudget: Array<[string, number]> = [];
+for (const preset of PRESET_VOICE_MODELS) {
+  if (preset.toneStyle === 'whisper' || preset.toneStyle === 'radio' || preset.toneStyle === 'robot') continue;
+  const plain: VoiceModelConfig = {
+    ...preset,
+    pitch: 1,
+    rate: 1,
+    volume: 1,
+    toneStyle: 'natural',
+    throatWarmth: 0,
+    oralClarity: 0,
+    airPresence: 0,
+  };
+  const plainRender = await renderSpeech(PASSAGES[0].text, plain);
+  const shapedOnly = transformRecordedVoice(
+    plainRender.samples,
+    { pitch: preset.pitch, rate: preset.rate, toneStyle: 'natural' },
+    16000,
+  );
+  const shipped = await renderSpeech(PASSAGES[0].text, preset);
+  const deviation = timbreDeviation(shipped.samples, shapedOnly);
+  colourBudget.push([preset.name, deviation.worst]);
+  check(
+    `${preset.name}: the profile colours the voice by less than 4.5 dB`,
+    Math.abs(deviation.worst) <= 4.5,
+    `worst ${deviation.worst.toFixed(2)} dB at ${deviation.atHz} Hz`,
+  );
+  releaseSynthesis(plainRender);
+  releaseSynthesis(shipped);
+}
+console.log(
+  `  ${'profile colour budget (dB)'.padEnd(38)} ` +
+    colourBudget.map(([name, value]) => `${name.split(' ')[0]} ${value >= 0 ? '+' : ''}${value.toFixed(1)}`).join('  '),
 );
 
 // --- speaker resolution ----------------------------------------------------

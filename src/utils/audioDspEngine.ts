@@ -6,9 +6,9 @@ export interface VoiceDspConfig {
   rate: number; // 0.6 to 1.6 (1.0 = normal)
   volume: number; // 0.1 to 1.0
   toneStyle: 'natural' | 'deep' | 'energetic' | 'whisper' | 'radio' | 'robot';
-  throatWarmth?: number; // -12 to +12 dB (F1 resonance)
-  oralClarity?: number; // -12 to +12 dB (F2 resonance)
-  airPresence?: number; // -12 to +12 dB (F3 resonance)
+  throatWarmth?: number; // -3 to +3 dB (F1 tilt, clamped by voiceTransform)
+  oralClarity?: number; // -3 to +3 dB (F2 tilt, clamped by voiceTransform)
+  airPresence?: number; // -3 to +3 dB (F3 tilt, clamped by voiceTransform)
 }
 
 let activeSourceNode: AudioBufferSourceNode | null = null;
