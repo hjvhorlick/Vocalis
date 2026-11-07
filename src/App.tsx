@@ -10,6 +10,7 @@ import { VoiceLibrary } from './components/VoiceLibrary';
 import { GitHubSyncModal } from './components/GitHubSyncModal';
 import { VoiceCredits } from './components/VoiceCredits';
 import { RecordedVoiceLibrary } from './components/RecordedVoiceLibrary';
+import { VOICE_CATALOGUE } from './data/voiceCatalogue';
 
 export function App() {
   const [activeTab, setActiveTab] = useState<'studio' | 'dialogue' | 'library'>('studio');
@@ -155,6 +156,8 @@ export function App() {
     setActiveTab('studio');
   };
 
+  const installableVoiceCount = VOICE_CATALOGUE.filter((voice) => voice.install).length;
+
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col font-sans selection:bg-indigo-500/30 selection:text-indigo-200">
       {/* Top Header */}
@@ -176,6 +179,24 @@ export function App() {
       <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-6">
         {activeTab === 'studio' && (
           <div className="space-y-6">
+            {/* The library is the reason this app has more than two people in it,
+                and it lives behind a tab. Point at it from here. */}
+            <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-indigo-500/25 bg-indigo-500/5 px-4 py-3">
+              <p className="text-xs text-slate-300">
+                <span className="font-semibold text-slate-100">
+                  {VOICE_CATALOGUE.length} recorded voice databases
+                </span>{' '}
+                were investigated. {installableVoiceCount} can be installed on this machine and
+                spoken as recorded; the rest are listed with the reason they cannot be used.
+              </p>
+              <button
+                onClick={() => setActiveTab('library')}
+                className="shrink-0 rounded-xl border border-indigo-500/40 bg-indigo-600/20 px-3 py-1.5 text-xs font-semibold text-indigo-200 transition-all hover:bg-indigo-600/30 hover:text-white"
+              >
+                Open the voice library →
+              </button>
+            </div>
+
             {/* 1. Predefined Voices List (Select to Manipulate) */}
             <PredefinedVoiceList
               voices={models}
