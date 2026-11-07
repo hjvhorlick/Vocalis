@@ -13,6 +13,11 @@ import {
   progressLogPath,
 } from './src/utils/voiceLibraryPaths';
 import { pythonInstallHint, resolvePythonExecutable } from './src/utils/pythonRuntime';
+import {
+  VOCALIS_EXTENSION,
+  decodeVocalisVoice,
+  encodeVocalisVoice,
+} from './src/utils/vocalisVoiceFile';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -327,6 +332,64 @@ async function startServer() {
       res.json({ removed: id });
     } catch (err: any) {
       res.status(500).json({ error: err.message });
+    }
+  });
+
+  // Export one installed voice as a single sealed `.vocalis` file.
+  //
+  // The file is built from the pack on disk, so the samples are the ones that were
+  // installed — the format is a container, not a codec, and nothing is re-encoded.
+  // A voice that is already sealed is handed back as-is rather than opened and
+  // sealed again, which would change its bytes for no benefit.
+  app.get('/api/voices/:id/export', async (req: Request, res: Response) => {
+    const id = req.params.id;
+    const dir = installedVoiceDir(id);
+    if (!dir) return res.status(400).json({ error: 'That voice id is protected or invalid' });
+    if (!fs.existsSync(dir)) return res.status(404).json({ error: 'That voice is not installed' });
+    const sealedPath = path.join(dir, `voice.${VOCALIS_EXTENSION}`);
+    try {
+      let sealed: Buffer;
+      if (fs.existsSync(sealedPath)) {
+        sealed = fs.readFileSync(sealedPath);
+        await decodeVocalisVoice(sealed);
+      } else {
+        const manifestPath = path.join(dir, 'manifest.json');
+        const audioPath = path.join(dir, 'diphones.bin');
+        if (!fs.existsSync(manifestPath) || !fs.existsSync(audioPath)) {
+          return res.status(409).json({ error: 'That voice has neither a manifest nor sealed audio to export.' });
+        }
+        const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
+        const audio = fs.readFileSync(audioPath);
+        const voice = findVoiceCandidate(id);
+        sealed = Buffer.from(
+          await encodeVocalisVoice({
+            id,
+            displayName: voice?.displayName ?? id,
+            language: voice?.language,
+            accent: voice?.accent,
+            gender: voice?.gender,
+            licence: voice?.licence,
+            provenance: voice
+              ? {
+                  sourceProject: voice.sourceProject,
+                  sourceUrl: voice.sourceUrl,
+                  originalFormat: voice.originalFormat,
+                }
+              : undefined,
+            manifest,
+            audio: audio.buffer.slice(audio.byteOffset, audio.byteOffset + audio.byteLength) as ArrayBuffer,
+          }),
+        );
+      }
+      res.setHeader('Content-Type', 'application/vnd.vocalis.voice');
+      res.setHeader('Content-Disposition', `attachment; filename="${id}.${VOCALIS_EXTENSION}"`);
+      res.setHeader('Content-Length', String(sealed.byteLength));
+      res.setHeader('Cache-Control', 'no-store');
+      res.end(sealed);
+    } catch (error) {
+      res.status(500).json({
+        error: `That voice could not be sealed: ${error instanceof Error ? error.message : String(error)}`,
+      });
     }
   });
 

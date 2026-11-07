@@ -495,6 +495,17 @@ export const RecordedVoiceLibrary: React.FC<RecordedVoiceLibraryProps> = ({
                       <Volume2 className="h-3.5 w-3.5" />
                       {isActive ? 'In use' : 'Use voice'}
                     </button>
+                    {/* The voice as one sealed file: this is the export the format
+                        exists for. A plain anchor so the browser saves it itself. */}
+                    <a
+                      href={`/api/voices/${encodeURIComponent(row.id)}/export`}
+                      download={`${row.id}.vocalis`}
+                      className="flex items-center gap-1.5 rounded-lg border border-slate-700 bg-slate-800 px-2.5 py-1.5 text-[11px] font-semibold text-slate-200 hover:border-emerald-500 hover:text-white"
+                      title="Save this voice as a sealed .vocalis file — it opens in Vocalis only"
+                    >
+                      <Download className="h-3.5 w-3.5" />
+                      Export
+                    </a>
                     <button
                       onClick={() => void handleRemove(row)}
                       className="flex items-center gap-1.5 rounded-lg border border-rose-500/30 bg-rose-500/10 px-2.5 py-1.5 text-[11px] font-semibold text-rose-200 hover:bg-rose-500/20"

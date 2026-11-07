@@ -49,9 +49,19 @@ import {
 import { AUDITION_PHRASE, modelForLibraryVoice } from '../src/utils/voiceLibrary';
 import { initializeLocalSpeechEngine, renderSpeech, PRESET_VOICE_MODELS } from '../src/utils/naturalVoiceEngine';
 import { releaseVoicePack } from '../src/utils/cmuDiphoneSynthesizer';
+import {
+  VOCALIS_EXTENSION,
+  decodeVocalisVoice,
+  encodeVocalisVoice,
+  readVocalisVoiceHeader,
+  type VocalisDiphoneManifest,
+} from '../src/utils/vocalisVoiceFile';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
-const VOICE_ROOT = resolve(ROOT, 'public', 'optional-voices');
+/** Where installed packs live. Overridable so tests can own a tree of their own. */
+const VOICE_ROOT = process.env.VOCALIS_VOICE_ROOT
+  ? resolve(process.env.VOCALIS_VOICE_ROOT)
+  : resolve(ROOT, 'public', 'optional-voices');
 const PROGRESS_ROOT = resolve(ROOT, 'var', 'voice-progress');
 
 interface InstalledInfo {
@@ -119,6 +129,14 @@ function printUsage(): void {
         stand-ins. This is the answer to "is it actually working?". With --wav
         the same samples are written to a file you can play, one file per voice
         when several are installed.
+
+  pack <id...> [--out path.vocalis]
+        Seal installed voices into .vocalis files — one file per voice, lossless,
+        readable only by Vocalis. The samples are copied, never re-encoded.
+
+  import <file.vocalis>
+        Install a sealed voice file. The file is copied into the library as it
+        stands; it is not unpacked.
 
   urls [--class A|B]
         Print the curl commands for the archives, for people who would rather
@@ -365,6 +383,181 @@ function writeWav(target: string, samples: Float32Array, sampleRate: number): vo
   writeFileSync(target, Buffer.concat([header, data]));
 }
 
+/**
+ * Load an installed pack from disk. A voice is installed either as the original
+ * `manifest.json` + `diphones.bin` pair or as a sealed `voice.vocalis` file, and
+ * every reader in this command has to accept both or an exported voice would stop
+ * verifying the moment it was re-imported.
+ */
+async function loadInstalledPack(dir: string): Promise<{ manifest: VocalisDiphoneManifest; audio: ArrayBuffer }> {
+  const sealed = resolve(dir, `voice.${VOCALIS_EXTENSION}`);
+  if (existsSync(sealed)) {
+    const file = readFileSync(sealed);
+    const opened = await decodeVocalisVoice(file);
+    return { manifest: opened.manifest, audio: opened.audio };
+  }
+  const manifestPath = resolve(dir, 'manifest.json');
+  const audioPath = resolve(dir, 'diphones.bin');
+  if (!existsSync(manifestPath) || !existsSync(audioPath)) {
+    throw new Error(`${dir} holds neither a voice.vocalis file nor a manifest with its audio.`);
+  }
+  const audio = readFileSync(audioPath);
+  return {
+    manifest: JSON.parse(readFileSync(manifestPath, 'utf-8')) as VocalisDiphoneManifest,
+    audio: audio.buffer.slice(audio.byteOffset, audio.byteOffset + audio.byteLength) as ArrayBuffer,
+  };
+}
+
+/** The licence and provenance the catalogue knows, shaped for the file header. */
+function fileMetadataFor(id: string, displayName: string): {
+  displayName: string;
+  language?: string;
+  accent?: string;
+  gender?: string;
+  licence?: { name: string; url?: string; attribution?: string; commercialUse?: string; redistribution?: string; modification?: string };
+  provenance?: { sourceProject?: string; sourceUrl?: string; originalFormat?: string };
+} {
+  const voice = findVoiceCandidate(id);
+  if (!voice) return { displayName };
+  const { licence } = voice;
+  return {
+    displayName: voice.displayName,
+    language: voice.language,
+    accent: voice.accent,
+    gender: voice.gender,
+    licence: {
+      name: licence.name,
+      url: licence.url,
+      attribution: licence.attribution,
+      commercialUse: licence.commercialUse,
+      redistribution: licence.redistribution,
+      modification: licence.modification,
+    },
+    provenance: {
+      sourceProject: voice.sourceProject,
+      sourceUrl: voice.sourceUrl,
+      originalFormat: voice.originalFormat,
+    },
+  };
+}
+
+/**
+ * `pack <id...> [--out path]` — seal installed voices into `.vocalis` files.
+ */
+async function pack(args: string[]): Promise<number> {
+  const ids = positionals(args);
+  if (!ids.length) {
+    const installed = VOICE_CATALOGUE.filter((voice) => installedInfo(voice.id)).map((voice) => voice.id);
+    console.error(
+      installed.length
+        ? `Nothing to pack. Try: npm run voices -- pack ${installed[0]}`
+        : 'Nothing is installed yet. Try `npm run voices -- install cmu-kal`.',
+    );
+    return 1;
+  }
+  const outFlag = valueOf(args, '--out');
+  let failures = 0;
+  for (const id of ids) {
+    const dir = installedVoiceDir(VOICE_ROOT, id);
+    if (!dir) {
+      console.error(`✗ ${id}: that is not a valid voice id.`);
+      failures += 1;
+      continue;
+    }
+    if (!installedInfo(id)) {
+      console.error(`✗ ${id} is not installed, so there is nothing to pack.`);
+      failures += 1;
+      continue;
+    }
+    const meta = fileMetadataFor(id, id);
+    const { manifest, audio } = await loadInstalledPack(dir);
+    const sealed = await encodeVocalisVoice({
+      id,
+      ...meta,
+      manifest: { ...manifest, sampleRate: manifest.sampleRate ?? 16000 } as VocalisDiphoneManifest,
+      audio,
+    });
+    const target = outFlag
+      ? ids.length > 1
+        ? outFlag.replace(/\.vocalis$/i, '') + `-${id}.${VOCALIS_EXTENSION}`
+        : outFlag
+      : resolve(process.cwd(), `${id}.${VOCALIS_EXTENSION}`);
+    const header = await readVocalisVoiceHeader(sealed);
+    mkdirSync(dirname(resolve(target)), { recursive: true });
+    writeFileSync(target, Buffer.from(sealed));
+    console.log(
+      `✓ ${id} → ${target}  (${humanBytes(sealed.byteLength)}, ${header.unitCount} units, ` +
+        `${header.durationSeconds.toFixed(1)} s at ${header.sampleRate} Hz, sealed)`,
+    );
+  }
+  return failures === 0 ? 0 : 1;
+}
+
+/**
+ * `import <file.vocalis>` — install a sealed voice file as it stands. The file is
+ * copied, not unpacked: an imported voice stays sealed on disk, which is the point
+ * of the format.
+ */
+async function importVoiceFile(args: string[]): Promise<number> {
+  const targets = positionals(args);
+  if (!targets.length) {
+    console.error('Nothing to import. Try: npm run voices -- import myvoice.vocalis');
+    return 1;
+  }
+  let failures = 0;
+  for (const target of targets) {
+    const path = expandHome(target);
+    if (!existsSync(path)) {
+      console.error(`✗ ${path} does not exist.`);
+      failures += 1;
+      continue;
+    }
+    const bytes = readFileSync(path);
+    try {
+      const opened = await decodeVocalisVoice(bytes);
+      const { header } = opened;
+      if (isProtectedVoiceId(header.id)) {
+        console.error(`✗ ${header.id} is a protected base voice and cannot be replaced by a file.`);
+        failures += 1;
+        continue;
+      }
+      const dir = installedVoiceDir(VOICE_ROOT, header.id);
+      if (!dir) {
+        console.error(`✗ ${header.id} is not a usable voice id.`);
+        failures += 1;
+        continue;
+      }
+      mkdirSync(dir, { recursive: true });
+      writeFileSync(resolve(dir, `voice.${VOCALIS_EXTENSION}`), bytes);
+      const pcm = opened.audio.byteLength;
+      writeFileSync(
+        resolve(dir, 'installed.json'),
+        `${JSON.stringify(
+          {
+            id: header.id,
+            installedAt: new Date().toISOString(),
+            units: header.unitCount,
+            bytes: pcm,
+            sourceUrl: resolve(path),
+            converter: 'vocalis-file',
+            format: `vocalis-v${header.version}`,
+          },
+          null,
+          2,
+        )}\n`,
+      );
+      console.log(
+        `✓ imported ${header.displayName} (${header.id}): ${header.unitCount} units, ` +
+          `${humanBytes(pcm)}, ${header.durationSeconds.toFixed(1)} s of the original samples.`,
+      );
+    } catch (error) {
+      console.error(`✗ ${target}: ${error instanceof Error ? error.message : String(error)}`);
+      failures += 1;
+    }
+  }
+  return failures === 0 ? 0 : 1;
+}
+
 async function verify(args: string[]): Promise<number> {
   const installed = VOICE_CATALOGUE.filter((voice) => installedInfo(voice.id));
   const wanted = positionals(args);
@@ -406,18 +599,7 @@ async function verify(args: string[]): Promise<number> {
     registerOptionalVoiceSource({
       id: voice.id,
       displayName: voice.displayName,
-      loadPack: async () => {
-        const manifestPath = resolve(dir, 'manifest.json');
-        const audioPath = resolve(dir, 'diphones.bin');
-        if (!existsSync(manifestPath) || !existsSync(audioPath)) {
-          throw new Error(`${voice.id} is missing its manifest or its audio.`);
-        }
-        const audio = readFileSync(audioPath);
-        return {
-          manifest: JSON.parse(readFileSync(manifestPath, 'utf-8')),
-          audio: audio.buffer.slice(audio.byteOffset, audio.byteOffset + audio.byteLength) as ArrayBuffer,
-        };
-      },
+      loadPack: () => loadInstalledPack(dir) as Promise<{ manifest: never; audio: ArrayBuffer }>,
     });
 
     const model = {
@@ -569,7 +751,11 @@ async function install(args: string[]): Promise<number> {
       console.log(`\n▸ ${voice.displayName} (${id}) is already installed — skipping. Remove it first to reinstall.`);
       continue;
     }
-    if (fromArchive && !existsSync(expandHome(fromArchive))) {
+    // A sealed file is not an archive: it is a whole voice, so --from hands off.
+  if (fromArchive && /\.vocalis$/i.test(fromArchive)) {
+    return importVoiceFile([fromArchive]);
+  }
+  if (fromArchive && !existsSync(expandHome(fromArchive))) {
       console.error(`✗ ${fromArchive} does not exist.`);
       failures += 1;
       continue;
@@ -653,6 +839,11 @@ async function main(): Promise<number> {
       return inspect(args);
     case 'verify':
       return verify(args);
+    case 'pack':
+      return pack(args);
+    case 'import':
+    case 'add':
+      return importVoiceFile(args);
     case 'remove':
     case 'rm':
       return remove(args);

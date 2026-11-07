@@ -1,0 +1,131 @@
+# The `.vocalis` voice file
+
+One voice, one file, Vocalis only.
+
+A voice in this project is two things: a unit index and a block of recorded
+samples. Kept as a folder of `manifest.json` + `diphones.bin` that pair is readable
+by anything — a sample editor opens the bin, any other diphone engine can use the
+pair, and nothing about the file says where it came from. The `.vocalis` container
+seals the two together into a single file that this application opens and nothing
+else does, without touching the audio.
+
+* **Lossless by construction.** The payload *is* the original 16-bit PCM. Sealing is
+  a container, not a codec: no resampling, no re-quantisation, no normalisation, no
+  extra generation loss. A voice heard from a `.vocalis` file is bit-identical to
+  the pack it was made from, and `tests/vocalisFile.test.ts` asserts exactly that
+  with `Buffer.equals`.
+* **One file.** Export gives you `arctic-awb.vocalis`; import takes that file and
+  nothing else. No sidecar JSON to lose, no folder to zip.
+* **Integrity before audio.** Every byte is covered by AES-GCM and a SHA-256 digest,
+  so a truncated download or a single flipped bit is caught before a sample is used,
+  and the message says which it was.
+* **The licence travels inside.** The header still names the source, the licence and
+  the attribution in the clear, because a sealed file that has forgotten where the
+  recordings came from is worse than no file at all.
+
+## Layout
+
+```
+offset  size          field
+     0     8          magic "VOCALIS\0"
+     8     1          file version (1)
+     9     1          flags: bit 0 = sealed payload
+    10     2          reserved, zero
+    12     4          header length, uint32 little-endian
+    16     n          header, UTF-8 JSON
+16+n      m          payload: AES-256-GCM ciphertext
+16+n+m    16          GCM authentication tag
+```
+
+The header is readable without the key — that is deliberate, so the library can show
+what a file is before installing it:
+
+```json
+{
+  "format": "vocalis",
+  "version": 1,
+  "createdAt": "2026-11-07T22:08:11.982Z",
+  "id": "cmu-kal",
+  "displayName": "CMU KAL (diphone)",
+  "language": "English",
+  "accent": "US English",
+  "gender": "Male",
+  "sampleRate": 16000,
+  "encoding": "pcm-s16le",
+  "unitCount": 1578,
+  "durationSeconds": 219.8,
+  "payloadBytes": 7099339,
+  "payloadSha256": "…",
+  "licence": { "name": "CSTR / University of Edinburgh diphone database terms" },
+  "provenance": { "sourceProject": "CMU KAL diphone database" },
+  "crypto": { "cipher": "AES-256-GCM", "kdf": "HKDF-SHA256", "salt": "…", "iv": "…" }
+}
+```
+
+The sealed payload is a second, tiny container — `uint32LE manifestLength`, the
+diphone manifest JSON, then the samples — so the unit table is hidden along with the
+audio.
+
+Keys: `HKDF-SHA256(application key, per-file 16-byte salt, info = "vocalis-voice-v1|<id>")`
+→ a 256-bit AES-GCM key. The voice id is part of the derivation, so a payload cannot
+be moved into another voice's file and opened; the test renames a header and the file
+refuses to open.
+
+## What this is not
+
+The application key ships inside Vocalis, because a player must be able to decode
+what it plays. The container therefore stops the file being *used* anywhere else —
+a sample editor, a WAV player, `jq`, another synthesiser, a search engine — and makes
+silent tampering impossible. It does not stop someone who runs this application and
+instruments it. Treat `.vocalis` as a sealed container with provenance, not as DRM
+that outlives the app, and say so in any marketplace copy rather than overclaiming.
+
+## Using it
+
+Export an installed voice from the library card (**Export**), or from a terminal:
+
+```sh
+npm run voices -- pack cmu-kal --out ~/Desktop/cmu-kal.vocalis
+```
+
+The CLI prints what it sealed, which is also what the file header says:
+
+```
+✓ cmu-kal → /home/you/Desktop/cmu-kal.vocalis  (6.8 MB, 1578 units, 219.8 s at 16000 Hz, sealed)
+```
+
+Install a `.vocalis` file on any machine running Vocalis:
+
+```sh
+npm run voices -- import ~/Desktop/cmu-kal.vocalis
+npm run voices -- verify cmu-kal
+```
+
+`import` copies the file as it stands into `public/optional-voices/<id>/voice.vocalis`
+— it does **not** unpack the manifest and audio beside it, so an imported voice stays
+sealed on disk. `verify` renders a sentence from it through the same loader the
+browser uses, which is how the round trip is checked rather than assumed.
+
+The HTTP route behind the Export button is `GET /api/voices/<id>/export`; it answers
+with `Content-Type: application/vnd.vocalis.voice`, a download filename, and the
+sealed bytes. Protected base voices (`slt`, `bdl`) and traversal attempts are refused
+with a 400, before any file is read.
+
+## Compatibility
+
+Both shapes are accepted for installed voices: a pack directory may hold either
+`voice.vocalis` or the original `manifest.json` + `diphones.bin` pair. The loader
+tries the sealed file first, so the six packs shipped in this repository keep working
+and anything imported as `.vocalis` works too. The format is versioned in two places
+(byte 8 and the header); a file that disagrees with itself is refused as corrupt
+rather than opened on a guess.
+
+## Files
+
+| File | What it is |
+|---|---|
+| `src/utils/vocalisVoiceFile.ts` | the format: encode, decode, header read, typed errors |
+| `tests/vocalisFile.test.ts` | 40 checks — quality, exclusivity, integrity, CLI round trip |
+| `scripts/voice_library.ts` | `pack` and `import`, and the shared pack loader |
+| `server.ts` | `GET /api/voices/<id>/export` |
+| `src/components/RecordedVoiceLibrary.tsx` | the Export control on an installed card |

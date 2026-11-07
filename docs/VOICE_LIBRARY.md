@@ -169,6 +169,16 @@ one reason Audition is a button — `playRenderedSpeech` now waits for the audio
 context to actually start and reports it in the card if the browser refuses, instead
 of rendering silently.
 
+### Exporting a voice as one sealed file
+
+Every installed card has an **Export** button that saves the voice as a single
+`<id>.vocalis` file: the unit index and the samples sealed together, lossless, and
+readable only by this application. The same file installs elsewhere with
+`npm run voices -- import <id>.vocalis`, or from the terminal with
+`npm run voices -- pack <id> --out <id>.vocalis`. The format, its header, its keys
+and — importantly — what it does *not* protect against are specified in
+[`VOCALIS_FILE_FORMAT.md`](VOCALIS_FILE_FORMAT.md).
+
 ### Installing from a directory you already have
 
 If `festvox.org` is slow, blocking, or you already have the data, `--from` accepts
@@ -526,6 +536,8 @@ Required checks and where they stand:
 
 | File | What it is |
 |---|---|
+| `docs/VOCALIS_FILE_FORMAT.md` | the `.vocalis` container: layout, keys, limits |
+| `src/utils/vocalisVoiceFile.ts` | encode/decode a sealed voice file |
 | `src/data/voiceCatalogue.ts` | the 107 investigated voices with sources, licences, classes and recipes |
 | `src/utils/optionalVoicePacks.ts` | the registry the engine resolves optional ids through; refuses base ids |
 | `src/utils/voiceLibraryPaths.ts` | the id/path guard shared by the server and the tests |
