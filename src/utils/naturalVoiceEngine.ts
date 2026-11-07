@@ -25,6 +25,7 @@ import {
 } from './naturalHumanAudio';
 import {
   VoiceDspConfig,
+  playBufferUntouched,
   playTransformedVoice,
   playRenderedSpeech,
   stopTransformedVoice,
@@ -606,6 +607,58 @@ export function playDialogueRender(
       callbacks?.onError?.(error);
     },
   });
+}
+
+/**
+ * Play the recording itself — the file, untouched.
+ *
+ * This exists because "compare it with the original" is meaningless if the thing
+ * on the left of the comparison is generated. The default render IS built from the
+ * recording's units, but at their recorded lengths with crossfade joins and one
+ * normalising gain, and the measurement is plain: on `slt a0001` the render is
+ * 4.94 s against the recording's 3.36 s and differs from it by 155% of its own
+ * energy. That is not the recording, and calling it one was wrong.
+ *
+ * So there are two different things and both are offered:
+ *   - `playRecordedVoice` plays `public/samples/*.wav` as it is, with nothing
+ *     between the file and the speakers.
+ *   - `playRender` / `speakText` play what the pipeline produces.
+ *
+ * The words differ: the recording says its own sentence, which is why the UI shows
+ * that sentence next to the button rather than pretending it is your text.
+ */
+export async function playRecordedVoice(
+  model: VoiceModelConfig,
+  callbacks?: SpeechCallbacks,
+): Promise<boolean> {
+  try {
+    const buffer = await resolveBufferForModel(model);
+    playBufferUntouched(buffer, {
+      onStart: () => callbacks?.onStart?.(),
+      onEnded: () => callbacks?.onEnd?.(),
+      onError: (error) => callbacks?.onError?.(error),
+    });
+    return true;
+  } catch (error) {
+    callbacks?.onError?.(error instanceof Error ? error : new Error(String(error)));
+    callbacks?.onEnd?.();
+    return false;
+  }
+}
+
+/** The recording a profile is built from: its id, sentence and duration. */
+export function recordingFor(
+  model: VoiceModelConfig,
+): { id: string; transcript: string; name: string; speaker: string; url: string } {
+  const sample =
+    NATURAL_HUMAN_SAMPLES.find((entry) => entry.id === model.baseSampleId) || NATURAL_HUMAN_SAMPLES[0];
+  return {
+    id: sample.id,
+    transcript: sample.transcript,
+    name: sample.name,
+    speaker: sample.speaker,
+    url: sample.url,
+  };
 }
 
 /** Release every object URL held by a conversation render. */

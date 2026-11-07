@@ -6,6 +6,7 @@ import {
   playRender,
   renderSpeech,
   stopSpeaking,
+  playRecordedVoice,
   auditionSourceRecording,
   setUserAudioBuffer,
   getUserAudioBuffer,
@@ -23,6 +24,7 @@ import {
   Download,
   BookmarkCheck,
   AudioWaveform,
+  Activity,
   Volume2,
   Check,
   RotateCcw,
@@ -83,8 +85,11 @@ export const SpeechStudio: React.FC<SpeechStudioProps> = ({
   const [activeWord, setActiveWord] = useState<number>(-1);
   const [engineError, setEngineError] = useState<string | null>(null);
 
-  // Audition of the original reference recording (a separate feature)
+  // Audition of the original reference recording — two different features, and the
+  // difference matters: the untouched one plays the file, the other runs it through
+  // the effect graph so the same settings can be compared on the same voice.
   const [isAuditioning, setIsAuditioning] = useState(false);
+  const [isPlayingRecording, setIsPlayingRecording] = useState(false);
 
   // Take player / export
   const [generatedWavUrl, setGeneratedWavUrl] = useState<string | null>(null);
@@ -200,6 +205,27 @@ export const SpeechStudio: React.FC<SpeechStudioProps> = ({
     } finally {
       setIsRendering(false);
     }
+  };
+
+  /**
+   * Play the licensed recording itself.
+   *
+   * Not through the pipeline, not through the effect graph: the file, as it is. This
+   * is the only button in the application that does that, and it is the one to press
+   * when the question is "is this thing damaging my voice?" — because everything else
+   * here is arithmetic on this recording and arithmetic is not free.
+   */
+  const handlePlayRecording = async () => {
+    if (isPlayingRecording) {
+      stopSpeaking();
+      setIsPlayingRecording(false);
+      return;
+    }
+    setIsPlayingRecording(true);
+    await playRecordedVoice(activeModel, {
+      onEnd: () => setIsPlayingRecording(false),
+      onError: () => setIsPlayingRecording(false),
+    });
   };
 
   /** A/B against the original human recording, with the same effects applied. */
@@ -764,18 +790,31 @@ export const SpeechStudio: React.FC<SpeechStudioProps> = ({
               {isRendering ? 'Rendering WAV...' : 'Export WAV'}
             </button>
 
-            {/* Action 3: A/B against the original human recording */}
+            {/* Action 3: the two different things an "original" can mean */}
             <button
-              onClick={handleAuditionSource}
-              className="px-4 py-3.5 rounded-2xl bg-slate-950 hover:bg-slate-800 text-slate-300 font-semibold text-xs flex items-center gap-2 border border-slate-800 transition-colors cursor-pointer"
-              title={`Play the original ${activeSample.name} with the same settings, for comparison`}
+              onClick={handlePlayRecording}
+              className="px-4 py-3.5 rounded-2xl bg-emerald-950/40 hover:bg-emerald-900/40 text-emerald-200 font-semibold text-xs flex items-center gap-2 border border-emerald-800/60 transition-colors cursor-pointer"
+              title={`Play ${activeSample.name} exactly as it is: no pitch, no rate, no EQ, no gain`}
             >
-              {isAuditioning ? (
+              {isPlayingRecording ? (
                 <StopCircle className="w-3.5 h-3.5 text-rose-400" />
               ) : (
                 <Headphones className="w-3.5 h-3.5 text-emerald-400" />
               )}
-              Audition source recording
+              The recording (untouched)
+            </button>
+
+            <button
+              onClick={handleAuditionSource}
+              className="px-4 py-3.5 rounded-2xl bg-slate-950 hover:bg-slate-800 text-slate-300 font-semibold text-xs flex items-center gap-2 border border-slate-800 transition-colors cursor-pointer"
+              title={`Play ${activeSample.name} through the effect graph, for comparison`}
+            >
+              {isAuditioning ? (
+                <StopCircle className="w-3.5 h-3.5 text-rose-400" />
+              ) : (
+                <Activity className="w-3.5 h-3.5 text-slate-400" />
+              )}
+              Recording through the effects
             </button>
           </div>
 

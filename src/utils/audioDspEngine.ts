@@ -190,6 +190,54 @@ export function playTransformedVoice(
 }
 
 /**
+ * Play a buffer exactly as it is.
+ *
+ * No pitch, no rate, no equaliser, no normalising gain, no graph at all: the
+ * recorded samples go to the speakers through a single gain node so that the
+ * analyser still has something to draw. This is what "the recording" has to mean
+ * when it is put next to a generated render, because every other path in this file
+ * is arithmetic on the audio and arithmetic changes it.
+ */
+export function playBufferUntouched(
+  audioBuffer: AudioBuffer,
+  callbacks?: {
+    onStart?: () => void;
+    onEnded?: () => void;
+    onError?: (err: Error) => void;
+  },
+): void {
+  stopTransformedVoice();
+
+  try {
+    const ctx = getSharedAudioContext();
+    const source = ctx.createBufferSource();
+    source.buffer = audioBuffer;
+
+    const analyser = ctx.createAnalyser();
+    analyser.fftSize = 512;
+    source.connect(analyser);
+    analyser.connect(ctx.destination);
+
+    activeAnalyserNode = analyser;
+    activeSourceNode = source;
+    isAudioPlaying = true;
+
+    source.onended = () => {
+      isAudioPlaying = false;
+      activeSourceNode = null;
+      if (callbacks?.onEnded) callbacks.onEnded();
+    };
+
+    if (callbacks?.onStart) callbacks.onStart();
+    source.start(0);
+  } catch (err: any) {
+    isAudioPlaying = false;
+    activeSourceNode = null;
+    if (callbacks?.onError) callbacks.onError(err);
+  }
+}
+
+/**
  * Stop any ongoing audio playback
  */
 export function stopTransformedVoice(): void {

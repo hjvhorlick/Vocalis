@@ -2,6 +2,8 @@ import React, { useState } from 'react';
 import {
   VoiceModelConfig,
   NATURAL_HUMAN_SAMPLES,
+  playRecordedVoice,
+  recordingFor,
   speakRealWords,
   stopSpeaking,
 } from '../utils/naturalVoiceEngine';
@@ -456,10 +458,13 @@ export const VoiceManipulator: React.FC<VoiceManipulatorProps> = ({
               Hear each adjustment on its own
             </span>
             <p className="text-[10px] text-slate-400 leading-relaxed mt-1 max-w-2xl">
-              Both buttons play the same sentence from the same recording. “Original” sets every
-              control to the value that changes nothing; “With this one change” applies exactly one
-              thing from the list. Nothing else is on. Listen to them back to back and decide which
-              of these you want and which of them damage the voice.
+              Three different things, and they are not the same: <b className="text-emerald-300">The
+              recording</b> is the licensed WAV played as it is. <b className="text-slate-300">Rebuilt,
+              nothing applied</b> is what this application produces from that recording's pieces with
+              every control neutral — same words, but assembled, normalised and joined, so it is
+              already the application's version of the voice. <b className="text-indigo-300">With this
+              one change</b> adds exactly one adjustment from the list. Use the first two to hear what
+              the pipeline itself costs, then the third to judge individual effects against it.
             </p>
           </div>
           <span className="text-[10px] font-mono text-slate-500">
@@ -482,10 +487,33 @@ export const VoiceManipulator: React.FC<VoiceManipulatorProps> = ({
 
           <button
             type="button"
-            onClick={() => speak(original(), 'the original recording, nothing applied')}
+            onClick={async () => {
+              // The file itself, straight to the speakers: no pitch, no rate, no EQ,
+              // no normalising gain, no graph. Everything else on this panel is built
+              // from this recording's pieces, and on `slt a0001` a rebuilt render is
+              // 4.94 s against the file's 3.36 s - so if the rebuilt version sounds
+              // worse, this is how you hear where the loss comes in.
+              stopSpeaking();
+              setIsAuditioning(true);
+              setLastHeard('the recording file, untouched');
+              await playRecordedVoice(voice, {
+                onEnd: () => setIsAuditioning(false),
+                onError: () => setIsAuditioning(false),
+              });
+            }}
             className="py-2 px-3 rounded-xl text-xs font-semibold border border-emerald-500/50 bg-emerald-500/10 text-emerald-300 hover:bg-emerald-500/20 transition-colors cursor-pointer"
+            title="The licensed WAV, played as it is"
           >
-            ▶ Original
+            ▶ The recording
+          </button>
+
+          <button
+            type="button"
+            onClick={() => speak(original(), 'rebuilt from the recording, nothing applied')}
+            className="py-2 px-3 rounded-xl text-xs font-semibold border border-slate-600 bg-slate-800/60 text-slate-200 hover:bg-slate-700/60 transition-colors cursor-pointer"
+            title="The pipeline's own output with every control neutral"
+          >
+            ▶ Rebuilt, nothing applied
           </button>
 
           <button
@@ -520,6 +548,11 @@ export const VoiceManipulator: React.FC<VoiceManipulatorProps> = ({
           );
         })()}
 
+        <p className="text-[10px] text-slate-500 leading-relaxed">
+          The recording is <b className="text-slate-400">{recordingFor(voice).name}</b> — it says
+          &ldquo;{recordingFor(voice).transcript}&rdquo;. That is the sentence, not your script, which
+          is why the other two buttons use the same words for the comparison to mean anything.
+        </p>
         <p className="text-[10px] text-slate-500">
           {isAuditioning
             ? `Playing: ${lastHeard ?? 'audio'}`
