@@ -15,6 +15,7 @@ import {
 import { pythonInstallHint, resolvePythonExecutable } from './src/utils/pythonRuntime';
 import {
   VOCALIS_EXTENSION,
+  VOCALIS_EXTENSION_ALIASES,
   decodeVocalisVoice,
   encodeVocalisVoice,
 } from './src/utils/vocalisVoiceFile';
@@ -335,7 +336,7 @@ async function startServer() {
     }
   });
 
-  // Export one installed voice as a single sealed `.vocalis` file.
+  // Export one installed voice as a single sealed `.vls` file.
   //
   // The file is built from the pack on disk, so the samples are the ones that were
   // installed — the format is a container, not a codec, and nothing is re-encoded.
@@ -346,10 +347,12 @@ async function startServer() {
     const dir = installedVoiceDir(id);
     if (!dir) return res.status(400).json({ error: 'That voice id is protected or invalid' });
     if (!fs.existsSync(dir)) return res.status(404).json({ error: 'That voice is not installed' });
-    const sealedPath = path.join(dir, `voice.${VOCALIS_EXTENSION}`);
+    const sealedPath = VOCALIS_EXTENSION_ALIASES.map((extension) => path.join(dir, `voice.${extension}`)).find(
+      (candidate) => fs.existsSync(candidate),
+    );
     try {
       let sealed: Buffer;
-      if (fs.existsSync(sealedPath)) {
+      if (sealedPath) {
         sealed = fs.readFileSync(sealedPath);
         await decodeVocalisVoice(sealed);
       } else {

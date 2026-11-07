@@ -16,7 +16,7 @@
  * Original Vocalis code.
  */
 
-import { VOCALIS_EXTENSION, decodeVocalisVoice } from './vocalisVoiceFile';
+import { VOCALIS_EXTENSION_ALIASES, decodeVocalisVoice } from './vocalisVoiceFile';
 
 /** One audio slice in the pack, byte offset into the PCM file and length in samples. */
 export interface OptionalVoiceUnit {
@@ -105,8 +105,15 @@ export function httpOptionalVoiceSource(id: string, displayName: string): Option
       const root = `/optional-voices/${encodeURIComponent(id)}`;
       // A sealed voice is a single file and is tried first: once a pack has been
       // imported or exported as `.vocalis` there is no manifest.json beside it.
-      const sealedResponse = await fetch(`${root}/voice.${VOCALIS_EXTENSION}`, { cache: 'no-cache' });
-      if (sealedResponse.ok) {
+      let sealedResponse: Response | null = null;
+      for (const extension of VOCALIS_EXTENSION_ALIASES) {
+        const attempt = await fetch(`${root}/voice.${extension}`, { cache: 'no-cache' });
+        if (attempt.ok) {
+          sealedResponse = attempt;
+          break;
+        }
+      }
+      if (sealedResponse) {
         const opened = await decodeVocalisVoice(await sealedResponse.arrayBuffer());
         if (!opened.manifest.units || !Object.keys(opened.manifest.units).length) {
           throw new Error(`The installed voice "${displayName}" has no unit index.`);

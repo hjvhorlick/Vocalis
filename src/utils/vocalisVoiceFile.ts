@@ -1,5 +1,5 @@
 /**
- * The `.vocalis` voice file — one file, Vocalis only.
+ * `.vls` — the Vocalis voice file. One file, Vocalis only.
  *
  * A voice is a manifest plus a block of recorded samples. Shipped as a folder of
  * `manifest.json` + `diphones.bin` it is readable by anything: rename the bin and
@@ -34,7 +34,13 @@
 
 export const VOCALIS_MAGIC = Uint8Array.from([0x56, 0x4f, 0x43, 0x41, 0x4c, 0x49, 0x53, 0x00]); // "VOCALIS\0"
 export const VOCALIS_FILE_VERSION = 1;
-export const VOCALIS_EXTENSION = 'vocalis';
+/**
+ * The extension. Short because it is typed and read far more often than it is
+ * explained: `arctic-awb.vls`. `.vocalis` is still accepted when importing, so a
+ * file written before the rename keeps working.
+ */
+export const VOCALIS_EXTENSION = 'vls';
+export const VOCALIS_EXTENSION_ALIASES = ['vls', 'vocalis'] as const;
 
 const FLAG_SEALED = 1;
 const HEADER_OFFSET = 16;
@@ -362,7 +368,7 @@ export async function decodeVocalisVoice(packed: ArrayBuffer | ArrayBufferView):
   if (!looksLikeVocalisVoice(data)) {
     throw new VocalisFormatError(
       'not-a-vocalis-file',
-      'This is not a Vocalis voice file. Only .vocalis files can be installed.',
+      'This is not a Vocalis voice file. Only .vls files can be installed.',
     );
   }
   const header = readHeader(data);

@@ -51,6 +51,7 @@ import { initializeLocalSpeechEngine, renderSpeech, PRESET_VOICE_MODELS } from '
 import { releaseVoicePack } from '../src/utils/cmuDiphoneSynthesizer';
 import {
   VOCALIS_EXTENSION,
+  VOCALIS_EXTENSION_ALIASES,
   decodeVocalisVoice,
   encodeVocalisVoice,
   readVocalisVoiceHeader,
@@ -130,11 +131,11 @@ function printUsage(): void {
         the same samples are written to a file you can play, one file per voice
         when several are installed.
 
-  pack <id...> [--out path.vocalis]
-        Seal installed voices into .vocalis files — one file per voice, lossless,
+  pack <id...> [--out path.vls]
+        Seal installed voices into .vls files — one file per voice, lossless,
         readable only by Vocalis. The samples are copied, never re-encoded.
 
-  import <file.vocalis>
+  import <file.vls>
         Install a sealed voice file. The file is copied into the library as it
         stands; it is not unpacked.
 
@@ -390,10 +391,10 @@ function writeWav(target: string, samples: Float32Array, sampleRate: number): vo
  * verifying the moment it was re-imported.
  */
 async function loadInstalledPack(dir: string): Promise<{ manifest: VocalisDiphoneManifest; audio: ArrayBuffer }> {
-  const sealed = resolve(dir, `voice.${VOCALIS_EXTENSION}`);
-  if (existsSync(sealed)) {
-    const file = readFileSync(sealed);
-    const opened = await decodeVocalisVoice(file);
+  for (const extension of VOCALIS_EXTENSION_ALIASES) {
+    const sealed = resolve(dir, `voice.${extension}`);
+    if (!existsSync(sealed)) continue;
+    const opened = await decodeVocalisVoice(readFileSync(sealed));
     return { manifest: opened.manifest, audio: opened.audio };
   }
   const manifestPath = resolve(dir, 'manifest.json');
@@ -479,7 +480,7 @@ async function pack(args: string[]): Promise<number> {
     });
     const target = outFlag
       ? ids.length > 1
-        ? outFlag.replace(/\.vocalis$/i, '') + `-${id}.${VOCALIS_EXTENSION}`
+        ? outFlag.replace(/\.(vls|vocalis)$/i, '') + `-${id}.${VOCALIS_EXTENSION}`
         : outFlag
       : resolve(process.cwd(), `${id}.${VOCALIS_EXTENSION}`);
     const header = await readVocalisVoiceHeader(sealed);
@@ -494,14 +495,14 @@ async function pack(args: string[]): Promise<number> {
 }
 
 /**
- * `import <file.vocalis>` — install a sealed voice file as it stands. The file is
+ * `import <file.vls>` — install a sealed voice file as it stands. The file is
  * copied, not unpacked: an imported voice stays sealed on disk, which is the point
  * of the format.
  */
 async function importVoiceFile(args: string[]): Promise<number> {
   const targets = positionals(args);
   if (!targets.length) {
-    console.error('Nothing to import. Try: npm run voices -- import myvoice.vocalis');
+    console.error('Nothing to import. Try: npm run voices -- import myvoice.vls');
     return 1;
   }
   let failures = 0;
@@ -752,7 +753,7 @@ async function install(args: string[]): Promise<number> {
       continue;
     }
     // A sealed file is not an archive: it is a whole voice, so --from hands off.
-  if (fromArchive && /\.vocalis$/i.test(fromArchive)) {
+  if (fromArchive && /\.(vls|vocalis)$/i.test(fromArchive)) {
     return importVoiceFile([fromArchive]);
   }
   if (fromArchive && !existsSync(expandHome(fromArchive))) {

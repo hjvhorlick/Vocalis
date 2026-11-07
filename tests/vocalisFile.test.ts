@@ -21,6 +21,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import {
+  VOCALIS_EXTENSION,
   VOCALIS_FILE_VERSION,
   VOCALIS_MAGIC,
   VocalisFormatError,
@@ -89,6 +90,7 @@ const sealed = await encodeVocalisVoice({
 const bytes = new Uint8Array(sealed);
 equal('the magic is the format signature', [...bytes.subarray(0, 8)], [...VOCALIS_MAGIC]);
 equal('the version byte is 1', bytes[8], VOCALIS_FILE_VERSION);
+equal('the extension is the short one', VOCALIS_EXTENSION, 'vls');
 check('it is recognised by its first bytes', looksLikeVocalisVoice(sealed));
 check('it does not begin like a WAV', Buffer.from(sealed).subarray(0, 4).toString() !== 'RIFF');
 check('it does not begin like a zip', Buffer.from(sealed).subarray(0, 2).toString() !== 'PK');
@@ -211,19 +213,19 @@ const cli = (args: string[]): { code: number; out: string } => {
   }
 };
 
-const sealedPath = join(WORK, 'cmu-kal.vocalis');
+const sealedPath = join(WORK, 'cmu-kal.vls');
 writeFileSync(sealedPath, Buffer.from(sealed));
 equal('the header can be read without opening the payload', (await readVocalisVoiceHeader(sealed)).id, 'cmu-kal');
 
 const imported = cli(['import', sealedPath]);
-check('`voices import <file.vocalis>` installs it', imported.code === 0, imported.out.trim().split('\n').slice(-1)[0]);
-check('and the pack on disk is the sealed file itself', existsSync(join(scratchRoot, 'cmu-kal', 'voice.vocalis')));
+check('`voices import <file.vls>` installs it', imported.code === 0, imported.out.trim().split('\n').slice(-1)[0]);
+check('and the pack on disk is the sealed file itself', existsSync(join(scratchRoot, 'cmu-kal', `voice.${VOCALIS_EXTENSION}`)));
 check(
   'nothing was unpacked beside it',
   !existsSync(join(scratchRoot, 'cmu-kal', 'diphones.bin')) && !existsSync(join(scratchRoot, 'cmu-kal', 'manifest.json')),
 );
-const installedSealed = existsSync(join(scratchRoot, 'cmu-kal', 'voice.vocalis'))
-  ? readFileSync(join(scratchRoot, 'cmu-kal', 'voice.vocalis'))
+const installedSealed = existsSync(join(scratchRoot, 'cmu-kal', `voice.${VOCALIS_EXTENSION}`))
+  ? readFileSync(join(scratchRoot, 'cmu-kal', `voice.${VOCALIS_EXTENSION}`))
   : Buffer.alloc(0);
 check('the installed file is byte-identical to the export', installedSealed.equals(Buffer.from(sealed)));
 
@@ -243,8 +245,14 @@ check('and the audio it renders is not silence', (() => {
 const reImported = cli(['import', sealedPath]);
 check('re-importing the same voice succeeds rather than breaking it', reImported.code === 0, reImported.out.trim().split('\n').slice(-1)[0]);
 
+// The extension was `.vocalis` before it was shortened; old files still import.
+const legacyPath = join(WORK, 'cmu-kal.vocalis');
+writeFileSync(legacyPath, Buffer.from(sealed));
+const legacy = cli(['import', legacyPath]);
+check('a file with the old .vocalis extension still imports', legacy.code === 0, legacy.out.trim().split('\n').slice(-1)[0]);
+
 const refused = cli(['import', join(PACK, 'manifest.json')]);
-check('importing something that is not a .vocalis file is refused', refused.code !== 0);
+check('importing something that is not a .vls file is refused', refused.code !== 0);
 check('with the reason, not a stack trace', /not a Vocalis voice file/i.test(refused.out), refused.out.trim().split('\n').slice(-1)[0]);
 
 // The browser loader is a second reader of the same files, and it was the reader

@@ -1,20 +1,20 @@
-# The `.vocalis` voice file
+# The `.vls` voice file
 
 One voice, one file, Vocalis only.
 
 A voice in this project is two things: a unit index and a block of recorded
 samples. Kept as a folder of `manifest.json` + `diphones.bin` that pair is readable
 by anything — a sample editor opens the bin, any other diphone engine can use the
-pair, and nothing about the file says where it came from. The `.vocalis` container
+pair, and nothing about the file says where it came from. The `.vls` container
 seals the two together into a single file that this application opens and nothing
 else does, without touching the audio.
 
 * **Lossless by construction.** The payload *is* the original 16-bit PCM. Sealing is
   a container, not a codec: no resampling, no re-quantisation, no normalisation, no
-  extra generation loss. A voice heard from a `.vocalis` file is bit-identical to
+  extra generation loss. A voice heard from a `.vls` file is bit-identical to
   the pack it was made from, and `tests/vocalisFile.test.ts` asserts exactly that
   with `Buffer.equals`.
-* **One file.** Export gives you `arctic-awb.vocalis`; import takes that file and
+* **One file.** Export gives you `arctic-awb.vls`; import takes that file and
   nothing else. No sidecar JSON to lose, no folder to zip.
 * **Integrity before audio.** Every byte is covered by AES-GCM and a SHA-256 digest,
   so a truncated download or a single flipped bit is caught before a sample is used,
@@ -77,7 +77,7 @@ The application key ships inside Vocalis, because a player must be able to decod
 what it plays. The container therefore stops the file being *used* anywhere else —
 a sample editor, a WAV player, `jq`, another synthesiser, a search engine — and makes
 silent tampering impossible. It does not stop someone who runs this application and
-instruments it. Treat `.vocalis` as a sealed container with provenance, not as DRM
+instruments it. Treat `.vls` as a sealed container with provenance, not as DRM
 that outlives the app, and say so in any marketplace copy rather than overclaiming.
 
 ## Using it
@@ -85,23 +85,23 @@ that outlives the app, and say so in any marketplace copy rather than overclaimi
 Export an installed voice from the library card (**Export**), or from a terminal:
 
 ```sh
-npm run voices -- pack cmu-kal --out ~/Desktop/cmu-kal.vocalis
+npm run voices -- pack cmu-kal --out ~/Desktop/cmu-kal.vls
 ```
 
 The CLI prints what it sealed, which is also what the file header says:
 
 ```
-✓ cmu-kal → /home/you/Desktop/cmu-kal.vocalis  (6.8 MB, 1578 units, 219.8 s at 16000 Hz, sealed)
+✓ cmu-kal → /home/you/Desktop/cmu-kal.vls  (6.8 MB, 1578 units, 219.8 s at 16000 Hz, sealed)
 ```
 
-Install a `.vocalis` file on any machine running Vocalis:
+Install a `.vls` file on any machine running Vocalis:
 
 ```sh
-npm run voices -- import ~/Desktop/cmu-kal.vocalis
+npm run voices -- import ~/Desktop/cmu-kal.vls
 npm run voices -- verify cmu-kal
 ```
 
-`import` copies the file as it stands into `public/optional-voices/<id>/voice.vocalis`
+`import` copies the file as it stands into `public/optional-voices/<id>/voice.vls`
 — it does **not** unpack the manifest and audio beside it, so an imported voice stays
 sealed on disk. `verify` renders a sentence from it through the same loader the
 browser uses, which is how the round trip is checked rather than assumed.
@@ -114,9 +114,10 @@ with a 400, before any file is read.
 ## Compatibility
 
 Both shapes are accepted for installed voices: a pack directory may hold either
-`voice.vocalis` or the original `manifest.json` + `diphones.bin` pair. The loader
+`voice.vls` or the original `manifest.json` + `diphones.bin` pair, and the older
+`voice.vocalis` name is still read so files written before the rename keep working. The loader
 tries the sealed file first, so the six packs shipped in this repository keep working
-and anything imported as `.vocalis` works too. The format is versioned in two places
+and anything imported as `.vls` works too. The format is versioned in two places
 (byte 8 and the header); a file that disagrees with itself is refused as corrupt
 rather than opened on a guess.
 
@@ -125,7 +126,7 @@ rather than opened on a guess.
 | File | What it is |
 |---|---|
 | `src/utils/vocalisVoiceFile.ts` | the format: encode, decode, header read, typed errors |
-| `tests/vocalisFile.test.ts` | 42 checks — quality, exclusivity, integrity, CLI and browser round trips |
+| `tests/vocalisFile.test.ts` | 44 checks — quality, exclusivity, integrity, CLI and browser round trips |
 | `scripts/voice_library.ts` | `pack` and `import`, and the shared pack loader |
 | `server.ts` | `GET /api/voices/<id>/export` |
 | `src/components/RecordedVoiceLibrary.tsx` | the Export control on an installed card |
