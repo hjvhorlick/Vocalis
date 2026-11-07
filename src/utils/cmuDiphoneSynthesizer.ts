@@ -884,6 +884,7 @@ export function processCmuVoice(samples: Float32Array, model: VoiceModelConfig):
       throatWarmth: model.throatWarmth,
       oralClarity: model.oralClarity,
       airPresence: model.airPresence,
+      bypass: model.bypass,
     },
     SAMPLE_RATE,
   );

@@ -19,7 +19,8 @@
     "audit": "npm run lint && npm run verify:base-voice",
     "verify:base-voice": "node scripts/check_base_voice.mjs",
     "test:file": "tsx tests/vocalisFile.test.ts",
-    "test:ui": "tsx tests/voiceFileUi.test.ts"
+    "test:ui": "tsx tests/voiceFileUi.test.ts",
+    "test:bypass": "tsx tests/bypass.test.ts"
   },
   "dependencies": {
     "@types/express": "^5.0.6",

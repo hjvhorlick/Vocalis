@@ -132,13 +132,24 @@ function effectiveModel(
 ): VoiceModelConfig {
   return {
     ...base,
-    pitch: switches.pitch ? knobs.pitch : 1,
-    rate: switches.rate ? knobs.rate : 1,
-    volume: switches.volume ? knobs.volume : 1,
-    toneStyle: switches.tone ? (tone as VoiceModelConfig['toneStyle']) : 'natural',
-    throatWarmth: switches.throatWarmth ? knobs.throatWarmth : 0,
-    oralClarity: switches.oralClarity ? knobs.oralClarity : 0,
-    airPresence: switches.airPresence ? knobs.airPresence : 0,
+    pitch: knobs.pitch,
+    rate: knobs.rate,
+    volume: knobs.volume,
+    toneStyle: tone as VoiceModelConfig['toneStyle'],
+    throatWarmth: knobs.throatWarmth,
+    oralClarity: knobs.oralClarity,
+    airPresence: knobs.airPresence,
+    // The switch is the engine's bypass, not a neutral number: a switched-off
+    // setting removes its stage, so the preview here sounds like the exported file.
+    bypass: {
+      pitch: !switches.pitch,
+      rate: !switches.rate,
+      volume: !switches.volume,
+      tone: !switches.tone,
+      throatWarmth: !switches.throatWarmth,
+      oralClarity: !switches.oralClarity,
+      airPresence: !switches.airPresence,
+    },
   };
 }
 

@@ -236,6 +236,17 @@ export function applyProfileToModel(
     oralClarity: value('oralClarity', 0),
     airPresence: value('airPresence', 0),
     toneStyle: on('tone') && profile.tone ? (profile.tone as VoiceModelConfig['toneStyle']) : 'natural',
+    // The switches travel with the file, so a voice sealed without Clarity is
+    // reopened without Clarity instead of quietly coming back with its default.
+    bypass: {
+      pitch: profile.enabled.pitch === false,
+      rate: profile.enabled.rate === false,
+      volume: profile.enabled.volume === false,
+      tone: profile.enabled.tone === false,
+      throatWarmth: profile.enabled.throatWarmth === false,
+      oralClarity: profile.enabled.oralClarity === false,
+      airPresence: profile.enabled.airPresence === false,
+    },
   };
 }
 

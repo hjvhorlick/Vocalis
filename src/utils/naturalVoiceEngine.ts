@@ -71,6 +71,11 @@ export interface VoiceModelConfig {
   baseVoiceId?: string;
   /** 'cmu-arctic' is the product; 'formant' is the preserved experiment. */
   synthesisMethod?: 'cmu-arctic' | 'formant';
+  /**
+   * Controls switched off by the user, by name. The engine skips the stage rather
+   * than running it at a neutral value, so "pitch off" is the recording.
+   */
+  bypass?: Partial<Record<'pitch' | 'rate' | 'volume' | 'tone' | 'throatWarmth' | 'oralClarity' | 'airPresence', boolean>>;
   throatWarmth?: number; // low-band tilt, -3 to +3 dB (clamped)
   oralClarity?: number; // mid-band tilt, -3 to +3 dB (clamped)
   airPresence?: number; // high-band tilt, -3 to +3 dB (clamped)
@@ -718,6 +723,7 @@ function dspConfigFor(model: VoiceModelConfig): VoiceDspConfig {
     throatWarmth: model.throatWarmth,
     oralClarity: model.oralClarity,
     airPresence: model.airPresence,
+    bypass: model.bypass,
   };
 }
 

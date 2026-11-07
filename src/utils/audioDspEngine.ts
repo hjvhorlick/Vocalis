@@ -9,6 +9,8 @@ export interface VoiceDspConfig {
   throatWarmth?: number; // -3 to +3 dB (F1 tilt, clamped by voiceTransform)
   oralClarity?: number; // -3 to +3 dB (F2 tilt, clamped by voiceTransform)
   airPresence?: number; // -3 to +3 dB (F3 tilt, clamped by voiceTransform)
+  /** Stages switched off by name; a bypassed stage is skipped, not neutralised. */
+  bypass?: Partial<Record<'pitch' | 'rate' | 'volume' | 'tone' | 'throatWarmth' | 'oralClarity' | 'airPresence', boolean>>;
 }
 
 let activeSourceNode: AudioBufferSourceNode | null = null;
@@ -56,7 +58,7 @@ export function transformBuffer(buffer: AudioBuffer, config: VoiceDspConfig): Au
   }
   const result = ctx.createBuffer(channels, longest, buffer.sampleRate);
   rendered.forEach((samples, channel) => result.copyToChannel(Float32Array.from(samples), channel));
-  const level = Math.max(0, Math.min(1.5, config.volume));
+  const level = config.bypass?.volume ? 1 : Math.max(0, Math.min(1.5, config.volume));
   if (level !== 1) {
     for (let channel = 0; channel < channels; channel += 1) {
       const data = result.getChannelData(channel);

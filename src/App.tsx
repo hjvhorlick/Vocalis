@@ -216,42 +216,6 @@ export function App() {
       <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-6">
         {activeTab === 'studio' && (
           <div className="space-y-6">
-            {/* Product one, on its own page, opening with the one control that matters:
-                which voice is going to speak. Everything below is the same studio. */}
-            <div className="rounded-2xl border border-slate-800 bg-slate-900/60 px-4 py-3">
-              <label htmlFor="tts-voice" className="block text-[11px] font-semibold uppercase tracking-wide text-slate-500">
-                Voice
-              </label>
-              <div className="mt-1.5 flex flex-wrap items-center gap-3">
-                <select
-                  id="tts-voice"
-                  value={activeModel.id}
-                  onChange={(event) => {
-                    const chosen = selectableModels.find((model) => model.id === event.target.value);
-                    if (chosen) setActiveModel(chosen);
-                  }}
-                  className="min-w-[16rem] flex-1 rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-100 outline-none focus:border-indigo-500"
-                >
-                  {selectableModels.map((model) => (
-                    <option key={model.id} value={model.id}>
-                      {model.name}
-                      {model.baseVoiceId && !['slt', 'bdl'].includes(model.baseVoiceId)
-                        ? ' — recorded, installed'
-                        : model.isCustom
-                          ? ' — saved'
-                          : ' — factory voice'}
-                    </option>
-                  ))}
-                </select>
-                <button
-                  onClick={() => setActiveTab('voicefile')}
-                  className="shrink-0 rounded-xl border border-emerald-500/40 bg-emerald-600/15 px-3 py-1.5 text-xs font-semibold text-emerald-200 hover:bg-emerald-600/25 hover:text-white"
-                >
-                  Make a voice file →
-                </button>
-              </div>
-            </div>
-
             {/* The library is the reason this app has more than two people in it,
                 and it lives behind a tab. Point at it from here. */}
             <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-indigo-500/25 bg-indigo-500/5 px-4 py-3">
@@ -272,7 +236,7 @@ export function App() {
 
             {/* 1. Predefined Voices List (Select to Manipulate) */}
             <PredefinedVoiceList
-              voices={models}
+              voices={selectableModels}
               activeVoice={activeModel}
               onSelectVoice={(v) => setActiveModel(v)}
               onNewVoice={handleNewVoice}

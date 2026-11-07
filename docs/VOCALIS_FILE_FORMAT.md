@@ -102,6 +102,12 @@ settings block is the part that ends up in the file:
 }
 ```
 
+A switch is a bypass, not a neutral value: `enabled: {"pitch": false}` means the
+pitch stage was not run at all. That distinction is measured, not asserted —
+`tests/bypass.test.ts` renders with every stage bypassed and requires the samples to
+come back bit-identical to the recording, and separately requires each stage to change
+the audio when it is on.
+
 `enabled` records what was switched **on at the time of export**, and `settings` the
 knob positions that were live. A switched-off feature is stored as off, not as a
 neutral number, so "export it again without Clarity" is a decision the file itself

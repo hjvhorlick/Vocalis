@@ -83,33 +83,28 @@ export const VoiceManipulator: React.FC<VoiceManipulatorProps> = ({
   // Selecting a different voice is a different set of switches.
   useEffect(() => {
     setBypassed({
-      pitch: false,
-      rate: false,
-      volume: false,
-      throatWarmth: false,
-      oralClarity: false,
-      airPresence: false,
-      tone: false,
+      pitch: Boolean(voice.bypass?.pitch),
+      rate: Boolean(voice.bypass?.rate),
+      volume: Boolean(voice.bypass?.volume),
+      throatWarmth: Boolean(voice.bypass?.throatWarmth),
+      oralClarity: Boolean(voice.bypass?.oralClarity),
+      airPresence: Boolean(voice.bypass?.airPresence),
+      tone: Boolean(voice.bypass?.tone),
     });
     setRemembered({});
+    // A different voice means a different set of switches — not a slider move.
   }, [voice.id]);
 
   const toggleBypass = (key: BypassKey) => {
     const turningOff = !bypassed[key];
-    if (turningOff) {
-      const current = key === 'tone' ? undefined : voice[key as Exclude<BypassKey, 'tone'>];
-      if (key === 'tone') {
-        onUpdateVoice({ ...voice, toneStyle: 'natural' });
-      } else {
-        setRemembered((rest) => ({ ...rest, [key]: typeof current === 'number' ? current : BYPASS_NEUTRAL[key] }));
-        onUpdateVoice({ ...voice, [key as Exclude<BypassKey, 'tone'>]: BYPASS_NEUTRAL[key as Exclude<BypassKey, 'tone'>] });
-      }
-    } else if (key === 'tone') {
-      onUpdateVoice({ ...voice, toneStyle: 'natural' });
-    } else {
-      const numericKey = key as Exclude<BypassKey, 'tone'>;
-      onUpdateVoice({ ...voice, [numericKey]: remembered[numericKey] ?? BYPASS_NEUTRAL[numericKey] });
+    // The flag is what switches the stage off in the engine. The slider keeps its
+    // number, so turning the switch back on restores the sound that was there.
+    const nextBypass = { ...(voice.bypass ?? {}), [key]: turningOff };
+    if (turningOff && key !== 'tone') {
+      const current = voice[key as Exclude<BypassKey, 'tone'>];
+      if (typeof current === 'number') setRemembered((rest) => ({ ...rest, [key]: current }));
     }
+    onUpdateVoice({ ...voice, bypass: nextBypass });
     setBypassed((current) => ({ ...current, [key]: turningOff }));
   };
 

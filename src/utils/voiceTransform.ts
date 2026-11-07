@@ -61,6 +61,12 @@ export interface VoiceTransformSettings {
    * formants where they were (the same speaker in another register).
    */
   formantPreservation?: number;
+  /**
+   * Stages switched off by name. A bypassed stage is not run at all — it is not
+   * "run with a neutral value", which is the difference between a switch that does
+   * something and one that only looks like it does.
+   */
+  bypass?: Partial<Record<'pitch' | 'rate' | 'tone' | 'throatWarmth' | 'oralClarity' | 'airPresence', boolean>>;
 }
 
 /**
@@ -638,20 +644,32 @@ export function transformRecordedVoice(
 ): Float32Array {
   if (samples.length === 0) return samples;
 
+  const bypass = settings.bypass ?? {};
   const pitch = clamp(settings.pitch, 0.25, 4);
   const rate = clamp(settings.rate, 0.55, 2.5);
   const preservation = clamp(settings.formantPreservation ?? DEFAULT_FORMANT_PRESERVATION, 0, 1);
 
-  const shifted = shiftPitchBandLimited(samples, pitch);
-  const corrected =
-    Math.abs(pitch - 1) > PITCH_DEADBAND
-      ? preserveFormants(samples, shifted, preservation, sampleRate)
-      : shifted;
+  // Every switch removes its stage rather than neutralising it, so "pitch off" is
+  // the recorded pitch and not a pitch shift by 1.0 — those are different code
+  // paths, and only one of them can be trusted to leave the samples alone.
+  const pitchOn = !bypass.pitch && Math.abs(pitch - 1) > PITCH_DEADBAND;
+  const shifted = pitchOn ? shiftPitchBandLimited(samples, pitch) : samples;
+  const corrected = pitchOn ? preserveFormants(samples, shifted, preservation, sampleRate) : shifted;
 
-  const targetLength = Math.max(1, Math.floor(samples.length / rate));
-  const paced = stretchTime(corrected, targetLength, sampleRate);
+  // Pace is measured against the recording, and the signal has to end up that many
+  // samples long whatever the pitch stage did to its length on the way through. So
+  // the stage runs when the pace is not neutral *or* when the pitch resample changed
+  // the length — restoring a length is not a pace change, and skipping it would make
+  // the switch that turns pace off change the duration.
+  const effectiveRate = bypass.rate ? 1 : rate;
+  const targetLength = Math.max(1, Math.floor(samples.length / effectiveRate));
+  const needsStretch = Math.abs(effectiveRate - 1) > RATE_DEADBAND || corrected.length !== targetLength;
+  const paced = needsStretch ? stretchTime(corrected, targetLength, sampleRate) : corrected;
 
-  const styled = applyToneStyle(paced, settings.toneStyle, sampleRate);
+  const styled =
+    bypass.tone || settings.toneStyle === 'natural'
+      ? paced
+      : applyToneStyle(paced, settings.toneStyle, sampleRate);
 
   // The sliders name formant regions, so their centres move with the tract: at
   // full preservation F1 stays at 450 Hz, at none it moves with F0.
@@ -662,13 +680,26 @@ export function transformRecordedVoice(
   // octave each they tilt, and the cap keeps every one of them inside the same
   // three-decibel budget as the timbre correction.
   const bands: Array<[number, number, number]> = [
-    [clamp(settings.throatWarmth ?? 0, -COLOUR_MAX_GAIN_DB, COLOUR_MAX_GAIN_DB), 450, 450],
-    [clamp(settings.oralClarity ?? 0, -COLOUR_MAX_GAIN_DB, COLOUR_MAX_GAIN_DB), 1800, 1800],
-    [clamp(settings.airPresence ?? 0, -COLOUR_MAX_GAIN_DB, COLOUR_MAX_GAIN_DB), 4200, 2600],
+    bypass.throatWarmth
+      ? [0, 450, 450]
+      : [clamp(settings.throatWarmth ?? 0, -COLOUR_MAX_GAIN_DB, COLOUR_MAX_GAIN_DB), 450, 450],
+    bypass.oralClarity
+      ? [0, 1800, 1800]
+      : [clamp(settings.oralClarity ?? 0, -COLOUR_MAX_GAIN_DB, COLOUR_MAX_GAIN_DB), 1800, 1800],
+    bypass.airPresence
+      ? [0, 4200, 2600]
+      : [clamp(settings.airPresence ?? 0, -COLOUR_MAX_GAIN_DB, COLOUR_MAX_GAIN_DB), 4200, 2600],
   ];
   for (const [gain, frequency, bandwidth] of bands) {
+    // A band at 0 dB is unity, but it is still a filter; skipping it keeps an
+    // all-switches-off render sample-for-sample identical to the recording.
+    if (gain === 0) continue;
     resonated = peakingBand(resonated, frequency * tractScale, bandwidth * tractScale, gain, sampleRate);
   }
 
+  // Nothing ran: hand back a copy of exactly what came in.
+  if (resonated === paced && paced === corrected && corrected === samples) {
+    return Float32Array.from(samples);
+  }
   return levelMatched(paced, resonated);
 }
