@@ -3,6 +3,6 @@
   "installedAt": "2026-11-07T21:13:35Z",
   "units": 1338,
   "bytes": 6165920,
-  "sourceUrl": "file:///tmp/awbsrc/data/cmu_arctic/us-english-female-clb",
+  "sourceUrl": "https://github.com/abearman/cs224s-accent-conversion/tree/main/data/cmu_arctic/us-english-female-clb",
   "converter": "festival-est"
 }

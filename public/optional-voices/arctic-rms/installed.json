@@ -3,6 +3,6 @@
   "installedAt": "2026-11-07T21:13:44Z",
   "units": 1364,
   "bytes": 6402800,
-  "sourceUrl": "file:///tmp/awbsrc/data/cmu_arctic/us-english-male-rms",
+  "sourceUrl": "https://github.com/abearman/cs224s-accent-conversion/tree/main/data/cmu_arctic/us-english-male-rms",
   "converter": "festival-est"
 }
