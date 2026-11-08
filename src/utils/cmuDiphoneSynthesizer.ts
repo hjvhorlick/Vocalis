@@ -67,6 +67,10 @@ type PhoneClass =
 interface UnitEntry {
   offset: number;
   length: number;
+  /** Measured colour of this exemplar (energy above 1.5 kHz), when the pack records it. */
+  colourDb?: number;
+  /** Measured level of this exemplar, when the pack records it. */
+  level?: number;
 }
 
 interface DiphoneManifest {
@@ -75,7 +79,23 @@ interface DiphoneManifest {
   displayName?: string;
   sampleRate?: number;
   unitCount?: number;
-  units: Record<string, UnitEntry>;
+  /**
+   * One entry per transition in a v1 pack, or a list of exemplars in a v2 pack.
+   * The list is ordered at build time, nearest the corpus's own colour first, so
+   * the first entry is the neutral one and the engine speaks that.
+   */
+  units: Record<string, UnitEntry | UnitEntry[]>;
+}
+
+/** v1 packs store one entry per transition; v2 packs store a list. */
+function firstEntry(value: UnitEntry | UnitEntry[] | undefined): UnitEntry | undefined {
+  if (!value) return undefined;
+  return Array.isArray(value) ? value[0] : value;
+}
+
+/** Every exemplar of a transition, for the integrity check in `indexPack`. */
+function allEntries(value: UnitEntry | UnitEntry[]): UnitEntry[] {
+  return Array.isArray(value) ? value : [value];
 }
 
 interface VoicePack {
@@ -198,8 +218,10 @@ function indexPack(manifest: DiphoneManifest, buffer: ArrayBuffer, speaker: stri
     // The index must fit inside the audio file, otherwise a truncated download
     // would read past the end and render silence or garbage.
     let furthest = 0;
-    for (const entry of Object.values(manifest.units)) {
-      furthest = Math.max(furthest, entry.offset + entry.length * 2);
+    for (const value of Object.values(manifest.units)) {
+      for (const entry of allEntries(value)) {
+        furthest = Math.max(furthest, entry.offset + entry.length * 2);
+      }
     }
     if (buffer.byteLength < furthest) {
       throw new Error(
@@ -337,7 +359,7 @@ function pickRightNeighbour(pack: VoicePack, phone: string): string | null {
   let best: string | null = null;
   let bestScore = Number.POSITIVE_INFINITY;
   for (const key of keys) {
-    const entry = pack.manifest.units[key];
+    const entry = firstEntry(pack.manifest.units[key]);
     if (!entry || entry.length < 8) continue;
     const right = key.split('|')[1];
     const score = neighbourScore(phone, right, entry.length);
@@ -356,7 +378,7 @@ function pickLeftNeighbour(pack: VoicePack, phone: string): string | null {
   let best: string | null = null;
   let bestScore = Number.POSITIVE_INFINITY;
   for (const key of keys) {
-    const entry = pack.manifest.units[key];
+    const entry = firstEntry(pack.manifest.units[key]);
     if (!entry || entry.length < 8) continue;
     const left = key.split('|')[0];
     const score = neighbourScore(left, phone, entry.length);
@@ -375,7 +397,8 @@ function pickLeftNeighbour(pack: VoicePack, phone: string): string | null {
 function outgoingHalfOf(pack: VoicePack, phone: string): Float32Array | null {
   const key = pickRightNeighbour(pack, phone);
   if (!key) return null;
-  const entry = pack.manifest.units[key];
+  const entry = firstEntry(pack.manifest.units[key]);
+  if (!entry) return null;
   const slice = toFloat(pack, entry);
   const half = Math.min(halfLength(entry.length), slice.length);
   return fadeIn(slice.subarray(0, half));
@@ -388,7 +411,8 @@ function outgoingHalfOf(pack: VoicePack, phone: string): Float32Array | null {
 function incomingHalfOf(pack: VoicePack, phone: string): Float32Array | null {
   const key = pickLeftNeighbour(pack, phone);
   if (!key) return null;
-  const entry = pack.manifest.units[key];
+  const entry = firstEntry(pack.manifest.units[key]);
+  if (!entry) return null;
   const slice = toFloat(pack, entry);
   const half = Math.min(halfLength(entry.length), slice.length);
   return fadeOut(slice.subarray(Math.max(0, slice.length - half)));
@@ -824,7 +848,7 @@ export async function renderCmuDiphones(
 
   const joint = (left: string, right: string, cursor: number): Float32Array => {
     const key = `${left}|${right}`;
-    const entry = pack?.manifest.units[key];
+    const entry = pack ? firstEntry(pack.manifest.units[key]) : undefined;
     if (pack && entry) {
       diagnostics.exactUnits += 1;
       return toFloat(pack, entry);
@@ -859,7 +883,7 @@ export async function renderCmuDiphones(
     // Lead: the first half of the segment's first phone, on a recorded pause
     // unit when one exists.
     const leadKey = `pau|${phones[0]}`;
-    const leadEntry = pack.manifest.units[leadKey];
+    const leadEntry = firstEntry(pack.manifest.units[leadKey]);
     if (leadEntry) {
       diagnostics.exactUnits += 1;
       chunks.push(toFloat(pack, leadEntry));
@@ -899,7 +923,7 @@ export async function renderCmuDiphones(
     // when one exists. This is the only silence inside a render.
     const last = phones[phones.length - 1];
     const tailKey = `${last}|pau`;
-    const tailEntry = pack.manifest.units[tailKey];
+    const tailEntry = firstEntry(pack.manifest.units[tailKey]);
     if (tailEntry) {
       diagnostics.exactUnits += 1;
       chunks.push(toFloat(pack, tailEntry));
