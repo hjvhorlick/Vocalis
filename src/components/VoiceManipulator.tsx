@@ -2,8 +2,8 @@ import React, { useState } from 'react';
 import {
   VoiceModelConfig,
   NATURAL_HUMAN_SAMPLES,
-  speakVoiceText,
-  stopSpokenVoice,
+  speakRealWords,
+  stopSpeaking,
 } from '../utils/naturalVoiceEngine';
 import { VoiceVisualizer } from './VoiceVisualizer';
 import {
@@ -38,13 +38,13 @@ export const VoiceManipulator: React.FC<VoiceManipulatorProps> = ({
 
   const handleAudition = () => {
     if (isAuditioning) {
-      stopSpokenVoice();
+      stopSpeaking();
       setIsAuditioning(false);
       return;
     }
 
     setIsAuditioning(true);
-    speakVoiceText(voice.samplePhrase, voice, {
+    speakRealWords(voice.samplePhrase, voice, {
       onStart: () => setIsAuditioning(true),
       onEnd: () => setIsAuditioning(false),
       onError: () => setIsAuditioning(false),
@@ -72,7 +72,6 @@ export const VoiceManipulator: React.FC<VoiceManipulatorProps> = ({
             <VoiceAvatar
               id={voice.id}
               name={voice.name}
-              avatarImage={voice.avatarImage}
               color={voice.avatarColor}
               size="md"
             />

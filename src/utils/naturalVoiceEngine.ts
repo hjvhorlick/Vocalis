@@ -11,10 +11,7 @@ import {
   renderTransformedWav,
   getDspAnalyser,
   isDspPlaying,
-  setDspAnalyser,
 } from './audioDspEngine';
-import { synthesizeText, preparePronunciationDictionary } from './phonemeSynthesizer';
-import { getSharedAudioContext } from './naturalHumanAudio';
 
 export interface VoiceModelConfig {
   id: string;
@@ -30,10 +27,6 @@ export interface VoiceModelConfig {
   toneStyle: 'natural' | 'deep' | 'energetic' | 'whisper' | 'radio' | 'robot';
   samplePhrase: string;
   avatarColor: string;
-  /** Photoreal persona portrait, served from /public/voice-icons/*.webp */
-  avatarImage?: string;
-  /** Rendered script narration for this persona, served from /public/voice-auditions/*.wav */
-  auditionAudio?: string;
   isCustom?: boolean;
   baseSampleId: string; // ID of the natural human voice recording used as source
   baseVoiceId?: 'slt' | 'bdl'; // Optional alias for diphone engine
@@ -52,84 +45,7 @@ export type { HumanVoiceSample };
  * Each voice corresponds to a real human speaker recorded in an acoustic studio (CMU ARCTIC / OSR).
  * Pure human speech, 100% Non-AI, zero browser TTS files.
  */
-/**
- * Delivery settings are authored per persona so the persona the listener reads
- * about is the persona they hear. Pitch/rate track the described weight and pace;
- * throat/oral/air tilt the formant balance toward warmth or clarity.
- */
-type PresetDelivery = {
-  pitch: number;
-  rate: number;
-  toneStyle: VoiceModelConfig['toneStyle'];
-  throatWarmth: number;
-  oralClarity: number;
-  airPresence: number;
-};
-
-const PRESET_DELIVERY: Record<string, PresetDelivery> = {
-  'voice-slt-aria': { pitch: 0.99, rate: 0.96, toneStyle: 'natural', throatWarmth: 2, oralClarity: 1, airPresence: 1 },
-  'voice-rms-marcus': { pitch: 0.8, rate: 0.9, toneStyle: 'deep', throatWarmth: 8, oralClarity: 2, airPresence: -1 },
-  'voice-awb-oliver': { pitch: 0.95, rate: 0.98, toneStyle: 'natural', throatWarmth: 3, oralClarity: 2, airPresence: 1 },
-  'voice-clb-charlotte': { pitch: 1, rate: 0.94, toneStyle: 'natural', throatWarmth: 2, oralClarity: 3, airPresence: 1 },
-  'voice-bdl-david': { pitch: 1.02, rate: 1.04, toneStyle: 'natural', throatWarmth: 1, oralClarity: 3, airPresence: 2 },
-  'voice-jmk-john': { pitch: 0.98, rate: 0.97, toneStyle: 'natural', throatWarmth: 3, oralClarity: 2, airPresence: 1 },
-  'voice-ksp-dev': { pitch: 1, rate: 0.96, toneStyle: 'natural', throatWarmth: 2, oralClarity: 2, airPresence: 0 },
-  'voice-osr-elena': { pitch: 1.01, rate: 1, toneStyle: 'natural', throatWarmth: 1, oralClarity: 2, airPresence: 2 },
-  'voice-osr-michael': { pitch: 0.92, rate: 0.97, toneStyle: 'natural', throatWarmth: 4, oralClarity: 2, airPresence: 0 },
-  'voice-osr-alistair': { pitch: 0.93, rate: 0.92, toneStyle: 'natural', throatWarmth: 3, oralClarity: 3, airPresence: 1 },
-  'voice-osr-rupert': { pitch: 0.94, rate: 0.94, toneStyle: 'natural', throatWarmth: 2, oralClarity: 3, airPresence: 1 },
-  'voice-osr-victoria': { pitch: 1.04, rate: 0.93, toneStyle: 'whisper', throatWarmth: -2, oralClarity: 2, airPresence: 5 },
-  'voice-slt-willow': { pitch: 1.05, rate: 1.06, toneStyle: 'energetic', throatWarmth: 0, oralClarity: 2, airPresence: 3 },
-  'voice-rms-garrison': { pitch: 0.84, rate: 0.9, toneStyle: 'deep', throatWarmth: 7, oralClarity: 1, airPresence: 0 },
-  'voice-awb-hamish': { pitch: 1.06, rate: 1.03, toneStyle: 'energetic', throatWarmth: 1, oralClarity: 3, airPresence: 2 },
-  'voice-clb-beatrice': { pitch: 1, rate: 0.93, toneStyle: 'natural', throatWarmth: 2, oralClarity: 4, airPresence: 1 },
-  'voice-bdl-sterling': { pitch: 1.04, rate: 1.07, toneStyle: 'energetic', throatWarmth: 1, oralClarity: 4, airPresence: 3 },
-  'voice-jmk-liam': { pitch: 1.02, rate: 1.06, toneStyle: 'energetic', throatWarmth: 1, oralClarity: 3, airPresence: 3 },
-  'voice-ksp-rajesh': { pitch: 0.95, rate: 0.94, toneStyle: 'natural', throatWarmth: 4, oralClarity: 2, airPresence: 0 },
-  'voice-cmu-fiona': { pitch: 1.06, rate: 0.99, toneStyle: 'natural', throatWarmth: -1, oralClarity: 3, airPresence: 4 },
-  'voice-cmu-alexander': { pitch: 0.98, rate: 1.02, toneStyle: 'natural', throatWarmth: 3, oralClarity: 2, airPresence: 2 },
-  'voice-cmu-hans': { pitch: 0.94, rate: 0.95, toneStyle: 'natural', throatWarmth: 2, oralClarity: 4, airPresence: 0 },
-  'voice-cmu-arjun': { pitch: 1.02, rate: 1.09, toneStyle: 'energetic', throatWarmth: 1, oralClarity: 4, airPresence: 3 },
-  'voice-cmu-ananya': { pitch: 1.08, rate: 1.02, toneStyle: 'energetic', throatWarmth: 0, oralClarity: 3, airPresence: 3 },
-  'voice-cmu-ethan': { pitch: 0.97, rate: 0.94, toneStyle: 'natural', throatWarmth: 3, oralClarity: 1, airPresence: 1 },
-  'voice-cmu-gaurav': { pitch: 0.9, rate: 0.94, toneStyle: 'deep', throatWarmth: 5, oralClarity: 3, airPresence: 0 },
-  'voice-cmu-lauren': { pitch: 1.03, rate: 1.05, toneStyle: 'radio', throatWarmth: 0, oralClarity: 5, airPresence: 2 },
-  'voice-cmu-nora': { pitch: 1.03, rate: 0.9, toneStyle: 'whisper', throatWarmth: -1, oralClarity: 2, airPresence: 4 },
-  'voice-cmu-priya': { pitch: 1.02, rate: 0.92, toneStyle: 'whisper', throatWarmth: -1, oralClarity: 2, airPresence: 3 },
-  'voice-cmu-rowan': { pitch: 0.86, rate: 0.92, toneStyle: 'deep', throatWarmth: 6, oralClarity: 2, airPresence: 2 },
-  'voice-osr-arthur': { pitch: 0.91, rate: 0.93, toneStyle: 'radio', throatWarmth: 4, oralClarity: 3, airPresence: 0 },
-  'voice-osr-oliver2': { pitch: 1, rate: 1, toneStyle: 'radio', throatWarmth: 1, oralClarity: 3, airPresence: 1 },
-  'voice-osr-gwendolyn': { pitch: 1.02, rate: 0.95, toneStyle: 'natural', throatWarmth: 1, oralClarity: 3, airPresence: 2 },
-  'voice-osr-penelope': { pitch: 1.05, rate: 1.03, toneStyle: 'energetic', throatWarmth: 0, oralClarity: 4, airPresence: 3 },
-  'voice-osr-seraphina': { pitch: 1, rate: 0.94, toneStyle: 'natural', throatWarmth: 2, oralClarity: 2, airPresence: 2 },
-  'voice-osr-madeline': { pitch: 1.02, rate: 0.91, toneStyle: 'whisper', throatWarmth: 0, oralClarity: 2, airPresence: 4 },
-  'voice-osr-harrison': { pitch: 0.88, rate: 0.93, toneStyle: 'deep', throatWarmth: 6, oralClarity: 2, airPresence: 0 },
-  'voice-osr-vikram': { pitch: 0.99, rate: 1.05, toneStyle: 'radio', throatWarmth: 2, oralClarity: 4, airPresence: 1 },
-  'voice-osr-etienne': { pitch: 0.96, rate: 0.97, toneStyle: 'natural', throatWarmth: 3, oralClarity: 3, airPresence: 2 },
-  'voice-cmu-fiona-2': { pitch: 1.01, rate: 0.99, toneStyle: 'natural', throatWarmth: 1, oralClarity: 3, airPresence: 2 },
-  'voice-cmu-alexander-2': { pitch: 1.01, rate: 1.05, toneStyle: 'energetic', throatWarmth: 2, oralClarity: 3, airPresence: 3 },
-  'voice-cmu-hans-2': { pitch: 0.93, rate: 0.95, toneStyle: 'natural', throatWarmth: 2, oralClarity: 4, airPresence: 0 },
-  'voice-cmu-arjun-2': { pitch: 1.03, rate: 1.08, toneStyle: 'energetic', throatWarmth: 1, oralClarity: 4, airPresence: 3 },
-  'voice-cmu-ananya-2': { pitch: 1.07, rate: 1.03, toneStyle: 'energetic', throatWarmth: 0, oralClarity: 3, airPresence: 3 },
-  'voice-cmu-ethan-2': { pitch: 0.98, rate: 0.95, toneStyle: 'natural', throatWarmth: 3, oralClarity: 1, airPresence: 1 },
-  'voice-cmu-gaurav-2': { pitch: 0.89, rate: 0.93, toneStyle: 'deep', throatWarmth: 5, oralClarity: 3, airPresence: 0 },
-  'voice-cmu-lauren-2': { pitch: 1.02, rate: 1.06, toneStyle: 'radio', throatWarmth: 0, oralClarity: 5, airPresence: 2 },
-  'voice-cmu-nora-2': { pitch: 1.04, rate: 0.9, toneStyle: 'whisper', throatWarmth: -1, oralClarity: 2, airPresence: 5 },
-  'voice-cmu-priya-2': { pitch: 1.01, rate: 0.92, toneStyle: 'whisper', throatWarmth: -1, oralClarity: 2, airPresence: 3 },
-  'voice-cmu-rowan-2': { pitch: 0.85, rate: 0.91, toneStyle: 'deep', throatWarmth: 7, oralClarity: 2, airPresence: 2 },
-  'voice-cmu-hamish-2': { pitch: 1.04, rate: 1.01, toneStyle: 'natural', throatWarmth: 2, oralClarity: 3, airPresence: 2 },
-  'voice-cmu-liam-2': { pitch: 1.03, rate: 1.06, toneStyle: 'energetic', throatWarmth: 1, oralClarity: 3, airPresence: 3 },
-  'voice-cmu-rajesh-2': { pitch: 0.94, rate: 0.93, toneStyle: 'natural', throatWarmth: 3, oralClarity: 3, airPresence: 0 },
-  'voice-osr-sebastian': { pitch: 0.93, rate: 0.93, toneStyle: 'radio', throatWarmth: 3, oralClarity: 3, airPresence: 1 },
-  'voice-osr-julian': { pitch: 1.05, rate: 1.04, toneStyle: 'energetic', throatWarmth: 0, oralClarity: 4, airPresence: 3 },
-  'voice-osr-eleanor': { pitch: 1, rate: 0.93, toneStyle: 'natural', throatWarmth: 2, oralClarity: 3, airPresence: 2 },
-  'voice-osr-beatrice-2': { pitch: 0.97, rate: 0.95, toneStyle: 'natural', throatWarmth: 3, oralClarity: 4, airPresence: 1 },
-  'voice-osr-clara': { pitch: 1.02, rate: 0.88, toneStyle: 'whisper', throatWarmth: -2, oralClarity: 1, airPresence: 5 },
-  'voice-osr-hannah': { pitch: 1.07, rate: 1.06, toneStyle: 'energetic', throatWarmth: 0, oralClarity: 4, airPresence: 4 },
-  'voice-osr-daniel': { pitch: 0.87, rate: 0.95, toneStyle: 'radio', throatWarmth: 6, oralClarity: 4, airPresence: 0 },
-};
-
-const PRESET_VOICE_MODELS_BASE: VoiceModelConfig[] = [
+export const PRESET_VOICE_MODELS: VoiceModelConfig[] = [
   {
     id: 'voice-slt-aria',
     name: 'Aria (California Studio Lead)',
@@ -138,8 +54,8 @@ const PRESET_VOICE_MODELS_BASE: VoiceModelConfig[] = [
     gender: 'Female',
     accent: 'US',
     flag: '🇺🇸',
-    pitch: 0.99,
-    rate: 0.96,
+    pitch: 1.0,
+    rate: 1.0,
     volume: 1.0,
     toneStyle: 'natural',
     baseSampleId: 'cmu-slt-1',
@@ -155,10 +71,10 @@ const PRESET_VOICE_MODELS_BASE: VoiceModelConfig[] = [
     gender: 'Male',
     accent: 'US',
     flag: '🇺🇸',
-    pitch: 0.8,
-    rate: 0.9,
+    pitch: 1.0,
+    rate: 1.0,
     volume: 1.0,
-    toneStyle: 'deep',
+    toneStyle: 'natural',
     baseSampleId: 'cmu-rms-1',
     realSpeakerName: 'Robert M. Smith (US Male - Deep Baritone)',
     samplePhrase: 'Vocalis brings authentic acoustic power and deep chest resonance to your narrative productions.',
@@ -172,8 +88,8 @@ const PRESET_VOICE_MODELS_BASE: VoiceModelConfig[] = [
     gender: 'Male',
     accent: 'UK',
     flag: '🏴󠁧󠁢󠁳󠁣󠁴󠁿',
-    pitch: 0.95,
-    rate: 0.98,
+    pitch: 1.0,
+    rate: 1.0,
     volume: 1.0,
     toneStyle: 'natural',
     baseSampleId: 'cmu-awb-1',
@@ -189,8 +105,8 @@ const PRESET_VOICE_MODELS_BASE: VoiceModelConfig[] = [
     gender: 'Female',
     accent: 'US',
     flag: '🇺🇸',
-    pitch: 1,
-    rate: 0.94,
+    pitch: 1.0,
+    rate: 1.0,
     volume: 1.0,
     toneStyle: 'natural',
     baseSampleId: 'cmu-clb-1',
@@ -206,8 +122,8 @@ const PRESET_VOICE_MODELS_BASE: VoiceModelConfig[] = [
     gender: 'Male',
     accent: 'US',
     flag: '🇺🇸',
-    pitch: 1.02,
-    rate: 1.04,
+    pitch: 1.0,
+    rate: 1.0,
     volume: 1.0,
     toneStyle: 'natural',
     baseSampleId: 'cmu-bdl-1',
@@ -223,8 +139,8 @@ const PRESET_VOICE_MODELS_BASE: VoiceModelConfig[] = [
     gender: 'Male',
     accent: 'CA',
     flag: '🇨🇦',
-    pitch: 0.98,
-    rate: 0.97,
+    pitch: 1.0,
+    rate: 1.0,
     volume: 1.0,
     toneStyle: 'natural',
     baseSampleId: 'cmu-jmk-1',
@@ -240,8 +156,8 @@ const PRESET_VOICE_MODELS_BASE: VoiceModelConfig[] = [
     gender: 'Male',
     accent: 'IN',
     flag: '🇮🇳',
-    pitch: 1,
-    rate: 0.96,
+    pitch: 1.0,
+    rate: 1.0,
     volume: 1.0,
     toneStyle: 'natural',
     baseSampleId: 'cmu-ksp-1',
@@ -257,8 +173,8 @@ const PRESET_VOICE_MODELS_BASE: VoiceModelConfig[] = [
     gender: 'Female',
     accent: 'US',
     flag: '🇺🇸',
-    pitch: 1.01,
-    rate: 1,
+    pitch: 1.0,
+    rate: 1.0,
     volume: 1.0,
     toneStyle: 'natural',
     baseSampleId: 'osr-harvard-female',
@@ -274,8 +190,8 @@ const PRESET_VOICE_MODELS_BASE: VoiceModelConfig[] = [
     gender: 'Male',
     accent: 'US',
     flag: '🇺🇸',
-    pitch: 0.92,
-    rate: 0.97,
+    pitch: 1.0,
+    rate: 1.0,
     volume: 1.0,
     toneStyle: 'natural',
     baseSampleId: 'osr-harvard-male',
@@ -291,8 +207,8 @@ const PRESET_VOICE_MODELS_BASE: VoiceModelConfig[] = [
     gender: 'Male',
     accent: 'UK',
     flag: '🇬🇧',
-    pitch: 0.93,
-    rate: 0.92,
+    pitch: 1.0,
+    rate: 1.0,
     volume: 1.0,
     toneStyle: 'natural',
     baseSampleId: 'osr-british-male-1',
@@ -308,8 +224,8 @@ const PRESET_VOICE_MODELS_BASE: VoiceModelConfig[] = [
     gender: 'Male',
     accent: 'UK',
     flag: '🇬🇧',
-    pitch: 0.94,
-    rate: 0.94,
+    pitch: 1.0,
+    rate: 1.0,
     volume: 1.0,
     toneStyle: 'natural',
     baseSampleId: 'osr-british-male-2',
@@ -325,10 +241,10 @@ const PRESET_VOICE_MODELS_BASE: VoiceModelConfig[] = [
     gender: 'Female',
     accent: 'US',
     flag: '🇺🇸',
-    pitch: 1.04,
-    rate: 0.93,
+    pitch: 1.0,
+    rate: 1.0,
     volume: 1.0,
-    toneStyle: 'whisper',
+    toneStyle: 'natural',
     baseSampleId: 'osr-harvard-female-2',
     realSpeakerName: 'OSR Female Speaker II (Open Speech Repository)',
     samplePhrase: 'Every chapter unfolds with tender emotional warmth when voiced through Vocalis.',
@@ -342,10 +258,10 @@ const PRESET_VOICE_MODELS_BASE: VoiceModelConfig[] = [
     gender: 'Female',
     accent: 'US',
     flag: '🇺🇸',
-    pitch: 1.05,
-    rate: 1.06,
+    pitch: 1.0,
+    rate: 1.0,
     volume: 1.0,
-    toneStyle: 'energetic',
+    toneStyle: 'natural',
     baseSampleId: 'cmu-slt-4',
     realSpeakerName: 'SLT (US Female - California)',
     samplePhrase: 'Creating realistic two-person dialogues is fast and seamless inside Vocalis Dialogue Studio.',
@@ -359,10 +275,10 @@ const PRESET_VOICE_MODELS_BASE: VoiceModelConfig[] = [
     gender: 'Male',
     accent: 'US',
     flag: '🇺🇸',
-    pitch: 0.84,
-    rate: 0.9,
+    pitch: 1.0,
+    rate: 1.0,
     volume: 1.0,
-    toneStyle: 'deep',
+    toneStyle: 'natural',
     baseSampleId: 'cmu-rms-4',
     realSpeakerName: 'Robert M. Smith (US Male - Deep Baritone)',
     samplePhrase: 'Vocalis lets you shape deep throat warmth and oral clarity with responsive acoustic sliders.',
@@ -376,10 +292,10 @@ const PRESET_VOICE_MODELS_BASE: VoiceModelConfig[] = [
     gender: 'Male',
     accent: 'UK',
     flag: '🏴󠁧󠁢󠁳󠁣󠁴󠁿',
-    pitch: 1.06,
-    rate: 1.03,
+    pitch: 1.0,
+    rate: 1.0,
     volume: 1.0,
-    toneStyle: 'energetic',
+    toneStyle: 'natural',
     baseSampleId: 'cmu-awb-4',
     realSpeakerName: 'Alan W. Black (Scottish Male - Edinburgh)',
     samplePhrase: 'Step right in and let Vocalis transport your listeners to the rugged beauty of the Scottish Highlands.',
@@ -393,8 +309,8 @@ const PRESET_VOICE_MODELS_BASE: VoiceModelConfig[] = [
     gender: 'Female',
     accent: 'US',
     flag: '🇺🇸',
-    pitch: 1,
-    rate: 0.93,
+    pitch: 1.0,
+    rate: 1.0,
     volume: 1.0,
     toneStyle: 'natural',
     baseSampleId: 'cmu-clb-4',
@@ -410,10 +326,10 @@ const PRESET_VOICE_MODELS_BASE: VoiceModelConfig[] = [
     gender: 'Male',
     accent: 'US',
     flag: '🇺🇸',
-    pitch: 1.04,
-    rate: 1.07,
+    pitch: 1.0,
+    rate: 1.0,
     volume: 1.0,
-    toneStyle: 'energetic',
+    toneStyle: 'natural',
     baseSampleId: 'cmu-bdl-4',
     realSpeakerName: 'BDL (US Male - Boston, Massachusetts)',
     samplePhrase: 'Vocalis proves that 100 percent real human speech conversion outperforms synthetic robot generation every time.',
@@ -427,10 +343,10 @@ const PRESET_VOICE_MODELS_BASE: VoiceModelConfig[] = [
     gender: 'Male',
     accent: 'CA',
     flag: '🇨🇦',
-    pitch: 1.02,
-    rate: 1.06,
+    pitch: 1.0,
+    rate: 1.0,
     volume: 1.0,
-    toneStyle: 'energetic',
+    toneStyle: 'natural',
     baseSampleId: 'cmu-jmk-4',
     realSpeakerName: 'John M. Kominek (Canadian Male)',
     samplePhrase: 'From northern peaks to urban studios, Vocalis delivers authentic acoustic presence wherever you broadcast.',
@@ -444,8 +360,8 @@ const PRESET_VOICE_MODELS_BASE: VoiceModelConfig[] = [
     gender: 'Male',
     accent: 'IN',
     flag: '🇮🇳',
-    pitch: 0.95,
-    rate: 0.94,
+    pitch: 1.0,
+    rate: 1.0,
     volume: 1.0,
     toneStyle: 'natural',
     baseSampleId: 'cmu-ksp-4',
@@ -461,8 +377,8 @@ const PRESET_VOICE_MODELS_BASE: VoiceModelConfig[] = [
     gender: 'Female',
     accent: 'US',
     flag: '🇺🇸',
-    pitch: 1.06,
-    rate: 0.99,
+    pitch: 1.0,
+    rate: 1.0,
     volume: 1.0,
     toneStyle: 'natural',
     baseSampleId: 'cmu-fem-1',
@@ -478,8 +394,8 @@ const PRESET_VOICE_MODELS_BASE: VoiceModelConfig[] = [
     gender: 'Male',
     accent: 'US',
     flag: '🇺🇸',
-    pitch: 0.98,
-    rate: 1.02,
+    pitch: 1.0,
+    rate: 1.0,
     volume: 1.0,
     toneStyle: 'natural',
     baseSampleId: 'cmu-aew-1',
@@ -495,8 +411,8 @@ const PRESET_VOICE_MODELS_BASE: VoiceModelConfig[] = [
     gender: 'Male',
     accent: 'EU',
     flag: '🇩🇪',
-    pitch: 0.94,
-    rate: 0.95,
+    pitch: 1.0,
+    rate: 1.0,
     volume: 1.0,
     toneStyle: 'natural',
     baseSampleId: 'cmu-ahw-1',
@@ -512,10 +428,10 @@ const PRESET_VOICE_MODELS_BASE: VoiceModelConfig[] = [
     gender: 'Male',
     accent: 'IN',
     flag: '🇮🇳',
-    pitch: 1.02,
-    rate: 1.09,
+    pitch: 1.0,
+    rate: 1.0,
     volume: 1.0,
-    toneStyle: 'energetic',
+    toneStyle: 'natural',
     baseSampleId: 'cmu-aup-1',
     realSpeakerName: 'AUP (Indian English Male)',
     samplePhrase: 'Building next-generation voice applications is intuitive and powerful with the Vocalis engine.',
@@ -529,10 +445,10 @@ const PRESET_VOICE_MODELS_BASE: VoiceModelConfig[] = [
     gender: 'Female',
     accent: 'IN',
     flag: '🇮🇳',
-    pitch: 1.08,
-    rate: 1.02,
+    pitch: 1.0,
+    rate: 1.0,
     volume: 1.0,
-    toneStyle: 'energetic',
+    toneStyle: 'natural',
     baseSampleId: 'cmu-axb-1',
     realSpeakerName: 'AXB (Indian English Female)',
     samplePhrase: 'Welcome to our audio community! Vocalis brings authentic human voices together from across the globe.',
@@ -546,8 +462,8 @@ const PRESET_VOICE_MODELS_BASE: VoiceModelConfig[] = [
     gender: 'Male',
     accent: 'US',
     flag: '🇺🇸',
-    pitch: 0.97,
-    rate: 0.94,
+    pitch: 1.0,
+    rate: 1.0,
     volume: 1.0,
     toneStyle: 'natural',
     baseSampleId: 'cmu-eey-1',
@@ -563,10 +479,10 @@ const PRESET_VOICE_MODELS_BASE: VoiceModelConfig[] = [
     gender: 'Male',
     accent: 'IN',
     flag: '🇮🇳',
-    pitch: 0.9,
-    rate: 0.94,
+    pitch: 1.0,
+    rate: 1.0,
     volume: 1.0,
-    toneStyle: 'deep',
+    toneStyle: 'natural',
     baseSampleId: 'cmu-gka-1',
     realSpeakerName: 'GKA (Indian English Male)',
     samplePhrase: 'Vocalis empowers international presenters with consistent, high-fidelity real human voice models.',
@@ -580,10 +496,10 @@ const PRESET_VOICE_MODELS_BASE: VoiceModelConfig[] = [
     gender: 'Female',
     accent: 'US',
     flag: '🇺🇸',
-    pitch: 1.03,
-    rate: 1.05,
+    pitch: 1.0,
+    rate: 1.0,
     volume: 1.0,
-    toneStyle: 'radio',
+    toneStyle: 'natural',
     baseSampleId: 'cmu-ljm-1',
     realSpeakerName: 'LJM (US Female - Studio Acoustic)',
     samplePhrase: 'Reporting live with Vocalis: our audio analysis confirms pure human studio recordings with zero AI hallucination.',
@@ -597,10 +513,10 @@ const PRESET_VOICE_MODELS_BASE: VoiceModelConfig[] = [
     gender: 'Female',
     accent: 'US',
     flag: '🇺🇸',
-    pitch: 1.03,
-    rate: 0.9,
+    pitch: 1.0,
+    rate: 1.0,
     volume: 1.0,
-    toneStyle: 'whisper',
+    toneStyle: 'natural',
     baseSampleId: 'cmu-lnh-1',
     realSpeakerName: 'LNH (US Female - Studio Acoustic)',
     samplePhrase: 'In the gentle silence between words, Vocalis preserves the living breath and emotion of real human speech.',
@@ -614,10 +530,10 @@ const PRESET_VOICE_MODELS_BASE: VoiceModelConfig[] = [
     gender: 'Female',
     accent: 'IN',
     flag: '🇮🇳',
-    pitch: 1.02,
-    rate: 0.92,
+    pitch: 1.0,
+    rate: 1.0,
     volume: 1.0,
-    toneStyle: 'whisper',
+    toneStyle: 'natural',
     baseSampleId: 'cmu-slp-1',
     realSpeakerName: 'SLP (Indian English Female)',
     samplePhrase: 'Let us explore how Vocalis gently sculpts throat warmth and vocal clarity for comfortable long-form listening.',
@@ -631,10 +547,10 @@ const PRESET_VOICE_MODELS_BASE: VoiceModelConfig[] = [
     gender: 'Male',
     accent: 'US',
     flag: '🇺🇸',
-    pitch: 0.86,
-    rate: 0.92,
+    pitch: 1.0,
+    rate: 1.0,
     volume: 1.0,
-    toneStyle: 'deep',
+    toneStyle: 'natural',
     baseSampleId: 'cmu-rxr-1',
     realSpeakerName: 'RXR (US Male - Studio Acoustic)',
     samplePhrase: 'The shadows lengthen, but through Vocalis, every cinematic dialogue line strikes with thunderous clarity.',
@@ -648,10 +564,10 @@ const PRESET_VOICE_MODELS_BASE: VoiceModelConfig[] = [
     gender: 'Male',
     accent: 'UK',
     flag: '🇬🇧',
-    pitch: 0.91,
-    rate: 0.93,
+    pitch: 1.0,
+    rate: 1.0,
     volume: 1.0,
-    toneStyle: 'radio',
+    toneStyle: 'natural',
     baseSampleId: 'osr-uk-male-3',
     realSpeakerName: 'British English Male 3 (Open Speech Repository)',
     samplePhrase: 'Vocalis honors the highest traditions of British broadcast audio with flawless phonetic fidelity.',
@@ -665,10 +581,10 @@ const PRESET_VOICE_MODELS_BASE: VoiceModelConfig[] = [
     gender: 'Male',
     accent: 'UK',
     flag: '🇬🇧',
-    pitch: 1,
-    rate: 1,
+    pitch: 1.0,
+    rate: 1.0,
     volume: 1.0,
-    toneStyle: 'radio',
+    toneStyle: 'natural',
     baseSampleId: 'osr-uk-male-4',
     realSpeakerName: 'British English Male 4 (Open Speech Repository)',
     samplePhrase: 'Dialing in the perfect EQ and spatial balance for this London vocal profile inside Vocalis.',
@@ -682,8 +598,8 @@ const PRESET_VOICE_MODELS_BASE: VoiceModelConfig[] = [
     gender: 'Female',
     accent: 'UK',
     flag: '🇬🇧',
-    pitch: 1.02,
-    rate: 0.95,
+    pitch: 1.0,
+    rate: 1.0,
     volume: 1.0,
     toneStyle: 'natural',
     baseSampleId: 'osr-uk-female-1',
@@ -699,10 +615,10 @@ const PRESET_VOICE_MODELS_BASE: VoiceModelConfig[] = [
     gender: 'Female',
     accent: 'UK',
     flag: '🇬🇧',
-    pitch: 1.05,
-    rate: 1.03,
+    pitch: 1.0,
+    rate: 1.0,
     volume: 1.0,
-    toneStyle: 'energetic',
+    toneStyle: 'natural',
     baseSampleId: 'osr-uk-female-2',
     realSpeakerName: 'British English Female 2 (Open Speech Repository)',
     samplePhrase: 'The curtain rises as Vocalis delivers full theatrical expression with authentic human vibrancy.',
@@ -716,8 +632,8 @@ const PRESET_VOICE_MODELS_BASE: VoiceModelConfig[] = [
     gender: 'Female',
     accent: 'US',
     flag: '🇺🇸',
-    pitch: 1,
-    rate: 0.94,
+    pitch: 1.0,
+    rate: 1.0,
     volume: 1.0,
     toneStyle: 'natural',
     baseSampleId: 'osr-us-female-3',
@@ -733,10 +649,10 @@ const PRESET_VOICE_MODELS_BASE: VoiceModelConfig[] = [
     gender: 'Female',
     accent: 'US',
     flag: '🇺🇸',
-    pitch: 1.02,
-    rate: 0.91,
+    pitch: 1.0,
+    rate: 1.0,
     volume: 1.0,
-    toneStyle: 'whisper',
+    toneStyle: 'natural',
     baseSampleId: 'osr-us-female-4',
     realSpeakerName: 'American Female 4 (Open Speech Repository)',
     samplePhrase: 'Vocalis transforms written poetry into living speech with pure human intimacy.',
@@ -750,10 +666,10 @@ const PRESET_VOICE_MODELS_BASE: VoiceModelConfig[] = [
     gender: 'Male',
     accent: 'US',
     flag: '🇺🇸',
-    pitch: 0.88,
-    rate: 0.93,
+    pitch: 1.0,
+    rate: 1.0,
     volume: 1.0,
-    toneStyle: 'deep',
+    toneStyle: 'natural',
     baseSampleId: 'osr-us-male-3',
     realSpeakerName: 'American Male 3 (Open Speech Repository)',
     samplePhrase: 'Journey through breathtaking soundscapes with the authentic human voices of Vocalis.',
@@ -767,10 +683,10 @@ const PRESET_VOICE_MODELS_BASE: VoiceModelConfig[] = [
     gender: 'Male',
     accent: 'IN',
     flag: '🇮🇳',
-    pitch: 0.99,
-    rate: 1.05,
+    pitch: 1.0,
+    rate: 1.0,
     volume: 1.0,
-    toneStyle: 'radio',
+    toneStyle: 'natural',
     baseSampleId: 'osr-in-speaker-1',
     realSpeakerName: 'Indian English Speaker (Open Speech Repository)',
     samplePhrase: 'Broadcasting worldwide from the studio with Vocalis, connecting international listeners through real human speech.',
@@ -784,8 +700,8 @@ const PRESET_VOICE_MODELS_BASE: VoiceModelConfig[] = [
     gender: 'Male',
     accent: 'EU',
     flag: '🇪🇺',
-    pitch: 0.96,
-    rate: 0.97,
+    pitch: 1.0,
+    rate: 1.0,
     volume: 1.0,
     toneStyle: 'natural',
     baseSampleId: 'cmu-ahw-2',
@@ -801,8 +717,8 @@ const PRESET_VOICE_MODELS_BASE: VoiceModelConfig[] = [
     gender: 'Female',
     accent: 'US',
     flag: '🇺🇸',
-    pitch: 1.01,
-    rate: 0.99,
+    pitch: 1.0,
+    rate: 1.0,
     volume: 1.0,
     toneStyle: 'natural',
     baseSampleId: 'cmu-fem-2',
@@ -818,10 +734,10 @@ const PRESET_VOICE_MODELS_BASE: VoiceModelConfig[] = [
     gender: 'Male',
     accent: 'US',
     flag: '🇺🇸',
-    pitch: 1.01,
-    rate: 1.05,
+    pitch: 1.0,
+    rate: 1.0,
     volume: 1.0,
-    toneStyle: 'energetic',
+    toneStyle: 'natural',
     baseSampleId: 'cmu-aew-2',
     realSpeakerName: 'AEW (US Male - Studio Acoustic)',
     samplePhrase: 'Broadcasting live across the country with Vocalis, bringing real human warmth to your audio productions.',
@@ -835,8 +751,8 @@ const PRESET_VOICE_MODELS_BASE: VoiceModelConfig[] = [
     gender: 'Male',
     accent: 'EU',
     flag: '🇩🇪',
-    pitch: 0.93,
-    rate: 0.95,
+    pitch: 1.0,
+    rate: 1.0,
     volume: 1.0,
     toneStyle: 'natural',
     baseSampleId: 'cmu-ahw-2',
@@ -852,10 +768,10 @@ const PRESET_VOICE_MODELS_BASE: VoiceModelConfig[] = [
     gender: 'Male',
     accent: 'IN',
     flag: '🇮🇳',
-    pitch: 1.03,
-    rate: 1.08,
+    pitch: 1.0,
+    rate: 1.0,
     volume: 1.0,
-    toneStyle: 'energetic',
+    toneStyle: 'natural',
     baseSampleId: 'cmu-aup-2',
     realSpeakerName: 'AUP (Indian English Male)',
     samplePhrase: 'With Vocalis, engineering teams and creators can transform real human voices with complete precision.',
@@ -869,10 +785,10 @@ const PRESET_VOICE_MODELS_BASE: VoiceModelConfig[] = [
     gender: 'Female',
     accent: 'IN',
     flag: '🇮🇳',
-    pitch: 1.07,
-    rate: 1.03,
+    pitch: 1.0,
+    rate: 1.0,
     volume: 1.0,
-    toneStyle: 'energetic',
+    toneStyle: 'natural',
     baseSampleId: 'cmu-axb-2',
     realSpeakerName: 'AXB (Indian English Female)',
     samplePhrase: 'Welcome back to Vocalis. Hear how smoothly speech harmonics adapt to different room acoustic profiles.',
@@ -886,8 +802,8 @@ const PRESET_VOICE_MODELS_BASE: VoiceModelConfig[] = [
     gender: 'Male',
     accent: 'US',
     flag: '🇺🇸',
-    pitch: 0.98,
-    rate: 0.95,
+    pitch: 1.0,
+    rate: 1.0,
     volume: 1.0,
     toneStyle: 'natural',
     baseSampleId: 'cmu-eey-2',
@@ -903,10 +819,10 @@ const PRESET_VOICE_MODELS_BASE: VoiceModelConfig[] = [
     gender: 'Male',
     accent: 'IN',
     flag: '🇮🇳',
-    pitch: 0.89,
-    rate: 0.93,
+    pitch: 1.0,
+    rate: 1.0,
     volume: 1.0,
-    toneStyle: 'deep',
+    toneStyle: 'natural',
     baseSampleId: 'cmu-gka-2',
     realSpeakerName: 'GKA (Indian English Male)',
     samplePhrase: 'Vocalis sets the standard for real human voice modeling and multi-accent speech communication.',
@@ -920,10 +836,10 @@ const PRESET_VOICE_MODELS_BASE: VoiceModelConfig[] = [
     gender: 'Female',
     accent: 'US',
     flag: '🇺🇸',
-    pitch: 1.02,
-    rate: 1.06,
+    pitch: 1.0,
+    rate: 1.0,
     volume: 1.0,
-    toneStyle: 'radio',
+    toneStyle: 'natural',
     baseSampleId: 'cmu-ljm-2',
     realSpeakerName: 'LJM (US Female - Studio Acoustic)',
     samplePhrase: 'Reporting from the field with Vocalis, verifying that every vocal waveform originates from genuine human studio takes.',
@@ -937,10 +853,10 @@ const PRESET_VOICE_MODELS_BASE: VoiceModelConfig[] = [
     gender: 'Female',
     accent: 'US',
     flag: '🇺🇸',
-    pitch: 1.04,
-    rate: 0.9,
+    pitch: 1.0,
+    rate: 1.0,
     volume: 1.0,
-    toneStyle: 'whisper',
+    toneStyle: 'natural',
     baseSampleId: 'cmu-lnh-2',
     realSpeakerName: 'LNH (US Female - Studio Acoustic)',
     samplePhrase: 'Inside the imaginative worlds of Vocalis, characters speak with rich vocal color and tender human depth.',
@@ -954,10 +870,10 @@ const PRESET_VOICE_MODELS_BASE: VoiceModelConfig[] = [
     gender: 'Female',
     accent: 'IN',
     flag: '🇮🇳',
-    pitch: 1.01,
-    rate: 0.92,
+    pitch: 1.0,
+    rate: 1.0,
     volume: 1.0,
-    toneStyle: 'whisper',
+    toneStyle: 'natural',
     baseSampleId: 'cmu-slp-2',
     realSpeakerName: 'SLP (Indian English Female)',
     samplePhrase: 'In today\'s lesson, we observe how Vocalis balances oral resonance and phonetic clarity in real time.',
@@ -971,10 +887,10 @@ const PRESET_VOICE_MODELS_BASE: VoiceModelConfig[] = [
     gender: 'Male',
     accent: 'US',
     flag: '🇺🇸',
-    pitch: 0.85,
-    rate: 0.91,
+    pitch: 1.0,
+    rate: 1.0,
     volume: 1.0,
-    toneStyle: 'deep',
+    toneStyle: 'natural',
     baseSampleId: 'cmu-rxr-2',
     realSpeakerName: 'RXR (US Male - Studio Acoustic)',
     samplePhrase: 'From shadowy depths to epic mountain summits, Vocalis unleashes the cinematic power of human speech.',
@@ -988,8 +904,8 @@ const PRESET_VOICE_MODELS_BASE: VoiceModelConfig[] = [
     gender: 'Male',
     accent: 'UK',
     flag: '🏴󠁧󠁢󠁳󠁣󠁴󠁿',
-    pitch: 1.04,
-    rate: 1.01,
+    pitch: 1.0,
+    rate: 1.0,
     volume: 1.0,
     toneStyle: 'natural',
     baseSampleId: 'cmu-awb-s2',
@@ -1005,10 +921,10 @@ const PRESET_VOICE_MODELS_BASE: VoiceModelConfig[] = [
     gender: 'Male',
     accent: 'CA',
     flag: '🇨🇦',
-    pitch: 1.03,
-    rate: 1.06,
+    pitch: 1.0,
+    rate: 1.0,
     volume: 1.0,
-    toneStyle: 'energetic',
+    toneStyle: 'natural',
     baseSampleId: 'cmu-jmk-s2',
     realSpeakerName: 'John M. Kominek (Canadian Male)',
     samplePhrase: 'Vocalis brings authentic northern cadence and dynamic presence straight into your audio mixes.',
@@ -1022,8 +938,8 @@ const PRESET_VOICE_MODELS_BASE: VoiceModelConfig[] = [
     gender: 'Male',
     accent: 'IN',
     flag: '🇮🇳',
-    pitch: 0.94,
-    rate: 0.93,
+    pitch: 1.0,
+    rate: 1.0,
     volume: 1.0,
     toneStyle: 'natural',
     baseSampleId: 'cmu-ksp-s2',
@@ -1039,10 +955,10 @@ const PRESET_VOICE_MODELS_BASE: VoiceModelConfig[] = [
     gender: 'Male',
     accent: 'UK',
     flag: '🇬🇧',
-    pitch: 0.93,
-    rate: 0.93,
+    pitch: 1.0,
+    rate: 1.0,
     volume: 1.0,
-    toneStyle: 'radio',
+    toneStyle: 'natural',
     baseSampleId: 'osr-uk-male-5',
     realSpeakerName: 'British English Male 5 (Open Speech Repository)',
     samplePhrase: 'Vocalis crafts an immaculate acoustic environment for classical readings and period dramatizations.',
@@ -1056,10 +972,10 @@ const PRESET_VOICE_MODELS_BASE: VoiceModelConfig[] = [
     gender: 'Male',
     accent: 'UK',
     flag: '🇬🇧',
-    pitch: 1.05,
-    rate: 1.04,
+    pitch: 1.0,
+    rate: 1.0,
     volume: 1.0,
-    toneStyle: 'energetic',
+    toneStyle: 'natural',
     baseSampleId: 'osr-uk-male-6',
     realSpeakerName: 'British English Male 6 (Open Speech Repository)',
     samplePhrase: 'The spotlight shines on Vocalis as human speech takes center stage with dazzling articulation.',
@@ -1073,8 +989,8 @@ const PRESET_VOICE_MODELS_BASE: VoiceModelConfig[] = [
     gender: 'Female',
     accent: 'UK',
     flag: '🇬🇧',
-    pitch: 1,
-    rate: 0.93,
+    pitch: 1.0,
+    rate: 1.0,
     volume: 1.0,
     toneStyle: 'natural',
     baseSampleId: 'osr-uk-female-3',
@@ -1090,8 +1006,8 @@ const PRESET_VOICE_MODELS_BASE: VoiceModelConfig[] = [
     gender: 'Female',
     accent: 'UK',
     flag: '🇬🇧',
-    pitch: 0.97,
-    rate: 0.95,
+    pitch: 1.0,
+    rate: 1.0,
     volume: 1.0,
     toneStyle: 'natural',
     baseSampleId: 'osr-uk-female-4',
@@ -1107,10 +1023,10 @@ const PRESET_VOICE_MODELS_BASE: VoiceModelConfig[] = [
     gender: 'Female',
     accent: 'US',
     flag: '🇺🇸',
-    pitch: 1.02,
-    rate: 0.88,
+    pitch: 1.0,
+    rate: 1.0,
     volume: 1.0,
-    toneStyle: 'whisper',
+    toneStyle: 'natural',
     baseSampleId: 'osr-us-female-5',
     realSpeakerName: 'American Female 5 (Open Speech Repository)',
     samplePhrase: 'Take a deep breath and experience the calming, warm acoustic resonance of Vocalis.',
@@ -1124,10 +1040,10 @@ const PRESET_VOICE_MODELS_BASE: VoiceModelConfig[] = [
     gender: 'Female',
     accent: 'US',
     flag: '🇺🇸',
-    pitch: 1.07,
-    rate: 1.06,
+    pitch: 1.0,
+    rate: 1.0,
     volume: 1.0,
-    toneStyle: 'energetic',
+    toneStyle: 'natural',
     baseSampleId: 'osr-us-female-6',
     realSpeakerName: 'American Female 6 (Open Speech Repository)',
     samplePhrase: 'Tune in as Vocalis transforms raw human speech takes into polished, release-ready vocal performances.',
@@ -1141,46 +1057,16 @@ const PRESET_VOICE_MODELS_BASE: VoiceModelConfig[] = [
     gender: 'Male',
     accent: 'US',
     flag: '🇺🇸',
-    pitch: 0.87,
-    rate: 0.95,
+    pitch: 1.0,
+    rate: 1.0,
     volume: 1.0,
-    toneStyle: 'radio',
+    toneStyle: 'natural',
     baseSampleId: 'osr-us-male-4',
     realSpeakerName: 'American Male 4 (Open Speech Repository)',
     samplePhrase: 'From breaking news to long-form investigative audio, Vocalis provides uncompromising vocal fidelity.',
     avatarColor: '#3730a3',
   },
 ];
-
-/**
- * Presets with their authored delivery settings applied.
- */
-export const PRESET_VOICE_MODELS: VoiceModelConfig[] = PRESET_VOICE_MODELS_BASE.map((voice) => {
-  const delivery = PRESET_DELIVERY[voice.id];
-  return delivery
-    ? {
-        ...voice,
-        pitch: delivery.pitch,
-        rate: delivery.rate,
-        toneStyle: delivery.toneStyle,
-        throatWarmth: delivery.throatWarmth,
-        oralClarity: delivery.oralClarity,
-        airPresence: delivery.airPresence,
-      }
-    : voice;
-});
-
-
-/**
- * Attach the shipped persona portrait and rendered audition script to each
- * preset. Both are static files in /public, so the UI can show the portrait and
- * play the persona's own script narration instantly.
- */
-export const PRESET_VOICE_LIBRARY: VoiceModelConfig[] = PRESET_VOICE_MODELS.map((voice) => ({
-  ...voice,
-  avatarImage: `/voice-icons/${voice.id}.webp`,
-  auditionAudio: `/voice-auditions/${voice.id}.wav`,
-}));
 
 let userRecordedAudioBuffer: AudioBuffer | null = null;
 
@@ -1301,232 +1187,6 @@ export async function generateSpokenAudioWav(
     source: 'vocalis-natural-dsp',
     duration,
   };
-}
-
-/* ==========================================================================
-   Real text-to-speech playback
-   --------------------------------------------------------------------------
-   speakRealWords() above replays one pre-recorded CMU clip; it ignores the text
-   it is given. The functions below are the ones that actually speak a script:
-   they run the local CMU diphone / formant synthesiser on the supplied text and
-   play the result, so what the profile block shows is what the listener hears.
-   ========================================================================== */
-
-let activeSynthesisSource: AudioBufferSourceNode | null = null;
-let activeSynthesisAnalyser: AnalyserNode | null = null;
-const audioBufferCache = new Map<string, AudioBuffer>();
-
-/** Expose the analyser for the live waveform while spoken audio is playing. */
-function setActiveAnalyser(analyser: AnalyserNode | null): void {
-  activeSynthesisAnalyser = analyser;
-  setDspAnalyser(analyser);
-}
-
-export function getActiveAnalyser(): AnalyserNode | null {
-  return activeSynthesisAnalyser;
-}
-
-/** Warm the pronunciation dictionary so the first utterance is not slow. */
-export async function preloadSpeechData(): Promise<void> {
-  try {
-    await preparePronunciationDictionary();
-  } catch {
-    // Non-blocking: synthesis falls back to spelling rules without the dictionary.
-  }
-}
-
-async function blobUrlToAudioBuffer(url: string): Promise<AudioBuffer> {
-  const cached = audioBufferCache.get(url);
-  if (cached) return cached;
-  const ctx = getSharedAudioContext();
-  const response = await fetch(url);
-  const arrayBuffer = await response.arrayBuffer();
-  const buffer = await ctx.decodeAudioData(arrayBuffer);
-  audioBufferCache.set(url, buffer);
-  return buffer;
-}
-
-/**
- * Speak exactly `text` in the persona's voice.
- *
- * Uses the persona's shipped sample when the text matches its script (instant,
- * and identical to the rendered file), and otherwise synthesises the text live
- * on the device. Nothing is sent to a server and no browser TTS is used.
- */
-export async function speakVoiceText(
-  text: string,
-  model: VoiceModelConfig,
-  callbacks?: {
-    onStart?: () => void;
-    onEnd?: () => void;
-    onError?: (err: unknown) => void;
-  }
-): Promise<void> {
-  stopSpokenVoice();
-  const script = (text || '').trim() || model.samplePhrase;
-
-  try {
-    const ctx = getSharedAudioContext();
-
-    // Reuse the pre-rendered persona sample when the script is unchanged.
-    let audioBuffer: AudioBuffer | null = null;
-    if (model.auditionAudio && script === model.samplePhrase?.trim()) {
-      try {
-        audioBuffer = await blobUrlToAudioBuffer(model.auditionAudio);
-      } catch {
-        audioBuffer = null;
-      }
-    }
-
-    if (!audioBuffer) {
-      const result = await synthesizeText(script, model);
-      audioBuffer = await blobUrlToAudioBuffer(result.audioUrl);
-      URL.revokeObjectURL(result.audioUrl);
-    }
-
-    const source = ctx.createBufferSource();
-    source.buffer = audioBuffer;
-    const analyser = ctx.createAnalyser();
-    analyser.fftSize = 512;
-    source.connect(analyser);
-    analyser.connect(ctx.destination);
-
-    activeSynthesisSource = source;
-    setActiveAnalyser(analyser);
-
-    source.onended = () => {
-      if (activeSynthesisSource === source) {
-        activeSynthesisSource = null;
-        setActiveAnalyser(null);
-      }
-      callbacks?.onEnd?.();
-    };
-
-    callbacks?.onStart?.();
-    source.start(0);
-  } catch (err) {
-    activeSynthesisSource = null;
-    setActiveAnalyser(null);
-    callbacks?.onError?.(err);
-    callbacks?.onEnd?.();
-  }
-}
-
-type PersonaSampleManifest = Record<
-  string,
-  { file: string; wordTimings?: [number, number, number, number][] }
->;
-let personaManifest: PersonaSampleManifest | null = null;
-let personaManifestPromise: Promise<PersonaSampleManifest> | null = null;
-let wordHighlightTimer: ReturnType<typeof setTimeout> | null = null;
-
-/** Load and cache the word timings shipped with the rendered persona samples. */
-async function loadPersonaManifest(): Promise<PersonaSampleManifest> {
-  if (personaManifest) return personaManifest;
-  if (!personaManifestPromise) {
-    personaManifestPromise = fetch('/voice-auditions/manifest.json')
-      .then((r) => (r.ok ? r.json() : {}))
-      .catch(() => ({}))
-      .then((data) => {
-        personaManifest = data;
-        return data;
-      });
-  }
-  return personaManifestPromise;
-}
-
-/**
- * Speak a script while reporting which word is being spoken, using the shipped
- * sample's word timings. Falls back to no highlighting if timings are missing.
- */
-export async function speakVoiceTextWithTimings(
-  text: string,
-  model: VoiceModelConfig,
-  callbacks?: {
-    onStart?: () => void;
-    onWord?: (charIndex: number, charLength: number) => void;
-    onEnd?: () => void;
-    onError?: (err: unknown) => void;
-  }
-): Promise<void> {
-  const script = (text || '').trim() || model.samplePhrase;
-  let timings: [number, number, number, number][] = [];
-
-  if (script === model.samplePhrase?.trim()) {
-    const manifest = await loadPersonaManifest();
-    timings = manifest[model.id]?.wordTimings ?? [];
-  }
-
-  if (!timings.length) {
-    await speakVoiceText(script, model, {
-      onStart: callbacks?.onStart,
-      onEnd: () => {
-        callbacks?.onEnd?.();
-      },
-      onError: callbacks?.onError,
-    });
-    return;
-  }
-
-  const clearHighlightTimer = () => {
-    if (wordHighlightTimer) {
-      clearTimeout(wordHighlightTimer);
-      wordHighlightTimer = null;
-    }
-  };
-
-  const schedule = (fromIndex: number) => {
-    clearHighlightTimer();
-    const next = timings[fromIndex];
-    if (!next) return;
-    const [charIndex, charLength, start] = next;
-    const delay = Math.max(0, start * 1000);
-    wordHighlightTimer = setTimeout(() => {
-      callbacks?.onWord?.(charIndex, charLength);
-      schedule(fromIndex + 1);
-    }, delay);
-  };
-
-  schedule(0);
-  await speakVoiceText(script, model, {
-    onStart: callbacks?.onStart,
-    onEnd: () => {
-      clearHighlightTimer();
-      callbacks?.onEnd?.();
-    },
-    onError: (err) => {
-      clearHighlightTimer();
-      callbacks?.onError?.(err);
-    },
-  });
-}
-
-/** Stop any spoken script that is currently playing. */
-export function stopSpokenVoice(): void {
-  if (wordHighlightTimer) {
-    clearTimeout(wordHighlightTimer);
-    wordHighlightTimer = null;
-  }
-  if (activeSynthesisSource) {
-    try {
-      activeSynthesisSource.onended = null;
-      activeSynthesisSource.stop();
-      activeSynthesisSource.disconnect();
-    } catch {
-      // already stopped
-    }
-    activeSynthesisSource = null;
-  }
-  setActiveAnalyser(null);
-}
-
-/** Render the given text to a downloadable WAV using the persona's voice. */
-export async function renderVoiceTextWav(
-  text: string,
-  model: VoiceModelConfig
-): Promise<{ audioUrl: string; duration: number }> {
-  const result = await synthesizeText((text || '').trim() || model.samplePhrase, model);
-  return { audioUrl: result.audioUrl, duration: result.duration };
 }
 
 export { getDspAnalyser, isDspPlaying };

@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { VoiceModelConfig, speakVoiceText, stopSpokenVoice } from '../utils/naturalVoiceEngine';
+import { VoiceModelConfig, speakRealWords, stopSpeaking } from '../utils/naturalVoiceEngine';
 import { GeneratedTake } from '../types/voice';
 import {
   BookmarkCheck,
@@ -39,13 +39,13 @@ export const VoiceLibrary: React.FC<VoiceLibraryProps> = ({
 
   const handleAudition = (m: VoiceModelConfig) => {
     if (auditioningId === m.id) {
-      stopSpokenVoice();
+      stopSpeaking();
       setAuditioningId(null);
       return;
     }
 
     setAuditioningId(m.id);
-    speakVoiceText(m.samplePhrase, m, {
+    speakRealWords(m.samplePhrase, m, {
       onEnd: () => setAuditioningId(null),
       onError: () => setAuditioningId(null),
     });
@@ -105,7 +105,6 @@ export const VoiceLibrary: React.FC<VoiceLibraryProps> = ({
                         <VoiceAvatar
                           id={model.id}
                           name={model.name}
-                          avatarImage={model.avatarImage}
                           color={model.avatarColor}
                           size="lg"
                         />

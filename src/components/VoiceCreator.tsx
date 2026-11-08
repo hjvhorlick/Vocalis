@@ -3,8 +3,8 @@ import {
   VoiceModelConfig,
   NATURAL_HUMAN_SAMPLES,
   PRESET_VOICE_MODELS,
-  speakVoiceText,
-  stopSpokenVoice,
+  speakRealWords,
+  stopSpeaking,
   generateSpokenAudioWav,
 } from '../utils/naturalVoiceEngine';
 import { GeneratedTake } from '../types/voice';
@@ -155,13 +155,13 @@ export const VoiceCreator: React.FC<VoiceCreatorProps> = ({
   // Audition the shaped voice
   const handleAudition = () => {
     if (isAuditioning) {
-      stopSpokenVoice();
+      stopSpeaking();
       setIsAuditioning(false);
       return;
     }
 
     setIsAuditioning(true);
-    speakVoiceText(currentDraftModel.samplePhrase, currentDraftModel, {
+    speakRealWords(currentDraftModel.samplePhrase, currentDraftModel, {
       onStart: () => setIsAuditioning(true),
       onEnd: () => setIsAuditioning(false),
       onError: () => setIsAuditioning(false),
@@ -288,7 +288,6 @@ export const VoiceCreator: React.FC<VoiceCreatorProps> = ({
                     <VoiceAvatar
                       id={v.id}
                       name={v.name}
-                      avatarImage={v.avatarImage}
                       color={v.avatarColor}
                       size="sm"
                     />

@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { VoiceModelConfig, speakVoiceTextWithTimings, stopSpokenVoice } from '../utils/naturalVoiceEngine';
+import { VoiceModelConfig, speakRealWords, stopSpeaking } from '../utils/naturalVoiceEngine';
 import {
   Sliders,
   Play,
@@ -35,14 +35,14 @@ export const VoiceShaper: React.FC<VoiceShaperProps> = ({
 
   const handleAudition = () => {
     if (isSpeaking) {
-      stopSpokenVoice();
+      stopSpeaking();
       setIsSpeaking(false);
       setActiveWordRange(null);
       return;
     }
 
     setIsSpeaking(true);
-    speakVoiceTextWithTimings(model.samplePhrase, model, {
+    speakRealWords(model.samplePhrase, model, {
       onStart: () => setIsSpeaking(true),
       onWord: (charIndex, charLength) => {
         setActiveWordRange({ start: charIndex, length: charLength });
@@ -92,7 +92,6 @@ export const VoiceShaper: React.FC<VoiceShaperProps> = ({
                 <VoiceAvatar
                   id={model.id}
                   name={model.name}
-                  avatarImage={model.avatarImage}
                   color={model.avatarColor}
                   size="lg"
                 />

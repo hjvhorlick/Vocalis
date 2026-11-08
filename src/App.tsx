@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { initializeLocalSpeechEngine, preloadSpeechData, VoiceModelConfig, PRESET_VOICE_LIBRARY } from './utils/naturalVoiceEngine';
+import { initializeLocalSpeechEngine, VoiceModelConfig, PRESET_VOICE_MODELS } from './utils/naturalVoiceEngine';
 import { GeneratedTake } from './types/voice';
 import { VoiceNavbar, AppNavTab } from './components/VoiceNavbar';
 import { VoiceHub } from './components/VoiceHub';
@@ -21,12 +21,12 @@ export function App() {
       if (saved) {
         const parsed = JSON.parse(saved);
         const customOnly = Array.isArray(parsed) ? parsed.filter((m: VoiceModelConfig) => m.isCustom) : [];
-        return [...PRESET_VOICE_LIBRARY, ...customOnly];
+        return [...PRESET_VOICE_MODELS, ...customOnly];
       }
     } catch {
       // ignore
     }
-    return PRESET_VOICE_LIBRARY;
+    return PRESET_VOICE_MODELS;
   });
 
   const [activeModel, setActiveModel] = useState<VoiceModelConfig>(models[0]);
@@ -34,11 +34,6 @@ export function App() {
   useEffect(() => {
     initializeLocalSpeechEngine(activeModel);
   }, [activeModel.gender, activeModel.baseVoiceId, activeModel.synthesisMethod]);
-
-  // Warm the CMU pronunciation dictionary so the first audition is not slow.
-  useEffect(() => {
-    preloadSpeechData();
-  }, []);
 
   // Saved audio takes vault
   const [savedTakes, setSavedTakes] = useState<GeneratedTake[]>(() => {
@@ -91,7 +86,7 @@ export function App() {
       return updated;
     });
     if (activeModel.id === id) {
-      setActiveModel(PRESET_VOICE_LIBRARY[0]);
+      setActiveModel(PRESET_VOICE_MODELS[0]);
     }
   };
 

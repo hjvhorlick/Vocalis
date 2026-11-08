@@ -1,5 +1,5 @@
 import React, { useState, useRef } from 'react';
-import { VoiceModelConfig, speakVoiceText, stopSpokenVoice } from '../utils/naturalVoiceEngine';
+import { VoiceModelConfig, speakRealWords, stopSpeaking } from '../utils/naturalVoiceEngine';
 import { Users, Plus, Trash2, Play, Square, Volume2 } from 'lucide-react';
 import { VoiceAvatar } from './VoiceAvatar';
 
@@ -76,7 +76,7 @@ export const DialogueStudio: React.FC<DialogueStudioProps> = ({ models }) => {
   const playDialogue = async () => {
     if (isPlayingDialogue) {
       cancelRequestedRef.current = true;
-      stopSpokenVoice();
+      stopSpeaking();
       setIsPlayingDialogue(false);
       setActiveLineIdx(-1);
       return;
@@ -95,7 +95,7 @@ export const DialogueStudio: React.FC<DialogueStudioProps> = ({ models }) => {
       const voice = line.speakerId === 'A' ? modelA : modelB;
 
       await new Promise<void>((resolve) => {
-        speakVoiceText(line.text, voice, {
+        speakRealWords(line.text, voice, {
           onEnd: () => resolve(),
           onError: () => resolve(),
         });
@@ -136,7 +136,6 @@ export const DialogueStudio: React.FC<DialogueStudioProps> = ({ models }) => {
                 <VoiceAvatar
                   id={modelA.id}
                   name={modelA.name}
-                  avatarImage={modelA.avatarImage}
                   color={modelA.avatarColor}
                   size="sm"
                 />
@@ -176,7 +175,6 @@ export const DialogueStudio: React.FC<DialogueStudioProps> = ({ models }) => {
                 <VoiceAvatar
                   id={modelB.id}
                   name={modelB.name}
-                  avatarImage={modelB.avatarImage}
                   color={modelB.avatarColor}
                   size="sm"
                 />

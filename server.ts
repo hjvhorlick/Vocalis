@@ -96,73 +96,24 @@ async function startServer() {
     if (!token || typeof token !== 'string') {
       return res.status(400).json({ error: 'GitHub Personal Access Token is required' });
     }
-
     const cleanToken = token.trim();
-    const repoUrl = 'https://github.com/hjvhorlick/Vocalis.git';
-    const branch = (typeof req.body.branch === 'string' && req.body.branch.trim()) || 'main';
-    if (!/^[A-Za-z0-9._/-]+$/.test(branch)) {
-      return res.status(400).json({ error: 'Invalid branch name' });
-    }
-
-    // The token is passed through the environment rather than being interpolated
-    // into a shell string, and the remote is added explicitly so no --force push
-    // to a hard-coded branch can happen behind the user's back.
-    const askPass = path.join(process.cwd(), 'scripts', 'git-askpass.sh');
-    const env = {
-      ...process.env,
-      GIT_ASKPASS: askPass,
-      GIT_TERMINAL_PROMPT: '0',
-      VOCALIS_GIT_TOKEN: cleanToken,
-    } as NodeJS.ProcessEnv;
-
-    const run = (command: string) =>
-      new Promise<{ code: number; stdout: string; stderr: string }>((resolve) => {
-        exec(
-          command,
-          { env, maxBuffer: 10 * 1024 * 1024, timeout: 120000 },
-          (err, stdout, stderr) => resolve({ code: err ? (err as any).code ?? 1 : 0, stdout, stderr })
-        );
-      });
-
-    (async () => {
-      const results = [];
-      results.push(await run('git add -A'));
-      // Snapshot the working tree only if it has anything to commit.
-      const status = await run('git status --porcelain');
-      if (status.stdout.trim()) {
-        results.push(await run('git -c user.name="Vocalis" -c user.email="vocalis@local" commit -m "chore: sync Vocalis studio snapshot"'));
-      }
-      // Push the current branch explicitly. No force, no hard-coded branch.
-      results.push(
-        await run(
-          `git push "${repoUrl}" "HEAD:refs/heads/${branch}" 2>&1`
-        )
-      );
-
-      const failed = results.find((r) => r.code !== 0);
-      if (failed) {
-        const errorMsg = `${failed.stdout}\n${failed.stderr}`.trim();
-        const isAuthFail =
-          errorMsg.includes('403') ||
-          /Authentication/i.test(errorMsg) ||
-          errorMsg.includes('Invalid username or password') ||
-          errorMsg.includes('could not read Username');
+    const remoteUrl = `https://${encodeURIComponent(cleanToken)}@github.com/hjvhorlick/Vocalis.git`;
+    
+    // Ensure all changes are committed before pushing
+    exec(`git config --global --add safe.directory /app/applet; git add .; git commit -m "feat: complete Vocalis voice studio" || true; git push "${remoteUrl}" main --force`, (err, _stdout, stderr) => {
+      if (err) {
+        const errorMsg = stderr || err.message;
+        const isAuthFail = errorMsg.includes('403') || errorMsg.includes('Authentication') || errorMsg.includes('Invalid username or password');
         return res.status(400).json({
           error: isAuthFail
-            ? 'GitHub rejected the token. Make sure it is valid and has "repo" scope.'
+            ? 'GitHub rejected the token. Please make sure your token is valid and has "repo" permission checked.'
             : errorMsg,
         });
       }
-
       res.json({
         success: true,
-        branch,
-        message: `Pushed to ${repoUrl} (branch: ${branch})`,
+        message: 'Successfully pushed all files to https://github.com/hjvhorlick/Vocalis',
       });
-    })().catch((err: any) => {
-      res.status(500).json({ error: err?.message || 'Push failed' });
-    });
-  });
     });
   });
 

@@ -3,21 +3,19 @@ import React, { useState } from 'react';
 export type VoiceAvatarSize = 'xs' | 'sm' | 'md' | 'lg' | 'xl';
 
 interface VoiceAvatarProps {
-  /** Voice id, used to fall back to the convention-based portrait path. */
+  /** Voice id; also used to resolve the portrait path. */
   id?: string;
   name: string;
   avatarImage?: string;
   color: string;
   size?: VoiceAvatarSize;
-  /** Adds a soft pulsing ring while this voice is speaking. */
-  speaking?: boolean;
-  /** Small accent dot in the corner (used for the accent flag elsewhere). */
+  /** Extra classes for the wrapper. */
   className?: string;
 }
 
 /**
- * Portrait sizes. These are deliberately larger than the old initial-letter
- * chips (which topped out at 44px) so the persona art is actually readable.
+ * Persona portrait. Deliberately larger than the initial-letter chips it
+ * replaced (which topped out at 44px) so the artwork is actually readable.
  */
 const SIZE_CLASSES: Record<VoiceAvatarSize, string> = {
   xs: 'w-9 h-9 rounded-lg text-[11px]',
@@ -33,7 +31,6 @@ export const VoiceAvatar: React.FC<VoiceAvatarProps> = ({
   avatarImage,
   color,
   size = 'md',
-  speaking = false,
   className = '',
 }) => {
   const [failed, setFailed] = useState(false);
@@ -42,9 +39,7 @@ export const VoiceAvatar: React.FC<VoiceAvatarProps> = ({
 
   return (
     <div
-      className={`relative shrink-0 overflow-hidden ring-1 ring-white/15 shadow-md ${SIZE_CLASSES[size]} ${
-        speaking ? 'ring-2 ring-cyan-400/80 shadow-cyan-500/30' : ''
-      } ${className}`}
+      className={`relative shrink-0 overflow-hidden ring-1 ring-white/15 shadow-md ${SIZE_CLASSES[size]} ${className}`}
       style={{ backgroundColor: color }}
       title={name}
     >
@@ -64,9 +59,6 @@ export const VoiceAvatar: React.FC<VoiceAvatarProps> = ({
         >
           {initial}
         </div>
-      )}
-      {speaking && (
-        <span className="absolute inset-0 rounded-[inherit] ring-2 ring-cyan-300/60 animate-pulse pointer-events-none" />
       )}
     </div>
   );

@@ -209,11 +209,9 @@ function applyStyle(input: Float32Array, style: VoiceModelConfig['toneStyle']): 
   for (let i = 0; i < input.length; i++) {
     const sample = input[i];
     if (style === 'radio') {
-      // Broadcast-style low cut plus gentle saturation. Kept mild: the old
-      // differencing filter added roughly +14 dB of treble and sounded brittle.
-      const highPassed = sample - previous * 0.75;
+      const highPassed = sample - previous * 0.91;
       previous = sample;
-      output[i] = Math.tanh(highPassed * 1.9) * 0.78;
+      output[i] = Math.tanh(highPassed * 5) * 0.75;
     } else if (style === 'robot') {
       output[i] = sample * (0.72 + 0.28 * Math.sin(phase));
       phase += 2 * Math.PI * 34 / SAMPLE_RATE;
@@ -228,46 +226,12 @@ function applyStyle(input: Float32Array, style: VoiceModelConfig['toneStyle']): 
   return output;
 }
 
-/**
- * RBJ peaking EQ, applied offline. Used to give each persona's synthetic
- * delivery the formant balance its description promises (chest warmth, oral
- * clarity, air presence) instead of rendering every voice with a flat spectrum.
- */
-function peakingEq(input: Float32Array, frequency: number, q: number, gainDb: number): Float32Array {
-  if (!gainDb) return input;
-  const A = Math.pow(10, gainDb / 40);
-  const w0 = (2 * Math.PI * frequency) / SAMPLE_RATE;
-  const alpha = Math.sin(w0) / (2 * q);
-  const cosw0 = Math.cos(w0);
-  const b0 = 1 + alpha * A;
-  const b1 = -2 * cosw0;
-  const b2 = 1 - alpha * A;
-  const a0 = 1 + alpha / A;
-  const a1 = -2 * cosw0;
-  const a2 = 1 - alpha / A;
-  const output = new Float32Array(input.length);
-  let x1 = 0, x2 = 0, y1 = 0, y2 = 0;
-  for (let i = 0; i < input.length; i++) {
-    const x0 = input[i];
-    const y0 = (b0 * x0 + b1 * x1 + b2 * x2 - a1 * y1 - a2 * y2) / a0;
-    output[i] = y0;
-    x2 = x1; x1 = x0;
-    y2 = y1; y1 = y0;
-  }
-  return output;
-}
-
 export function processCmuVoice(samples: Float32Array, model: VoiceModelConfig): Float32Array {
   const stylePitch = model.toneStyle === 'deep' ? 0.92 : model.toneStyle === 'energetic' ? 1.06 : 1;
   const pitch = resample(samples, model.pitch * stylePitch);
   const rateStyle = model.toneStyle === 'deep' ? 0.92 : model.toneStyle === 'energetic' ? 1.1 : 1;
   const stretch = wsolaStretch(pitch, Math.floor(pitch.length / Math.max(0.55, model.rate * rateStyle)));
-  const styled = applyStyle(stretch, model.toneStyle);
-
-  // Persona formant balance: F1 chest warmth, F2 oral clarity, F3 air presence.
-  const warm = peakingEq(styled, 450, 1.2, model.throatWarmth ?? 0);
-  const clear = peakingEq(warm, 1800, 1.4, model.oralClarity ?? 0);
-  return peakingEq(clear, 4200, 1.0, model.airPresence ?? 0);
+  return applyStyle(stretch, model.toneStyle);
 }
 
 export const CMU_SAMPLE_RATE = SAMPLE_RATE;

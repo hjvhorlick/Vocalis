@@ -2,8 +2,8 @@ import React, { useState, useRef, useEffect } from 'react';
 import {
   VoiceModelConfig,
   NATURAL_HUMAN_SAMPLES,
-  speakVoiceText,
-  stopSpokenVoice,
+  speakRealWords,
+  stopSpeaking,
   generateSpokenAudioWav,
 } from '../utils/naturalVoiceEngine';
 import { GeneratedTake } from '../types/voice';
@@ -90,7 +90,7 @@ export const VoiceHub: React.FC<VoiceHubProps> = ({
   const handleAuditionCard = (e: React.MouseEvent, voice: VoiceModelConfig) => {
     e.stopPropagation();
     if (auditioningCardId === voice.id) {
-      stopSpokenVoice();
+      stopSpeaking();
       setAuditioningCardId(null);
       setIsPlaying(false);
       return;
@@ -99,7 +99,7 @@ export const VoiceHub: React.FC<VoiceHubProps> = ({
     onSelectVoice(voice);
     setAuditioningCardId(voice.id);
     setIsPlaying(true);
-    speakVoiceText(voice.samplePhrase, voice, {
+    speakRealWords(voice.samplePhrase, voice, {
       onEnd: () => {
         setAuditioningCardId(null);
         setIsPlaying(false);
@@ -114,7 +114,7 @@ export const VoiceHub: React.FC<VoiceHubProps> = ({
   // Play narration of current custom script
   const handlePlayNarration = () => {
     if (isPlaying) {
-      stopSpokenVoice();
+      stopSpeaking();
       setIsPlaying(false);
       setAuditioningCardId(null);
       return;
@@ -124,7 +124,7 @@ export const VoiceHub: React.FC<VoiceHubProps> = ({
     setIsPlaying(true);
     setAuditioningCardId(activeVoice.id);
 
-    speakVoiceText(textToSpeak, activeVoice, {
+    speakRealWords(textToSpeak, activeVoice, {
       onStart: () => setIsPlaying(true),
       onEnd: () => {
         setIsPlaying(false);
@@ -213,10 +213,8 @@ export const VoiceHub: React.FC<VoiceHubProps> = ({
               <VoiceAvatar
                 id={activeVoice.id}
                 name={activeVoice.name}
-                avatarImage={activeVoice.avatarImage}
                 color={activeVoice.avatarColor}
                 size="xl"
-                speaking={isPlaying}
               />
               {activeVoice.flag && (
                 <div
@@ -535,7 +533,6 @@ export const VoiceHub: React.FC<VoiceHubProps> = ({
                         <VoiceAvatar
                           id={voice.id}
                           name={voice.name}
-                          avatarImage={voice.avatarImage}
                           color={voice.avatarColor}
                           size="lg"
                         />

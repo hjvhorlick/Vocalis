@@ -2,8 +2,8 @@ import React, { useState, useRef } from 'react';
 import {
   VoiceModelConfig,
   NATURAL_HUMAN_SAMPLES,
-  speakVoiceText,
-  stopSpokenVoice,
+  speakRealWords,
+  stopSpeaking,
   generateSpokenAudioWav,
   setUserAudioBuffer,
   getUserAudioBuffer,
@@ -27,7 +27,6 @@ import {
   StopCircle,
 } from 'lucide-react';
 import { VoiceAvatar } from './VoiceAvatar';
-import { PersonaScriptPlayer } from './PersonaScriptPlayer';
 
 interface SpeechStudioProps {
   models: VoiceModelConfig[];
@@ -70,13 +69,13 @@ export const SpeechStudio: React.FC<SpeechStudioProps> = ({
   // Play converted voice in real time through speakers
   const handlePlayLive = () => {
     if (isPlayingLive) {
-      stopSpokenVoice();
+      stopSpeaking();
       setIsPlayingLive(false);
       return;
     }
 
     setIsPlayingLive(true);
-    speakVoiceText(activeModel.samplePhrase, activeModel, {
+    speakRealWords(activeModel.samplePhrase, activeModel, {
       onStart: () => setIsPlayingLive(true),
       onEnd: () => setIsPlayingLive(false),
       onError: () => setIsPlayingLive(false),
@@ -232,10 +231,8 @@ export const SpeechStudio: React.FC<SpeechStudioProps> = ({
               <VoiceAvatar
                 id={activeModel.id}
                 name={activeModel.name}
-                avatarImage={activeModel.avatarImage}
                 color={activeModel.avatarColor}
                 size="xl"
-                speaking={isPlayingLive}
               />
               {activeModel.flag && (
                 <div
@@ -453,13 +450,7 @@ export const SpeechStudio: React.FC<SpeechStudioProps> = ({
               <Volume2 className="w-3.5 h-3.5" />
               Audition & Test Script
             </span>
-            <PersonaScriptPlayer
-              voiceId={activeModel.id}
-              name={activeModel.name}
-              audioUrl={activeModel.auditionAudio}
-              script={activeModel.samplePhrase}
-              compact
-            />
+            <span className="text-[10px] text-emerald-400 font-mono">100% Non-AI Human Speech</span>
           </div>
           <p className="text-sm sm:text-base text-slate-100 font-medium leading-relaxed italic">
             "{activeModel.samplePhrase}"
