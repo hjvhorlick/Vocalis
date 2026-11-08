@@ -9,6 +9,7 @@ import {
   ShieldCheck,
   UserCheck,
 } from 'lucide-react';
+import { VoiceAvatar } from './VoiceAvatar';
 
 interface PredefinedVoiceListProps {
   voices: VoiceModelConfig[];
@@ -162,12 +163,12 @@ export const PredefinedVoiceList: React.FC<PredefinedVoiceListProps> = ({
                 <div className="flex items-start justify-between gap-2 mb-2">
                   <div className="flex items-center gap-2.5">
                     <div className="relative shrink-0">
-                      <div
-                        className="w-10 h-10 rounded-xl flex items-center justify-center font-bold text-white shadow-sm text-sm uppercase ring-1 ring-white/10"
-                        style={{ backgroundColor: voice.avatarColor }}
-                      >
-                        {voice.name.charAt(0)}
-                      </div>
+                      <VoiceAvatar
+                        id={voice.id}
+                        name={voice.name}
+                        color={voice.avatarColor}
+                        size="lg"
+                      />
                       {voice.flag && (
                         <div
                           className="absolute -bottom-1 -right-1.5 bg-slate-900 border border-slate-700/80 rounded-md px-1 py-0.2 text-[10px] leading-tight shadow-md flex items-center justify-center pointer-events-none"

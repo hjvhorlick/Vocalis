@@ -26,6 +26,7 @@ import {
   Radio,
   StopCircle,
 } from 'lucide-react';
+import { VoiceAvatar } from './VoiceAvatar';
 
 interface SpeechStudioProps {
   models: VoiceModelConfig[];
@@ -227,12 +228,12 @@ export const SpeechStudio: React.FC<SpeechStudioProps> = ({
         <div className="flex flex-wrap items-center justify-between gap-4">
           <div className="flex items-center gap-3">
             <div className="relative shrink-0">
-              <div
-                className="w-12 h-12 rounded-2xl flex items-center justify-center font-bold text-lg text-white shadow-md uppercase ring-1 ring-white/10"
-                style={{ backgroundColor: activeModel.avatarColor }}
-              >
-                {activeModel.name.charAt(0)}
-              </div>
+              <VoiceAvatar
+                id={activeModel.id}
+                name={activeModel.name}
+                color={activeModel.avatarColor}
+                size="xl"
+              />
               {activeModel.flag && (
                 <div
                   className="absolute -bottom-1 -right-1 bg-slate-900 border border-slate-700/80 rounded-md px-1.5 py-0.5 text-xs shadow-md leading-none flex items-center justify-center pointer-events-none"

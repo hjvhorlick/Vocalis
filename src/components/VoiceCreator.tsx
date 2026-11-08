@@ -27,6 +27,7 @@ import {
   ShieldCheck,
   RefreshCw,
 } from 'lucide-react';
+import { VoiceAvatar } from './VoiceAvatar';
 
 interface VoiceCreatorProps {
   voices: VoiceModelConfig[];
@@ -284,12 +285,12 @@ export const VoiceCreator: React.FC<VoiceCreatorProps> = ({
                   }`}
                 >
                   <div className="relative shrink-0">
-                    <div
-                      className="w-9 h-9 rounded-lg flex items-center justify-center font-bold text-xs text-white uppercase shadow-sm"
-                      style={{ backgroundColor: v.avatarColor }}
-                    >
-                      {v.name.charAt(0)}
-                    </div>
+                    <VoiceAvatar
+                      id={v.id}
+                      name={v.name}
+                      color={v.avatarColor}
+                      size="sm"
+                    />
                     {v.flag && (
                       <span className="absolute -bottom-1 -right-1 text-[9px] bg-slate-900 rounded border border-slate-700 px-0.5 leading-none">
                         {v.flag}
