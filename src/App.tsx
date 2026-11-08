@@ -3,7 +3,6 @@ import { initializeLocalSpeechEngine, VoiceModelConfig, PRESET_VOICE_MODELS } fr
 import { GeneratedTake } from './types/voice';
 import { VoiceNavbar } from './components/VoiceNavbar';
 import { PredefinedVoiceList } from './components/PredefinedVoiceList';
-import { VoiceManipulator } from './components/VoiceManipulator';
 import { SpeechStudio } from './components/SpeechStudio';
 import { DialogueStudio } from './components/DialogueStudio';
 import { VoiceLibrary } from './components/VoiceLibrary';
@@ -84,21 +83,6 @@ export function App() {
     });
 
     setActiveModel(toSave);
-  };
-
-  const handleResetActiveVoice = () => {
-    const originalPreset = PRESET_VOICE_MODELS.find((p) => p.id === activeModel.id);
-    if (originalPreset) {
-      setActiveModel({ ...originalPreset });
-    } else {
-      setActiveModel((prev) => ({
-        ...prev,
-        pitch: 1.0,
-        rate: 1.0,
-        volume: 1.0,
-        toneStyle: 'natural',
-      }));
-    }
   };
 
   const handleDeleteCustomModel = (id: string) => {
@@ -216,15 +200,14 @@ export function App() {
               onNewVoice={handleNewVoice}
             />
 
-            {/* 2. Voice Manipulator Panel for the Active Voice */}
-            <VoiceManipulator
-              voice={activeModel}
-              onUpdateVoice={setActiveModel}
-              onSaveAsCustom={handleSaveModel}
-              onResetToDefault={handleResetActiveVoice}
-            />
+            {/* 2. Spoken Word Studio.
 
-            {/* 3. Spoken Word Studio & Real-time Synthesizer */}
+                No adjustment panel here, on purpose. Sliders live on the .vls Voice
+                Creator page, where a voice is built and a file is made; this page
+                speaks what it is given. A card carries the settings its file was
+                sealed with, so what plays here is the voice as designed — the
+                recording, plus exactly the switches that file records as on — and
+                nothing on this page can change it. */}
             <SpeechStudio
               models={models}
               activeModel={activeModel}

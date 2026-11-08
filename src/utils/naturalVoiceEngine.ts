@@ -717,9 +717,19 @@ export function getUserAudioBuffer(): AudioBuffer | null {
   return userRecordedAudioBuffer;
 }
 
-/** Resolve the reference recording for a profile, or the user's own upload. */
-export async function resolveBufferForModel(model: VoiceModelConfig): Promise<AudioBuffer> {
-  if (model.baseSampleId === 'custom-user' && userRecordedAudioBuffer) {
+/**
+ * Resolve the reference recording for a profile, or the user's own upload.
+ *
+ * A recording the person made is used whenever there is one, because that is the
+ * only thing it can be for: it is never part of a voice, and the Spoken Word page
+ * has no control that would point a voice at it. Passing `preferOwnRecording: false`
+ * asks for the speaker's own reference regardless.
+ */
+export async function resolveBufferForModel(
+  model: VoiceModelConfig,
+  preferOwnRecording = true,
+): Promise<AudioBuffer> {
+  if (preferOwnRecording && userRecordedAudioBuffer) {
     return userRecordedAudioBuffer;
   }
   const sample =

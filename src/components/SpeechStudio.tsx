@@ -106,6 +106,9 @@ export const SpeechStudio: React.FC<SpeechStudioProps> = ({
   const activeSample =
     NATURAL_HUMAN_SAMPLES.find((s) => s.id === activeModel.baseSampleId) ||
     NATURAL_HUMAN_SAMPLES[0];
+  // An uploaded recording replaces what "no assembly at all" plays, without
+  // touching the voice model — see `resolveBufferForModel`.
+  const hasOwnRecording = Boolean(getUserAudioBuffer());
 
   const wordCount = useMemo(() => script.trim().split(/\s+/).filter(Boolean).length, [script]);
 
@@ -287,9 +290,8 @@ export const SpeechStudio: React.FC<SpeechStudioProps> = ({
         try {
           const decoded = await decodeCustomAudioBlob(audioBlob);
           setUserAudioBuffer(decoded);
-          if (onUpdateActiveModel) {
-            onUpdateActiveModel({ ...activeModel, baseSampleId: 'custom-user' });
-          }
+          // The recording is a reference to listen to, not a change to the voice:
+          // the card, and the settings its file was sealed with, stay untouched.
           setRecordError(null);
         } catch (e: unknown) {
           setRecordError(
@@ -323,9 +325,6 @@ export const SpeechStudio: React.FC<SpeechStudioProps> = ({
     try {
       const decoded = await decodeCustomAudioBlob(file);
       setUserAudioBuffer(decoded);
-      if (onUpdateActiveModel) {
-        onUpdateActiveModel({ ...activeModel, baseSampleId: 'custom-user' });
-      }
       setRecordError(null);
     } catch (err: unknown) {
       setRecordError('Failed to load audio file: ' + (err instanceof Error ? err.message : String(err)));
@@ -413,43 +412,10 @@ export const SpeechStudio: React.FC<SpeechStudioProps> = ({
           </div>
         </div>
 
-        {/* Recorded source voice selector */}
-        <div className="pt-3 border-t border-slate-800/80 grid grid-cols-1 md:grid-cols-12 gap-4 items-center">
-          <div className="md:col-span-8 space-y-1">
-            <div className="flex items-center justify-between">
-              <label className="text-xs font-bold uppercase tracking-wider text-slate-300 flex items-center gap-1.5">
-                <Radio className="w-3.5 h-3.5 text-indigo-400" />
-                Recorded Source Voice (CMU ARCTIC units this voice is built from):
-              </label>
-              <span className="text-[10px] text-emerald-400 font-mono">100% Non-AI Human</span>
-            </div>
-
-            <select
-              value={activeModel.baseSampleId}
-              onChange={(e) => {
-                const newSampleId = e.target.value;
-                const sample = NATURAL_HUMAN_SAMPLES.find((s) => s.id === newSampleId);
-                if (onUpdateActiveModel && sample) {
-                  onUpdateActiveModel({
-                    ...activeModel,
-                    baseSampleId: newSampleId,
-                    baseVoiceId: sample.voicePackId,
-                  });
-                }
-              }}
-              className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white cursor-pointer"
-            >
-              {NATURAL_HUMAN_SAMPLES.map((s) => (
-                <option key={s.id} value={s.id}>
-                  {s.name} ({s.speaker}) &mdash; reference: "{s.transcript}"
-                </option>
-              ))}
-              {getUserAudioBuffer() && (
-                <option value="custom-user">Your Custom Recording / Uploaded Audio (audition only)</option>
-              )}
-            </select>
-          </div>
-
+        {/* Reference recording for auditioning, from the microphone or a file.
+            Not a setting: it never enters a voice, it only gives the "no assembly at
+            all" control something of your own to play. */}
+        <div className="pt-3 border-t border-slate-800/80">
           {/* User Mic & File Upload Option — audition source material */}
           <div className="md:col-span-4 flex items-center gap-2">
             {!isRecordingMic ? (

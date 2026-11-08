@@ -95,8 +95,8 @@ which a pitch value could do anything. Apart from that, there is no control on t
 page that cannot be switched off, which is the only way to find out which one a
 particular voice file does not want. Each row's **A/B** button plays the sentence once with
 the setting as set and once with it bypassed, so "which one is spoiling it?" is
-answered by listening to the difference. The Spoken Word page's panels carry the
-same switch beside each slider, which bypasses that control for the model in use. The
+answered by listening to the difference. The Spoken Word page has no sliders and no switches at all: it plays the card you
+pick exactly as its file was sealed, and offers nothing to change. The
 settings block is the part that ends up in the file:
 
 ```json

@@ -15,7 +15,6 @@ import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 
 import { VoiceSettingRow, VoiceSwitchRow, VoiceToneRow } from '../src/components/VoiceSettingRow';
-import { VoiceManipulator } from '../src/components/VoiceManipulator';
 import { ALL_OFF, NEUTRAL_KNOBS, effectiveModel, profileFrom } from '../src/components/VoiceFileCreator';
 import { transformRecordedVoice } from '../src/utils/voiceTransform';
 import { PRESET_VOICE_MODELS } from '../src/utils/naturalVoiceEngine';
@@ -103,26 +102,36 @@ check(
   }),
 );
 
-console.log('\nand on the Spoken Word panels');
+console.log('\nSpoken Word has no adjustments at all');
 
-const model = { ...PRESET_VOICE_MODELS[0], pitch: 1.2, rate: 0.9, throatWarmth: 2, oralClarity: 1, airPresence: 1 };
-const panel = renderToStaticMarkup(
-  createElement(VoiceManipulator, {
-    voice: model,
-    onUpdateVoice: () => undefined,
-    onSaveAsCustom: () => undefined,
-    onResetToDefault: () => undefined,
-  }),
-);
-const switchCount = (panel.match(/role="switch"/g) ?? []).length;
-const sliderCount = (panel.match(/type="range"/g) ?? []).length;
-check(
-  'every slider has a switch, and the tone row has one too',
-  switchCount === sliderCount + 1,
-  `${switchCount} switches, ${sliderCount} sliders`,
-);
-check('the switches start on for a saved voice', (panel.match(/aria-checked="true"/g) ?? []).length === switchCount, `${switchCount} switches`);
-check('and the tone chips are live', (panel.match(/aria-pressed="true"/g) ?? []).length === 1);
+{
+  // The rule the pages are built on: sliders exist only where a voice is made.
+  // Spoken Word speaks what it is given — the recording, plus whatever switches a
+  // saved file records as on — and offers nothing to change.
+  const studio = readFileSync(join(ROOT, 'src', 'components', 'SpeechStudio.tsx'), 'utf8');
+  const app = readFileSync(join(ROOT, 'src', 'App.tsx'), 'utf8');
+  const adjustmentControls = (markup: string) => (markup.match(/type="range"/g) ?? []).length;
+  const switchRows = (markup: string) => (markup.match(/role="switch"/g) ?? []).length;
+  check(
+    'the studio page has no bypass switch anywhere',
+    switchRows(app) === 0 && !/VoiceManipulator/.test(app),
+    `${switchRows(app)} switches in App.tsx`,
+  );
+  check(
+    'and the only slider left in it is the playhead of the player',
+    adjustmentControls(studio) === 1,
+    `${adjustmentControls(studio)} range inputs in SpeechStudio.tsx`,
+  );
+  check(
+    'no component offers a tonal control on that page',
+    !/BypassSwitch|VoiceSettingRow|VoiceToneRow/.test(studio),
+  );
+  check(
+    'and it cannot re-point a card at another recorded source voice',
+    !/baseSampleId\s*:/.test(studio) && !/onUpdateActiveModel\(\s*\{\s*\.\.\.activeModel,\s*baseSampleId/.test(studio),
+    'no assignment to baseSampleId in SpeechStudio.tsx',
+  );
+}
 
 console.log('\nthe tone row');
 
@@ -311,7 +320,7 @@ console.log('\nthe pages are named for what they are');
   check('the creator tab is called the .vls Voice Creator', nav.includes("label: '.vls Voice Creator'"));
   const creator = readFileSync(join(ROOT, 'src', 'components', 'VoiceFileCreator.tsx'), 'utf8');
   check('and the page heading says it too', creator.includes('>.vls Voice Creator</h1>'));
-  const uiFiles = ['App.tsx', 'components/VoiceNavbar.tsx', 'components/VoiceFileCreator.tsx', 'components/SpeechStudio.tsx', 'components/VoiceManipulator.tsx', 'components/VoiceSettingRow.tsx'];
+  const uiFiles = ['App.tsx', 'components/VoiceNavbar.tsx', 'components/VoiceFileCreator.tsx', 'components/SpeechStudio.tsx', 'components/VoiceSettingRow.tsx'];
   const offenders = uiFiles.filter((f) => /text[- ]to[- ]speech|\bTTS\b/i.test(readFileSync(join(ROOT, 'src', f), 'utf8')));
   check('no page is called Text to Speech or TTS any more', offenders.length === 0, offenders.join(', '));
 }
