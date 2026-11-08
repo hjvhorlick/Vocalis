@@ -161,11 +161,21 @@ export const PredefinedVoiceList: React.FC<PredefinedVoiceListProps> = ({
               <div>
                 <div className="flex items-start justify-between gap-2 mb-2">
                   <div className="flex items-center gap-2.5">
-                    <div
-                      className="w-10 h-10 rounded-xl flex items-center justify-center font-bold text-white shadow-sm text-base shrink-0"
-                      style={{ backgroundColor: voice.avatarColor }}
-                    >
-                      {voice.flag || voice.name.charAt(0)}
+                    <div className="relative shrink-0">
+                      <div
+                        className="w-10 h-10 rounded-xl flex items-center justify-center font-bold text-white shadow-sm text-sm uppercase ring-1 ring-white/10"
+                        style={{ backgroundColor: voice.avatarColor }}
+                      >
+                        {voice.name.charAt(0)}
+                      </div>
+                      {voice.flag && (
+                        <div
+                          className="absolute -bottom-1 -right-1.5 bg-slate-900 border border-slate-700/80 rounded-md px-1 py-0.2 text-[10px] leading-tight shadow-md flex items-center justify-center pointer-events-none"
+                          title={`Country / Accent: ${voice.accent}`}
+                        >
+                          {voice.flag}
+                        </div>
+                      )}
                     </div>
                     <div>
                       <h4 className="font-bold text-white text-xs leading-tight flex items-center gap-1">
@@ -191,13 +201,18 @@ export const PredefinedVoiceList: React.FC<PredefinedVoiceListProps> = ({
                   </div>
                 )}
 
-                <p className="text-[11px] text-slate-300/90 line-clamp-2 leading-relaxed mb-2 font-normal">
+                <p className="text-[11px] text-slate-300/90 line-clamp-3 leading-relaxed mb-2 font-normal" title={voice.description}>
                   {voice.description}
                 </p>
 
-                {/* Phrase preview */}
-                <div className="text-[10px] text-slate-400 font-mono italic line-clamp-1 bg-slate-900/60 p-1.5 rounded-lg border border-slate-800/60">
-                  "{voice.samplePhrase}"
+                {/* Vocalis Sample Script preview */}
+                <div className="text-[10px] text-indigo-300/90 bg-indigo-950/20 p-2 rounded-xl border border-indigo-900/40 space-y-0.5">
+                  <span className="text-[9px] uppercase font-bold text-indigo-400 block tracking-wider">
+                    Vocalis Script:
+                  </span>
+                  <p className="font-sans italic line-clamp-2 leading-tight text-slate-300">
+                    "{voice.samplePhrase}"
+                  </p>
                 </div>
               </div>
 

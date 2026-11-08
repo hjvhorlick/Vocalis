@@ -661,15 +661,330 @@ export const NATURAL_HUMAN_SAMPLES: HumanVoiceSample[] = [
   // 39. OSR France Speaker 1 - Étienne
   {
     id: 'osr-fr-speaker-1',
-    name: 'Étienne / OSR (Parisian Radio Presenter)',
-    speaker: 'Real Human Male (Open Speech Repository France)',
+    name: 'Étienne / OSR (European Presenter)',
+    speaker: 'Real Human Male (Open Speech Repository Europe)',
     gender: 'Male',
     accent: 'EU',
-    transcript: 'Enregistrement acoustique de référence pour les systèmes de télécommunications.',
+    transcript: 'Standardized acoustic speech reference for international telecommunication systems.',
     url: '/samples/osr_fr_speaker_1.wav',
-    attribution: 'Open Speech Repository (OSR French Speech Series)',
+    attribution: 'Open Speech Repository (OSR European Series)',
     license: 'Free Open License (Credit to Open Speech Repository)',
     duration: 79.6,
+    category: 'Open Speech Repository (Harvard Sentences)',
+  },
+
+  // 40. FEM - Sentence 2 (American Female)
+  {
+    id: 'cmu-fem-2',
+    name: 'Fiona / FEM (American Clear Mezzo - Sentence 2)',
+    speaker: 'Real Human Female (CMU ARCTIC FEM, Studio Acoustic)',
+    gender: 'Female',
+    accent: 'US',
+    transcript: 'He was a medium-sized man, rather slender than stout, with light-brown hair.',
+    url: '/samples/cmu_fem_arctic_a0002.wav',
+    attribution: 'Carnegie Mellon University (CMU ARCTIC Corpus - Speaker FEM)',
+    license: 'Free Open License (BSD-style attribution)',
+    duration: 3.8,
+    category: 'CMU ARCTIC (Speech Science)',
+  },
+
+  // 41. AEW - Sentence 2 (US Midwestern Male)
+  {
+    id: 'cmu-aew-2',
+    name: 'Alexander / AEW (US Midwestern Radio - Sentence 2)',
+    speaker: 'Real Human Male (CMU ARCTIC AEW, Studio Acoustic)',
+    gender: 'Male',
+    accent: 'US',
+    transcript: 'He was a medium-sized man, rather slender than stout, with light-brown hair.',
+    url: '/samples/cmu_aew_arctic_a0002.wav',
+    attribution: 'Carnegie Mellon University (CMU ARCTIC Corpus - Speaker AEW)',
+    license: 'Free Open License (BSD-style attribution)',
+    duration: 4.0,
+    category: 'CMU ARCTIC (Speech Science)',
+  },
+
+  // 42. AHW - Sentence 2 (German-accented English Male)
+  {
+    id: 'cmu-ahw-2',
+    name: 'Hans / AHW (European Presenter - Sentence 2)',
+    speaker: 'Real Human Male (CMU ARCTIC AHW, German Accent)',
+    gender: 'Male',
+    accent: 'EU',
+    transcript: 'He was a medium-sized man, rather slender than stout, with light-brown hair.',
+    url: '/samples/cmu_ahw_arctic_a0002.wav',
+    attribution: 'Carnegie Mellon University (CMU ARCTIC Corpus - Speaker AHW)',
+    license: 'Free Open License (BSD-style attribution)',
+    duration: 3.8,
+    category: 'CMU ARCTIC (Speech Science)',
+  },
+
+  // 43. AUP - Sentence 2 (Indian English Male)
+  {
+    id: 'cmu-aup-2',
+    name: 'Arjun / AUP (Indian English - Sentence 2)',
+    speaker: 'Real Human Male (CMU ARCTIC AUP, Indian English)',
+    gender: 'Male',
+    accent: 'IN',
+    transcript: 'He was a medium-sized man, rather slender than stout, with light-brown hair.',
+    url: '/samples/cmu_aup_arctic_a0002.wav',
+    attribution: 'Carnegie Mellon University (CMU ARCTIC Corpus - Speaker AUP)',
+    license: 'Free Open License (BSD-style attribution)',
+    duration: 3.3,
+    category: 'CMU ARCTIC (Speech Science)',
+  },
+
+  // 44. AXB - Sentence 2 (Indian English Female)
+  {
+    id: 'cmu-axb-2',
+    name: 'Ananya / AXB (Indian English - Sentence 2)',
+    speaker: 'Real Human Female (CMU ARCTIC AXB, Indian English)',
+    gender: 'Female',
+    accent: 'IN',
+    transcript: 'He was a medium-sized man, rather slender than stout, with light-brown hair.',
+    url: '/samples/cmu_axb_arctic_a0002.wav',
+    attribution: 'Carnegie Mellon University (CMU ARCTIC Corpus - Speaker AXB)',
+    license: 'Free Open License (BSD-style attribution)',
+    duration: 3.5,
+    category: 'CMU ARCTIC (Speech Science)',
+  },
+
+  // 45. EEY - Sentence 2 (Conversational Male)
+  {
+    id: 'cmu-eey-2',
+    name: 'Ethan / EEY (Conversational Male - Sentence 2)',
+    speaker: 'Real Human Male (CMU ARCTIC EEY, Studio Acoustic)',
+    gender: 'Male',
+    accent: 'US',
+    transcript: 'He was a medium-sized man, rather slender than stout, with light-brown hair.',
+    url: '/samples/cmu_eey_arctic_a0002.wav',
+    attribution: 'Carnegie Mellon University (CMU ARCTIC Corpus - Speaker EEY)',
+    license: 'Free Open License (BSD-style attribution)',
+    duration: 3.7,
+    category: 'CMU ARCTIC (Speech Science)',
+  },
+
+  // 46. GKA - Sentence 2 (Indian English Male)
+  {
+    id: 'cmu-gka-2',
+    name: 'Gaurav / GKA (Conference Speaker - Sentence 2)',
+    speaker: 'Real Human Male (CMU ARCTIC GKA, Indian English)',
+    gender: 'Male',
+    accent: 'IN',
+    transcript: 'He was a medium-sized man, rather slender than stout, with light-brown hair.',
+    url: '/samples/cmu_gka_arctic_a0002.wav',
+    attribution: 'Carnegie Mellon University (CMU ARCTIC Corpus - Speaker GKA)',
+    license: 'Free Open License (BSD-style attribution)',
+    duration: 3.3,
+    category: 'CMU ARCTIC (Speech Science)',
+  },
+
+  // 47. LJM - Sentence 2 (US Broadcast Female)
+  {
+    id: 'cmu-ljm-2',
+    name: 'Lauren / LJM (US Broadcast - Sentence 2)',
+    speaker: 'Real Human Female (CMU ARCTIC LJM, Studio Acoustic)',
+    gender: 'Female',
+    accent: 'US',
+    transcript: 'He was a medium-sized man, rather slender than stout, with light-brown hair.',
+    url: '/samples/cmu_ljm_arctic_a0002.wav',
+    attribution: 'Carnegie Mellon University (CMU ARCTIC Corpus - Speaker LJM)',
+    license: 'Free Open License (BSD-style attribution)',
+    duration: 3.5,
+    category: 'CMU ARCTIC (Speech Science)',
+  },
+
+  // 48. LNH - Sentence 2 (US Storyteller Female)
+  {
+    id: 'cmu-lnh-2',
+    name: 'Nora / LNH (US Storyteller - Sentence 2)',
+    speaker: 'Real Human Female (CMU ARCTIC LNH, Studio Acoustic)',
+    gender: 'Female',
+    accent: 'US',
+    transcript: 'He was a medium-sized man, rather slender than stout, with light-brown hair.',
+    url: '/samples/cmu_lnh_arctic_a0002.wav',
+    attribution: 'Carnegie Mellon University (CMU ARCTIC Corpus - Speaker LNH)',
+    license: 'Free Open License (BSD-style attribution)',
+    duration: 3.6,
+    category: 'CMU ARCTIC (Speech Science)',
+  },
+
+  // 49. SLP - Sentence 2 (Indian English Female)
+  {
+    id: 'cmu-slp-2',
+    name: 'Priya / SLP (Indian English Lecturer - Sentence 2)',
+    speaker: 'Real Human Female (CMU ARCTIC SLP, Indian English)',
+    gender: 'Female',
+    accent: 'IN',
+    transcript: 'He was a medium-sized man, rather slender than stout, with light-brown hair.',
+    url: '/samples/cmu_slp_arctic_a0002.wav',
+    attribution: 'Carnegie Mellon University (CMU ARCTIC Corpus - Speaker SLP)',
+    license: 'Free Open License (BSD-style attribution)',
+    duration: 3.9,
+    category: 'CMU ARCTIC (Speech Science)',
+  },
+
+  // 50. RXR - Sentence 2 (Cinematic Reader Male)
+  {
+    id: 'cmu-rxr-2',
+    name: 'Rowan / RXR (Cinematic Reader - Sentence 2)',
+    speaker: 'Real Human Male (CMU ARCTIC RXR, Studio Acoustic)',
+    gender: 'Male',
+    accent: 'US',
+    transcript: 'He was a medium-sized man, rather slender than stout, with light-brown hair.',
+    url: '/samples/cmu_rxr_arctic_a0002.wav',
+    attribution: 'Carnegie Mellon University (CMU ARCTIC Corpus - Speaker RXR)',
+    license: 'Free Open License (BSD-style attribution)',
+    duration: 3.8,
+    category: 'CMU ARCTIC (Speech Science)',
+  },
+
+  // 51. AWB - Sentence 2 (Scottish Highlands Male)
+  {
+    id: 'cmu-awb-s2',
+    name: 'Hamish / AWB (Scottish Highlands - Sentence 2)',
+    speaker: 'Real Human Male (Alan W. Black, Edinburgh Scotland)',
+    gender: 'Male',
+    accent: 'UK',
+    transcript: 'He was a medium-sized man, rather slender than stout, with light-brown hair.',
+    url: '/samples/cmu_awb_arctic_a0002.wav',
+    attribution: 'Carnegie Mellon University (CMU ARCTIC Corpus - Speaker AWB)',
+    license: 'Free Open License (BSD-style attribution)',
+    duration: 3.8,
+    category: 'CMU ARCTIC (Speech Science)',
+  },
+
+  // 52. JMK - Sentence 2 (Canadian Male)
+  {
+    id: 'cmu-jmk-s2',
+    name: 'Liam / JMK (Canadian Speaker - Sentence 2)',
+    speaker: 'Real Human Male (John M. Kominek, Canada)',
+    gender: 'Male',
+    accent: 'CA',
+    transcript: 'He was a medium-sized man, rather slender than stout, with light-brown hair.',
+    url: '/samples/cmu_jmk_arctic_a0002.wav',
+    attribution: 'Carnegie Mellon University (CMU ARCTIC Corpus - Speaker JMK)',
+    license: 'Free Open License (BSD-style attribution)',
+    duration: 3.6,
+    category: 'CMU ARCTIC (Speech Science)',
+  },
+
+  // 53. KSP - Sentence 2 (Indian English Male)
+  {
+    id: 'cmu-ksp-s2',
+    name: 'Rajesh / KSP (Indian English - Sentence 2)',
+    speaker: 'Real Human Male (Indian English Cadence)',
+    gender: 'Male',
+    accent: 'IN',
+    transcript: 'He was a medium-sized man, rather slender than stout, with light-brown hair.',
+    url: '/samples/cmu_ksp_arctic_a0002.wav',
+    attribution: 'Carnegie Mellon University (CMU ARCTIC Corpus - Speaker KSP)',
+    license: 'Free Open License (BSD-style attribution)',
+    duration: 3.8,
+    category: 'CMU ARCTIC (Speech Science)',
+  },
+
+  // 54. OSR UK Male 5 - Sebastian
+  {
+    id: 'osr-uk-male-5',
+    name: 'Sebastian / OSR (British Cambridge Narrator)',
+    speaker: 'Real Human Male (Open Speech Repository UK)',
+    gender: 'Male',
+    accent: 'UK',
+    transcript: 'The birch canoe slid on the smooth planks. Four hours of steady work faced us.',
+    url: '/samples/osr_uk_male_5.wav',
+    attribution: 'Open Speech Repository (OSR British English Sentences)',
+    license: 'Free Open License (Credit to Open Speech Repository)',
+    duration: 39.8,
+    category: 'Open Speech Repository (Harvard Sentences)',
+  },
+
+  // 55. OSR UK Male 6 - Julian
+  {
+    id: 'osr-uk-male-6',
+    name: 'Julian / OSR (British West End Presenter)',
+    speaker: 'Real Human Male (Open Speech Repository UK)',
+    gender: 'Male',
+    accent: 'UK',
+    transcript: 'These days a chicken leg is a rare dish. The beam balanced easily on each pin.',
+    url: '/samples/osr_uk_male_6.wav',
+    attribution: 'Open Speech Repository (OSR British English Sentences)',
+    license: 'Free Open License (Credit to Open Speech Repository)',
+    duration: 43.7,
+    category: 'Open Speech Repository (Harvard Sentences)',
+  },
+
+  // 56. OSR UK Female 3 - Eleanor
+  {
+    id: 'osr-uk-female-3',
+    name: 'Eleanor / OSR (British Literature Scholar)',
+    speaker: 'Real Human Female (Open Speech Repository UK)',
+    gender: 'Female',
+    accent: 'UK',
+    transcript: 'The birch canoe slid on the smooth planks. Glue the sheet to the dark blue background.',
+    url: '/samples/osr_uk_female_3.wav',
+    attribution: 'Open Speech Repository (OSR British English Sentences)',
+    license: 'Free Open License (Credit to Open Speech Repository)',
+    duration: 51.4,
+    category: 'Open Speech Repository (Harvard Sentences)',
+  },
+
+  // 57. OSR UK Female 4 - Beatrice
+  {
+    id: 'osr-uk-female-4',
+    name: 'Beatrice / OSR (British Royal Drama Voice)',
+    speaker: 'Real Human Female (Open Speech Repository UK)',
+    gender: 'Female',
+    accent: 'UK',
+    transcript: 'These days a chicken leg is a rare dish. Four hours of steady work faced us.',
+    url: '/samples/osr_uk_female_4.wav',
+    attribution: 'Open Speech Repository (OSR British English Sentences)',
+    license: 'Free Open License (Credit to Open Speech Repository)',
+    duration: 52.4,
+    category: 'Open Speech Repository (Harvard Sentences)',
+  },
+
+  // 58. OSR US Female 5 - Clara
+  {
+    id: 'osr-us-female-5',
+    name: 'Clara / OSR (American Serene Voice)',
+    speaker: 'Real Human Female (Open Speech Repository US)',
+    gender: 'Female',
+    accent: 'US',
+    transcript: 'The soft cushion was light and friendly. The salt breeze came across from the sea.',
+    url: '/samples/osr_us_female_5.wav',
+    attribution: 'Open Speech Repository (OSR IEEE Harvard Sentences)',
+    license: 'Free Open License (Credit to Open Speech Repository)',
+    duration: 31.1,
+    category: 'Open Speech Repository (Harvard Sentences)',
+  },
+
+  // 59. OSR US Female 6 - Hannah
+  {
+    id: 'osr-us-female-6',
+    name: 'Hannah / OSR (American Vibrant Narrator)',
+    speaker: 'Real Human Female (Open Speech Repository US)',
+    gender: 'Female',
+    accent: 'US',
+    transcript: 'A king ruled the state in the early days. The ship was torn on the sharp reef.',
+    url: '/samples/osr_us_female_6.wav',
+    attribution: 'Open Speech Repository (OSR IEEE Harvard Sentences)',
+    license: 'Free Open License (Credit to Open Speech Repository)',
+    duration: 41.4,
+    category: 'Open Speech Repository (Harvard Sentences)',
+  },
+
+  // 60. OSR US Male 4 - Daniel
+  {
+    id: 'osr-us-male-4',
+    name: 'Daniel / OSR (American Resonant Broadcaster)',
+    speaker: 'Real Human Male (Open Speech Repository US)',
+    gender: 'Male',
+    accent: 'US',
+    transcript: 'The birch canoe slid on the smooth planks. Four hours of steady work faced us.',
+    url: '/samples/osr_us_male_4.wav',
+    attribution: 'Open Speech Repository (OSR IEEE Harvard Sentences)',
+    license: 'Free Open License (Credit to Open Speech Repository)',
+    duration: 35.5,
     category: 'Open Speech Repository (Harvard Sentences)',
   },
 ];

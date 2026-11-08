@@ -125,41 +125,81 @@ export const DialogueStudio: React.FC<DialogueStudioProps> = ({ models }) => {
         {/* Cast Pickers */}
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-1">
           {/* Character A */}
-          <div className="p-4 rounded-2xl bg-slate-950 border border-slate-800 space-y-2">
+          <div className="p-4 rounded-2xl bg-slate-950 border border-slate-800 space-y-2.5">
             <div className="flex items-center justify-between">
               <span className="text-xs font-bold uppercase text-cyan-400">Speaker A (Lead)</span>
               <span className="text-[10px] text-slate-400">{modelA.gender}</span>
             </div>
-            <select
-              value={modelAId}
-              onChange={(e) => setModelAId(e.target.value)}
-              className="w-full bg-slate-900 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white"
-            >
-              {models.map((m) => (
-                <option key={m.id} value={m.id}>
-                  {m.name} ({m.archetype})
-                </option>
-              ))}
-            </select>
+            <div className="flex items-center gap-3">
+              <div className="relative shrink-0">
+                <div
+                  className="w-9 h-9 rounded-xl flex items-center justify-center font-bold text-white shadow-sm text-sm uppercase ring-1 ring-white/10"
+                  style={{ backgroundColor: modelA.avatarColor }}
+                >
+                  {modelA.name.charAt(0)}
+                </div>
+                {modelA.flag && (
+                  <div
+                    className="absolute -bottom-1 -right-1 bg-slate-900 border border-slate-700/80 rounded-md px-1 py-0.2 text-[9px] leading-tight shadow-md flex items-center justify-center pointer-events-none"
+                    title={`Accent: ${modelA.accent}`}
+                  >
+                    {modelA.flag}
+                  </div>
+                )}
+              </div>
+              <div className="flex-1 min-w-0">
+                <select
+                  value={modelAId}
+                  onChange={(e) => setModelAId(e.target.value)}
+                  className="w-full bg-slate-900 border border-slate-800 rounded-xl px-2.5 py-1.5 text-xs text-white truncate font-medium cursor-pointer"
+                >
+                  {models.map((m) => (
+                    <option key={m.id} value={m.id}>
+                      {m.flag} {m.name} ({m.archetype})
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
           </div>
 
           {/* Character B */}
-          <div className="p-4 rounded-2xl bg-slate-950 border border-slate-800 space-y-2">
+          <div className="p-4 rounded-2xl bg-slate-950 border border-slate-800 space-y-2.5">
             <div className="flex items-center justify-between">
               <span className="text-xs font-bold uppercase text-indigo-400">Speaker B (Respondent)</span>
               <span className="text-[10px] text-slate-400">{modelB.gender}</span>
             </div>
-            <select
-              value={modelBId}
-              onChange={(e) => setModelBId(e.target.value)}
-              className="w-full bg-slate-900 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white"
-            >
-              {models.map((m) => (
-                <option key={m.id} value={m.id}>
-                  {m.name} ({m.archetype})
-                </option>
-              ))}
-            </select>
+            <div className="flex items-center gap-3">
+              <div className="relative shrink-0">
+                <div
+                  className="w-9 h-9 rounded-xl flex items-center justify-center font-bold text-white shadow-sm text-sm uppercase ring-1 ring-white/10"
+                  style={{ backgroundColor: modelB.avatarColor }}
+                >
+                  {modelB.name.charAt(0)}
+                </div>
+                {modelB.flag && (
+                  <div
+                    className="absolute -bottom-1 -right-1 bg-slate-900 border border-slate-700/80 rounded-md px-1 py-0.2 text-[9px] leading-tight shadow-md flex items-center justify-center pointer-events-none"
+                    title={`Accent: ${modelB.accent}`}
+                  >
+                    {modelB.flag}
+                  </div>
+                )}
+              </div>
+              <div className="flex-1 min-w-0">
+                <select
+                  value={modelBId}
+                  onChange={(e) => setModelBId(e.target.value)}
+                  className="w-full bg-slate-900 border border-slate-800 rounded-xl px-2.5 py-1.5 text-xs text-white truncate font-medium cursor-pointer"
+                >
+                  {models.map((m) => (
+                    <option key={m.id} value={m.id}>
+                      {m.flag} {m.name} ({m.archetype})
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
           </div>
         </div>
       </div>

@@ -100,11 +100,21 @@ export const VoiceLibrary: React.FC<VoiceLibraryProps> = ({
                 <div>
                   <div className="flex items-start justify-between gap-3 mb-3">
                     <div className="flex items-center gap-3">
-                      <div
-                        className="w-11 h-11 rounded-2xl flex items-center justify-center font-bold text-white shadow-md text-base shrink-0"
-                        style={{ backgroundColor: model.avatarColor }}
-                      >
-                        {model.flag || model.name.charAt(0)}
+                      <div className="relative shrink-0">
+                        <div
+                          className="w-11 h-11 rounded-2xl flex items-center justify-center font-bold text-white shadow-md text-base uppercase ring-1 ring-white/10"
+                          style={{ backgroundColor: model.avatarColor }}
+                        >
+                          {model.name.charAt(0)}
+                        </div>
+                        {model.flag && (
+                          <div
+                            className="absolute -bottom-1 -right-1.5 bg-slate-900 border border-slate-700/80 rounded-md px-1 py-0.2 text-[10px] leading-tight shadow-md flex items-center justify-center pointer-events-none"
+                            title={`Origin / Accent: ${model.accent}`}
+                          >
+                            {model.flag}
+                          </div>
+                        )}
                       </div>
                       <div>
                         <h4 className="font-bold text-white text-sm">{model.name}</h4>
