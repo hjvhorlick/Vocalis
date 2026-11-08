@@ -147,7 +147,7 @@ export function App() {
       id: 'custom-' + Date.now(),
       name: 'Custom Crafted Voice',
       archetype: 'Articulate Speaker',
-      description: 'Custom tuned vocal pitch, pacing, and tone.',
+      description: "Custom tuned pacing and tone, at the speaker's own pitch.",
       gender: 'Neutral',
       synthesisMethod: 'cmu-arctic',
       baseSampleId: 'cmu-slt-1',
@@ -285,7 +285,7 @@ export function App() {
           <div className="flex items-center gap-4 text-[11px] text-slate-500">
             <span>CMU ARCTIC Recorded Speech Units · No AI</span>
             <span>&bull;</span>
-            <span>Custom Pitch & Cadence Knobs</span>
+            <span>Cadence &amp; Tone Knobs</span>
             <span>&bull;</span>
             <span>Dual-Speaker Dialogue</span>
             <span>&bull;</span>

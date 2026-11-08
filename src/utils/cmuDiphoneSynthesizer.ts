@@ -35,7 +35,7 @@
  */
 import type { VoiceModelConfig } from './naturalVoiceEngine';
 import { isBaseVoiceId, getOptionalVoiceSource } from './optionalVoicePacks';
-import { transformRecordedVoice } from './voiceTransform';
+import { shapeUnitPitch, transformRecordedVoice } from './voiceTransform';
 
 const SAMPLE_RATE = 16000;
 
@@ -620,15 +620,11 @@ function applyProsody(chunks: Float32Array[], prosody: ChunkProsody[]): Float32A
     const contour = Math.pow(2, semitones / 12);
     const factor = Math.min(MAX_PROSODY_RATIO, Math.max(MIN_PROSODY_RATIO, normalise * contour));
     if (Math.abs(factor - 1) < PROSODY_DEADBAND) return chunk;
-    // Pitch, then length back to exactly what the join expects. Formant
-    // preservation keeps the speaker's own vowel space instead of sliding it
-    // with the pitch, which at these small ratios is the difference between
-    // "the same person, speaking" and "a slightly different person".
-    const shaped = transformRecordedVoice(
-      chunk,
-      { pitch: factor, rate: 1, toneStyle: 'natural', formantPreservation: 0.7 },
-      SAMPLE_RATE,
-    );
+    // Pitch, with the speaker's own vowel space kept: formant preservation is what
+    // makes this read as "the same person, speaking" rather than a slightly
+    // different person. This is the contour's own call — the profile has no pitch
+    // stage at all, so this is the only pitch shift left in the app.
+    const shaped = shapeUnitPitch(chunk, factor, SAMPLE_RATE, 0.7);
     // Re-pitching raises the crest factor a little. Left alone, the render's
     // peak normaliser would answer that by turning the whole voice down, which
     // is a change of volume nobody asked a contour for. Matching the chunk's own

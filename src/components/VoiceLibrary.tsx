@@ -128,9 +128,6 @@ export const VoiceLibrary: React.FC<VoiceLibraryProps> = ({
                   {/* Characteristic Badges */}
                   <div className="flex flex-wrap gap-1.5 text-[10px] font-mono text-slate-400 mb-2">
                     <span className="px-2 py-0.5 rounded bg-slate-950 border border-slate-800">
-                      Pitch: {model.pitch.toFixed(2)}x
-                    </span>
-                    <span className="px-2 py-0.5 rounded bg-slate-950 border border-slate-800">
                       Speed: {model.rate.toFixed(2)}x
                     </span>
                     <span className="px-2 py-0.5 rounded bg-slate-950 border border-slate-800 capitalize">

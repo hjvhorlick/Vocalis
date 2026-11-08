@@ -27,10 +27,11 @@ import {
  * the model is set to that control's neutral value, the slider greys out, and the
  * previous position is remembered so switching back restores it exactly.
  */
-type BypassKey = 'pitch' | 'rate' | 'volume' | 'throatWarmth' | 'oralClarity' | 'airPresence' | 'tone';
+// No pitch: the recorded voice keeps the pitch it was spoken at, and there is no
+// control here that can move it.
+type BypassKey = 'rate' | 'volume' | 'throatWarmth' | 'oralClarity' | 'airPresence' | 'tone';
 
 const BYPASS_NEUTRAL: Record<Exclude<BypassKey, 'tone'>, number> = {
-  pitch: 1,
   rate: 1,
   volume: 1,
   throatWarmth: 0,
@@ -70,7 +71,6 @@ export const VoiceManipulator: React.FC<VoiceManipulatorProps> = ({
   onResetToDefault,
 }) => {
   const [bypassed, setBypassed] = useState<Record<BypassKey, boolean>>({
-    pitch: false,
     rate: false,
     volume: false,
     throatWarmth: false,
@@ -83,7 +83,6 @@ export const VoiceManipulator: React.FC<VoiceManipulatorProps> = ({
   // Selecting a different voice is a different set of switches.
   useEffect(() => {
     setBypassed({
-      pitch: Boolean(voice.bypass?.pitch),
       rate: Boolean(voice.bypass?.rate),
       volume: Boolean(voice.bypass?.volume),
       throatWarmth: Boolean(voice.bypass?.throatWarmth),
@@ -227,33 +226,7 @@ export const VoiceManipulator: React.FC<VoiceManipulatorProps> = ({
       </div>
 
       {/* Main Sliders Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        {/* Pitch Slider */}
-        <div className="bg-slate-950/80 border border-slate-800/80 rounded-2xl p-4 space-y-2">
-          <div className="flex items-center gap-2 text-xs">
-            <BypassSwitch on={!bypassed.pitch} onToggle={() => toggleBypass('pitch')} label="Pitch" />
-            <span className="font-semibold text-slate-300">Vocal Pitch Height</span>
-            <span className="ml-auto font-mono text-cyan-400 font-bold bg-cyan-500/10 px-2 py-0.5 rounded border border-cyan-500/20">
-              {bypassed.pitch ? 'off' : `${voice.pitch.toFixed(2)}x`}
-            </span>
-          </div>
-          <input
-            type="range"
-            min="0.5"
-            max="1.75"
-            step="0.05"
-            value={voice.pitch}
-            disabled={bypassed.pitch}
-            onChange={(e) => onUpdateVoice({ ...voice, pitch: parseFloat(e.target.value) })}
-            className="w-full accent-cyan-500 h-1.5 bg-slate-900 rounded cursor-pointer disabled:cursor-not-allowed disabled:opacity-40"
-          />
-          <div className="flex justify-between text-[10px] text-slate-500 font-medium">
-            <span>0.50x (Deep Bass)</span>
-            <span>1.0x (Natural)</span>
-            <span>1.75x (Soprano)</span>
-          </div>
-        </div>
-
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         {/* Speed / Rate Slider */}
         <div className="bg-slate-950/80 border border-slate-800/80 rounded-2xl p-4 space-y-2">
           <div className="flex items-center gap-2 text-xs">

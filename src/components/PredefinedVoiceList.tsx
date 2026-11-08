@@ -183,11 +183,8 @@ export const PredefinedVoiceList: React.FC<PredefinedVoiceListProps> = ({
                   {voice.description}
                 </p>
 
-                {/* Pitch & Rate metrics */}
+                {/* Rate and character. No pitch: the voice keeps the one it was recorded at. */}
                 <div className="flex items-center gap-1.5 text-[9px] font-mono text-slate-400 flex-wrap">
-                  <span className="px-1.5 py-0.5 rounded bg-slate-900 border border-slate-800">
-                    Pitch: {voice.pitch.toFixed(2)}x
-                  </span>
                   <span className="px-1.5 py-0.5 rounded bg-slate-900 border border-slate-800">
                     Rate: {voice.rate.toFixed(2)}x
                   </span>

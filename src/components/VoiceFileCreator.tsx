@@ -30,7 +30,9 @@ import { VoiceSettingRow, VoiceSwitchRow, VoiceToneRow } from './VoiceSettingRow
 
 /** One knob and its switch. `key` is both the model field and the profile field. */
 interface SettingSpec {
-  key: 'pitch' | 'rate' | 'volume' | 'throatWarmth' | 'oralClarity' | 'airPresence';
+  // Pitch is deliberately not here. The voice keeps the pitch it was recorded
+  // at; there is no control that can move it.
+  key: 'rate' | 'volume' | 'throatWarmth' | 'oralClarity' | 'airPresence';
   label: string;
   hint: string;
   min: number;
@@ -41,16 +43,6 @@ interface SettingSpec {
 }
 
 const SETTINGS: SettingSpec[] = [
-  {
-    key: 'pitch',
-    label: 'Pitch',
-    hint: 'Raises or lowers the speaker. Off keeps the recording at its own pitch.',
-    min: 0.75,
-    max: 1.35,
-    step: 0.01,
-    neutral: 1,
-    format: (value) => `${value.toFixed(2)}×`,
-  },
   {
     key: 'rate',
     label: 'Pace',
@@ -114,7 +106,6 @@ export type KnobState = Record<SettingSpec['key'], number>;
  * thing that happens to it, which is what makes one setting at a time testable.
  */
 export const ALL_OFF: SwitchState = {
-  pitch: false,
   rate: false,
   volume: false,
   tone: false,
@@ -131,7 +122,6 @@ export const ALL_OFF: SwitchState = {
 
 /** Every knob at the value that changes nothing, so switching one on is honest. */
 export const NEUTRAL_KNOBS: KnobState = {
-  pitch: 1,
   rate: 1,
   volume: 1,
   throatWarmth: 0,
@@ -148,7 +138,9 @@ export function effectiveModel(
 ): VoiceModelConfig {
   return {
     ...base,
-    pitch: knobs.pitch,
+    // The voice's pitch is the recording's own. Nothing on this page can move it,
+    // so the model is pinned rather than left to whatever the base profile held.
+    pitch: 1,
     rate: knobs.rate,
     volume: knobs.volume,
     toneStyle: tone as VoiceModelConfig['toneStyle'],
@@ -158,7 +150,8 @@ export function effectiveModel(
     // The switch is the engine's bypass, not a neutral number: a switched-off
     // setting removes its stage, so the preview here sounds like the exported file.
     bypass: {
-      pitch: !switches.pitch,
+      // Not a switch any more: the stage is absent from this page altogether.
+      pitch: true,
       rate: !switches.rate,
       volume: !switches.volume,
       tone: !switches.tone,

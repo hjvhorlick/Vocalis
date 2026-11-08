@@ -154,7 +154,7 @@ check('and the row shows which tone is chosen', /Deep Cinema/.test(toneOn));
 
 // Every control that changes the voice in the creator is switchable, which is the
 // whole complaint: count the rows against the switches.
-const creatorRows = ['Pitch', 'Pace', 'Volume', 'Warmth', 'Clarity', 'Air'].map((label) =>
+const creatorRows = ['Pace', 'Volume', 'Warmth', 'Clarity', 'Air'].map((label) =>
   renderToStaticMarkup(
     createElement(VoiceSettingRow, {
       label,
@@ -172,11 +172,18 @@ const creatorRows = ['Pitch', 'Pace', 'Volume', 'Warmth', 'Clarity', 'Air'].map(
   ),
 );
 check(
-  'six numeric settings, the tone row, intonation and join levels: nine switches for nine controls',
+  'five numeric settings, the tone row, intonation and join levels: eight switches for eight controls',
   creatorRows.every((markup) => /role="switch"/.test(markup)) &&
     /role="switch"/.test(toneOn) &&
-    Object.keys(ALL_OFF).length === 9,
+    Object.keys(ALL_OFF).length === 8,
   `${creatorRows.length + 1} slider rows and ${Object.keys(ALL_OFF).length} switches`,
+);
+// The strongest form of the check: no setting the page knows about is called pitch,
+// and the page's own switch table has no pitch entry either.
+check(
+  'and nothing on the page is a pitch control',
+  !('pitch' in ALL_OFF) && !('pitch' in NEUTRAL_KNOBS),
+  `switches: ${Object.keys(ALL_OFF).join(', ')}`,
 );
 
 // Intonation has no knob — only the stage to have on or off — and it still has to
@@ -205,7 +212,14 @@ console.log('\nthe workbench opens clean');
 const cleanProfile = profileFrom(ALL_OFF, NEUTRAL_KNOBS, 'natural');
 check('every switch starts off', Object.values(ALL_OFF).every((value) => value === false), `${Object.keys(ALL_OFF).length} switches`);
 check('and the profile records them all as off', Object.values(cleanProfile.enabled).every((value) => value === false));
-check('with every knob at the value that changes nothing', cleanProfile.settings.pitch === 1 && cleanProfile.settings.rate === 1 && cleanProfile.settings.throatWarmth === 0);
+check(
+  'with every knob at the value that changes nothing',
+  cleanProfile.settings.rate === 1 && cleanProfile.settings.throatWarmth === 0,
+);
+check(
+  'and no pitch in the record at all, because there is no pitch stage to record',
+  cleanProfile.settings.pitch === undefined && cleanProfile.enabled.pitch === undefined,
+);
 
 {
   const base = PRESET_VOICE_MODELS[0];
@@ -237,22 +251,30 @@ check('with every knob at the value that changes nothing', cleanProfile.settings
     profileFrom({ ...ALL_OFF, contour: true }, NEUTRAL_KNOBS, 'natural').enabled.contour === true,
   );
 
-  // One switch at a time: only the one that is on may change anything.
-  const pitchOnly = effectiveModel(base, { ...ALL_OFF, pitch: true }, { ...NEUTRAL_KNOBS, pitch: 1.4 }, 'natural');
+  // The control is gone. A page that still had a pitch knob would let this through;
+  // the model the page builds must refuse to shift pitch whatever it is handed.
+  const pitchAsked = effectiveModel(
+    { ...base, pitch: 1.4 },
+    ALL_OFF,
+    { ...NEUTRAL_KNOBS, pitch: 1.4 } as unknown as typeof NEUTRAL_KNOBS,
+    'natural',
+  );
   const pitchRendered = transformRecordedVoice(recording, {
-    pitch: pitchOnly.pitch,
-    rate: pitchOnly.rate,
-    toneStyle: pitchOnly.toneStyle,
-    throatWarmth: pitchOnly.throatWarmth,
-    oralClarity: pitchOnly.oralClarity,
-    airPresence: pitchOnly.airPresence,
-    bypass: pitchOnly.bypass,
+    pitch: pitchAsked.pitch,
+    rate: pitchAsked.rate,
+    toneStyle: pitchAsked.toneStyle,
+    throatWarmth: pitchAsked.throatWarmth,
+    oralClarity: pitchAsked.oralClarity,
+    airPresence: pitchAsked.airPresence,
+    bypass: pitchAsked.bypass,
   }, 16000);
   check(
-    'switching only pitch on changes the voice',
-    !(pitchRendered.length === recording.length && recording.every((value, index) => value === pitchRendered[index])),
+    'a page that asks for a pitch shift gets the recording untouched',
+    pitchRendered.length === recording.length && recording.every((value, index) => value === pitchRendered[index]),
   );
-  check('and its switch is a bypass of everything else', pitchOnly.bypass?.rate === true && pitchOnly.bypass?.tone === true);
+  check('and the pitch stage is bypassed for good, not switched off', pitchAsked.bypass?.pitch === true);
+
+  // One switch at a time: only the one that is on may change anything.
 
   const rateOnly = effectiveModel(base, { ...ALL_OFF, rate: true }, { ...NEUTRAL_KNOBS, rate: 1.5 }, 'natural');
   const rateRendered = transformRecordedVoice(recording, {

@@ -46,7 +46,11 @@
 export type ToneStyle = 'natural' | 'deep' | 'energetic' | 'whisper' | 'radio' | 'robot';
 
 export interface VoiceTransformSettings {
-  /** F0 multiplier: 1 is the speaker's own pitch. */
+  /**
+   * Always 1 for a profile. Kept in the shape because the phrase-contour stage
+   * reaches the same resampler to put every unit on one line; the *profile* has no
+   * pitch control, so nothing a person sets can move the speaker's own pitch.
+   */
   pitch: number;
   /** Pace multiplier: 1 is the recorded pace, 2 speaks twice as fast. */
   rate: number;
@@ -631,6 +635,29 @@ function levelMatched(reference: Float32Array, shaped: Float32Array): Float32Arr
 // ---------------------------------------------------------------------------
 
 /**
+ * Move one recorded unit's pitch, for the phrase-contour stage only.
+ *
+ * This is the resampler without a profile around it: it shifts the cut by `factor`
+ * and puts the vocal tract back so the speaker keeps their own vowel space. Nothing
+ * a person sets reaches this function — the contour decides the factor from the
+ * phrase it is building, and a clean session never calls it at all.
+ */
+export function shapeUnitPitch(
+  chunk: Float32Array,
+  factor: number,
+  sampleRate: number,
+  preservation = DEFAULT_FORMANT_PRESERVATION,
+): Float32Array {
+  const shifted = shiftPitchBandLimited(chunk, factor);
+  const corrected = preserveFormants(chunk, shifted, preservation, sampleRate);
+  // Resampling changes the length by exactly the pitch factor, and the join
+  // expects every chunk back at the length it was cut at. Restoring it is not a
+  // pace change: the contour moves pitch and nothing else.
+  if (corrected.length === chunk.length) return corrected;
+  return stretchTime(corrected, chunk.length, sampleRate);
+}
+
+/**
  * Apply a profile to freshly assembled recorded audio.
  *
  * Order matters: pitch first (band-limited, so nothing folds back), then the
@@ -638,6 +665,10 @@ function levelMatched(reference: Float32Array, shaped: Float32Array): Float32Arr
  * pitch), then the tone character, then the resonance sliders at last — those
  * belong to the finished voice, and their band centres follow whatever the pitch
  * shift did to the vocal tract.
+ *
+ * There is no pitch stage here. A profile cannot change the speaker's pitch, so the
+ * only pitch shift in the application is the phrase contour's, which calls
+ * `shapeUnitPitch` below directly and never goes through this entry point.
  */
 export function transformRecordedVoice(
   samples: Float32Array,
@@ -647,22 +678,20 @@ export function transformRecordedVoice(
   if (samples.length === 0) return samples;
 
   const bypass = settings.bypass ?? {};
-  const pitch = clamp(settings.pitch, 0.25, 4);
+  // The profile's pitch stage no longer exists. `settings.pitch` is accepted for
+  // shape compatibility and deliberately ignored: a recorded voice keeps the pitch
+  // it was recorded at, and there is no value of any control that can move it. The
+  // only caller of the pitch resampler now is the phrase-contour stage, which calls
+  // it per unit and says so at its own call site.
+  const pitch = 1;
   const rate = clamp(settings.rate, 0.55, 2.5);
   const preservation = clamp(settings.formantPreservation ?? DEFAULT_FORMANT_PRESERVATION, 0, 1);
+  const shifted = samples;
+  const corrected = shifted;
 
-  // Every switch removes its stage rather than neutralising it, so "pitch off" is
-  // the recorded pitch and not a pitch shift by 1.0 — those are different code
-  // paths, and only one of them can be trusted to leave the samples alone.
-  const pitchOn = !bypass.pitch && Math.abs(pitch - 1) > PITCH_DEADBAND;
-  const shifted = pitchOn ? shiftPitchBandLimited(samples, pitch) : samples;
-  const corrected = pitchOn ? preserveFormants(samples, shifted, preservation, sampleRate) : shifted;
-
-  // Pace is measured against the recording, and the signal has to end up that many
-  // samples long whatever the pitch stage did to its length on the way through. So
-  // the stage runs when the pace is not neutral *or* when the pitch resample changed
-  // the length — restoring a length is not a pace change, and skipping it would make
-  // the switch that turns pace off change the duration.
+  // Pace is measured against the recording, so the output is exactly that many
+  // samples long. The stage runs only when the pace is not neutral, which is what
+  // keeps an all-switches-off render identical to the recording.
   const effectiveRate = bypass.rate ? 1 : rate;
   const targetLength = Math.max(1, Math.floor(samples.length / effectiveRate));
   const needsStretch = Math.abs(effectiveRate - 1) > RATE_DEADBAND || corrected.length !== targetLength;
@@ -673,8 +702,9 @@ export function transformRecordedVoice(
       ? paced
       : applyToneStyle(paced, settings.toneStyle, sampleRate);
 
-  // The sliders name formant regions, so their centres move with the tract: at
-  // full preservation F1 stays at 450 Hz, at none it moves with F0.
+  // The sliders name formant regions. With no pitch shift the tract never moves, so
+  // the scale is 1 — kept as the same expression as before so a future stage that
+  // does move the tract still moves the sliders with it.
   const tractScale = Math.pow(pitch, 1 - preservation);
   let resonated = styled;
   // Wide bands on purpose: at a quarter of an octave wide these three sections

@@ -229,7 +229,10 @@ export function applyProfileToModel(
     on(key) && Number.isFinite(profile.settings?.[key]) ? profile.settings[key] : fallback;
   return {
     ...model,
-    pitch: value('pitch', 1),
+    // A sealed file may still carry a pitch value from an older build. It is read
+    // and discarded: this voice keeps the pitch it was recorded at, so an old file
+    // cannot make it speak higher or lower than the speaker did.
+    pitch: 1,
     rate: value('rate', 1),
     volume: value('volume', 1),
     throatWarmth: value('throatWarmth', 0),
@@ -239,7 +242,9 @@ export function applyProfileToModel(
     // The switches travel with the file, so a voice sealed without Clarity is
     // reopened without Clarity instead of quietly coming back with its default.
     bypass: {
-      pitch: profile.enabled.pitch === false,
+      // Not a switch: the stage does not exist. Sealed files from before its removal
+      // are opened at the recorded pitch either way.
+      pitch: true,
       rate: profile.enabled.rate === false,
       volume: profile.enabled.volume === false,
       tone: profile.enabled.tone === false,

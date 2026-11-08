@@ -83,11 +83,17 @@ that outlives the app, and say so in any marketplace copy rather than overclaimi
 ## The creator page, and the switch block
 
 The `.vls Voice Creator` tab is where a file is made: the recorded voices are cards you can
-reorder, **all nine settings** each have a switch on the same line as their control —
-Pitch, Pace, Volume, Warmth, Clarity, Air, the Tone character, Intonation (the phrase
-contour, which re-pitches every unit onto one line) and Join levels — and the export sits
-on the same page. There is no control on that page that cannot be switched off, which
-is the only way to find out which one a particular voice file does not want. Each row's **A/B** button plays the sentence once with
+reorder, **all eight settings** each have a switch on the same line as their control —
+Pace, Volume, Warmth, Clarity, Air, the Tone character, Intonation (the phrase contour,
+which re-pitches every unit onto one line) and Join levels — and the export sits
+on the same page.
+
+There is no pitch setting, on purpose. A recorded voice keeps the pitch its speaker
+actually used, and no control in the application can move it: the pitch stage was
+removed from the render pipeline rather than switched off, so there is no code path in
+which a pitch value could do anything. Apart from that, there is no control on that
+page that cannot be switched off, which is the only way to find out which one a
+particular voice file does not want. Each row's **A/B** button plays the sentence once with
 the setting as set and once with it bypassed, so "which one is spoiling it?" is
 answered by listening to the difference. The Spoken Word page's panels carry the
 same switch beside each slider, which bypasses that control for the model in use. The
@@ -95,23 +101,27 @@ settings block is the part that ends up in the file:
 
 ```json
 "profile": {
-  "enabled":  { "pitch": true, "rate": true, "volume": true, "tone": false,
+  "enabled":  { "rate": true, "volume": true, "tone": false,
                 "throatWarmth": false, "oralClarity": true, "airPresence": false,
                 "contour": false, "joinLevel": false },
-  "settings": { "pitch": 1.12, "rate": 0.92, "volume": 1, "throatWarmth": 0,
+  "settings": { "rate": 0.92, "volume": 1, "throatWarmth": 0,
                 "oralClarity": 0.2, "airPresence": 0 },
   "tone": "deep"
 }
 ```
 
+Older files may still carry `pitch` in `enabled` or `settings`. It is read and
+discarded on import, so an old file opens at the speaker's recorded pitch rather than
+failing or quietly speaking higher.
+
 A session starts with every switch off and every knob at the value that changes
 nothing, so the first preview is the recording exactly as it was captured. Turning one
 switch on is then the only processing in the chain — which is what makes "is it the
-pitch or the pace?" a question with an answer. Selecting a different voice resets the
+pace or the tone?" a question with an answer. Selecting a different voice resets the
 switches, so no setting follows a voice it was not chosen for.
 
-A switch is a bypass, not a neutral value: `enabled: {"pitch": false}` means the
-pitch stage was not run at all. That distinction is measured, not asserted —
+A switch is a bypass, not a neutral value: `enabled: {"clarity": false}` means the
+clarity filter was not run at all. That distinction is measured, not asserted —
 `tests/bypass.test.ts` renders with every stage bypassed and requires the samples to
 come back bit-identical to the recording, and separately requires each stage to change
 the audio when it is on.

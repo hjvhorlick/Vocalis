@@ -79,9 +79,11 @@ check('it did not need to level-match anything', untouched[4000] === input[4000]
 
 console.log('\none switch at a time keeps its stage off and leaves the others on');
 
-/** Pitch 1.6 with the switch on: the join of the two must differ from the input. */
-const pitchOn = transformRecordedVoice(input, { ...everythingOff, bypass: { ...everythingOff.bypass, pitch: false } }, RATE);
-check('pitch on actually shifts the voice', differs(pitchOn, input), `${input.length} → ${pitchOn.length} samples`);
+// Pitch has no switch and no stage. This used to assert that turning pitch on
+// shifted the voice; the control is gone, so what it must assert now is the
+// opposite — a profile asking for 1.6 gets the recording at its own pitch.
+const pitchAsked = transformRecordedVoice(input, { ...everythingOff, bypass: { ...everythingOff.bypass, pitch: false } }, RATE);
+check('a profile asking for a pitch shift is refused', identical(pitchAsked, input), `${input.length} samples, unchanged`);
 const rateOn = transformRecordedVoice(input, { ...everythingOff, bypass: { ...everythingOff.bypass, rate: false } }, RATE);
 check('pace on actually changes the length', rateOn.length !== input.length, `${input.length} → ${rateOn.length}`);
 const toneOn = transformRecordedVoice(input, { ...everythingOff, bypass: { ...everythingOff.bypass, tone: false } }, RATE);
@@ -90,16 +92,16 @@ const warmOn = transformRecordedVoice(input, { ...everythingOff, bypass: { ...ev
 check('warmth on actually tilts the low end', differs(warmOn, input));
 
 // The specific question asked: pitch and pace are the suspects for the robotic
-// sound, so each has to be provably removable on its own.
-const pitchOff = transformRecordedVoice(input, { ...everythingOff, bypass: { ...everythingOff.bypass, pitch: true } }, RATE);
-check('pitch off is the untouched recording', identical(pitchOff, input));
+// sound, so each has to be provably removable on its own. Pitch is now removed for
+// every caller, not only for a switched-off one.
+check('pitch is the untouched recording whether it is switched off or not', identical(pitchAsked, input));
 const paceOff = transformRecordedVoice(input, { ...everythingOff, bypass: { ...everythingOff.bypass, rate: true } }, RATE);
 check('pace off is the untouched recording', identical(paceOff, input));
 check(
-  'pitch off with pace on leaves only the pace change',
+  'pace on with a pitch asked for leaves only the pace change',
   transformRecordedVoice(
     input,
-    { ...everythingOff, bypass: { ...everythingOff.bypass, pitch: true, rate: false } },
+    { ...everythingOff, bypass: { ...everythingOff.bypass, pitch: false, rate: false } },
     RATE,
   ).length !== input.length,
 );

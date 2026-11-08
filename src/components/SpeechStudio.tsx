@@ -390,7 +390,7 @@ export const SpeechStudio: React.FC<SpeechStudioProps> = ({
                 <span className="text-sm font-bold text-white">{activeModel.name}</span>
               </div>
               <p className="text-xs text-indigo-400 font-medium">
-                {activeModel.archetype} &bull; Pitch: {activeModel.pitch.toFixed(2)}x &bull; Rate: {activeModel.rate.toFixed(2)}x
+                {activeModel.archetype} &bull; Rate: {activeModel.rate.toFixed(2)}x
               </p>
             </div>
           </div>
@@ -493,73 +493,6 @@ export const SpeechStudio: React.FC<SpeechStudioProps> = ({
           </p>
         )}
 
-        {/* Quick Pitch & Speed Sliders */}
-        <div className="w-full pt-3 border-t border-slate-800/80 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-          <div className="space-y-1">
-            <div className="flex justify-between text-[11px]">
-              <span className="text-slate-400 font-medium">Pitch Height</span>
-              <span className="text-cyan-400 font-mono font-bold">{activeModel.pitch.toFixed(2)}x</span>
-            </div>
-            <input
-              type="range"
-              min="0.5"
-              max="1.7"
-              step="0.05"
-              value={activeModel.pitch}
-              onChange={(e) => {
-                const pitch = parseFloat(e.target.value);
-                if (onUpdateActiveModel) {
-                  onUpdateActiveModel({ ...activeModel, pitch });
-                }
-              }}
-              className="w-full accent-cyan-500 h-1 bg-slate-950 rounded cursor-pointer"
-            />
-            <div className="flex justify-between text-[9px] text-slate-500">
-              <span>Deep Bass</span>
-              <span>High Soprano</span>
-            </div>
-          </div>
-
-          <div className="space-y-1">
-            <div className="flex justify-between text-[11px]">
-              <span className="text-slate-400 font-medium">Speaking Pace</span>
-              <span className="text-indigo-400 font-mono font-bold">{activeModel.rate.toFixed(2)}x</span>
-            </div>
-            <input
-              type="range"
-              min="0.6"
-              max="1.5"
-              step="0.05"
-              value={activeModel.rate}
-              onChange={(e) => {
-                const rate = parseFloat(e.target.value);
-                if (onUpdateActiveModel) {
-                  onUpdateActiveModel({ ...activeModel, rate });
-                }
-              }}
-              className="w-full accent-indigo-500 h-1 bg-slate-950 rounded cursor-pointer"
-            />
-            <div className="flex justify-between text-[9px] text-slate-500">
-              <span>Deliberate</span>
-              <span>Fast Pace</span>
-            </div>
-          </div>
-
-          <div className="flex items-center justify-between sm:justify-end gap-3 pt-2 sm:pt-0">
-            <button
-              onClick={() => {
-                if (onUpdateActiveModel) {
-                  onUpdateActiveModel({ ...activeModel, pitch: 1.0, rate: 1.0 });
-                }
-              }}
-              className="text-xs text-slate-400 hover:text-slate-200 flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-slate-950 border border-slate-800 transition-colors cursor-pointer"
-              title="Reset Pitch & Pace to 1.0x"
-            >
-              <RotateCcw className="w-3 h-3" /> Reset 1.0x
-            </button>
-            <span className="text-[10px] text-slate-500">Vocalis Engine</span>
-          </div>
-        </div>
       </div>
 
       {/* Main Studio Console */}

@@ -566,19 +566,22 @@ function medianPeriod(samples: Float32Array): number {
   return periods[Math.floor(periods.length / 2)];
 }
 
+// There is no pitch control any more, so a profile that asks for one must be
+// ignored rather than silently obeyed by some other route. These two assert the
+// removal: the measured pitch of a render is the same whatever `pitch` says.
 const deep = await renderSpeech(PASSAGES[0].text, voice({ pitch: 0.72, toneStyle: 'deep' }));
 const bright = await renderSpeech(PASSAGES[0].text, voice({ pitch: 1.4, toneStyle: 'energetic' }));
 const naturalPeriod = medianPeriod(warmUp.samples);
 const deepPeriod = medianPeriod(deep.samples);
 const brightPeriod = medianPeriod(bright.samples);
 check(
-  'a lower pitch lowers the measured pitch',
-  deepPeriod > naturalPeriod * 1.15,
+  'a profile cannot lower the recorded pitch',
+  Math.abs(deepPeriod - naturalPeriod) <= 3,
   `period ${deepPeriod} samples against ${naturalPeriod}`,
 );
 check(
-  'a higher pitch raises the measured pitch',
-  brightPeriod > 0 && brightPeriod < naturalPeriod * 0.85,
+  'a profile cannot raise the recorded pitch either',
+  Math.abs(brightPeriod - naturalPeriod) <= 3,
   `period ${brightPeriod} samples against ${naturalPeriod}`,
 );
 check(
