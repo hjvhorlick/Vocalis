@@ -293,7 +293,6 @@ export const SpeechStudio: React.FC<SpeechStudioProps> = ({
                   onUpdateActiveModel({
                     ...activeModel,
                     baseSampleId: newSampleId,
-                    samplePhrase: sample.transcript,
                   });
                 }
               }}
@@ -438,9 +437,26 @@ export const SpeechStudio: React.FC<SpeechStudioProps> = ({
             <AudioWaveform className="w-5 h-5 text-indigo-400" />
             <h3 className="font-bold text-white text-base">Acoustic Transformation Studio</h3>
           </div>
-          <span className="text-xs text-slate-400 font-mono">
-            Source Sentence: "{activeModel.samplePhrase}"
+          <span className="text-xs text-indigo-400 font-mono">
+            {activeModel.flag} {activeModel.name} &bull; {activeModel.gender}
           </span>
+        </div>
+
+        {/* Dedicated Audition & Test Script Card */}
+        <div className="bg-slate-950 border border-indigo-900/50 rounded-2xl p-4 sm:p-5 space-y-2">
+          <div className="flex items-center justify-between">
+            <span className="text-xs uppercase font-bold tracking-wider text-indigo-400 flex items-center gap-1.5">
+              <Volume2 className="w-3.5 h-3.5" />
+              Audition & Test Script
+            </span>
+            <span className="text-[10px] text-emerald-400 font-mono">100% Non-AI Human Speech</span>
+          </div>
+          <p className="text-sm sm:text-base text-slate-100 font-medium leading-relaxed italic">
+            "{activeModel.samplePhrase}"
+          </p>
+          <p className="text-xs text-slate-400 leading-normal">
+            {activeModel.description}
+          </p>
         </div>
 
         {/* Live Acoustic Visualizer */}
@@ -448,7 +464,7 @@ export const SpeechStudio: React.FC<SpeechStudioProps> = ({
           <VoiceVisualizer isPlaying={isPlayingLive} avatarColor={activeModel.avatarColor} />
           <div className="flex justify-between text-[10px] text-slate-500 font-mono">
             <span>Acoustic Frequency Domain</span>
-            <span>{isPlayingLive ? 'Playing converted voice' : 'Ready'}</span>
+            <span>{isPlayingLive ? 'Playing audition script...' : 'Ready to audition'}</span>
           </div>
         </div>
 
@@ -466,11 +482,11 @@ export const SpeechStudio: React.FC<SpeechStudioProps> = ({
             >
               {isPlayingLive ? (
                 <>
-                  <Square className="w-4 h-4 fill-current" /> Stop Audio
+                  <Square className="w-4 h-4 fill-current" /> Stop Audition
                 </>
               ) : (
                 <>
-                  <Volume2 className="w-4 h-4" /> Play Converted Voice
+                  <Volume2 className="w-4 h-4" /> Audition Test Script
                 </>
               )}
             </button>

@@ -234,7 +234,7 @@ export const PredefinedVoiceList: React.FC<PredefinedVoiceListProps> = ({
                     </>
                   ) : (
                     <>
-                      <Volume2 className="w-3.5 h-3.5 text-indigo-400" /> Audition Real Voice
+                      <Volume2 className="w-3.5 h-3.5 text-indigo-400" /> Audition Script
                     </>
                   )}
                 </button>

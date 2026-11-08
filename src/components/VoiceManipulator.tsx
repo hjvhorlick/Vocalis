@@ -363,11 +363,11 @@ export const VoiceManipulator: React.FC<VoiceManipulatorProps> = ({
       {/* Audition Bar for the Manipulated Voice */}
       <div className="bg-slate-950 border border-slate-800 rounded-2xl p-4 flex flex-col sm:flex-row items-center justify-between gap-3">
         <div className="w-full sm:flex-1">
-          <div className="text-[11px] font-semibold uppercase tracking-wider text-slate-400 mb-1 flex items-center gap-1.5">
+          <div className="text-[11px] font-semibold uppercase tracking-wider text-indigo-400 mb-1 flex items-center gap-1.5">
             <Volume2 className="w-3.5 h-3.5 text-indigo-400" />
-            <span>Spoken Sentence (Natural Human Voice):</span>
+            <span>Audition &amp; Test Script:</span>
           </div>
-          <p className="text-xs text-slate-200 font-medium">"{voice.samplePhrase}"</p>
+          <p className="text-xs text-slate-100 font-medium italic">"{voice.samplePhrase}"</p>
         </div>
 
         <button
@@ -380,11 +380,11 @@ export const VoiceManipulator: React.FC<VoiceManipulatorProps> = ({
         >
           {isAuditioning ? (
             <>
-              <Square className="w-3.5 h-3.5 fill-current" /> Stop Audio
+              <Square className="w-3.5 h-3.5 fill-current" /> Stop Audition
             </>
           ) : (
             <>
-              <Play className="w-3.5 h-3.5 fill-current" /> Hear Transformed Voice
+              <Play className="w-3.5 h-3.5 fill-current" /> Audition Test Script
             </>
           )}
         </button>

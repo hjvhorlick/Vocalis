@@ -131,9 +131,19 @@ export const VoiceLibrary: React.FC<VoiceLibraryProps> = ({
                     )}
                   </div>
 
-                  <p className="text-xs text-slate-400 line-clamp-2 mb-3">
+                  <p className="text-xs text-slate-400 line-clamp-2 mb-2">
                     {model.description}
                   </p>
+
+                  {/* Vocalis Script preview */}
+                  <div className="text-[10px] text-indigo-300/90 bg-indigo-950/20 p-2 rounded-xl border border-indigo-900/40 mb-3 space-y-0.5">
+                    <span className="text-[9px] uppercase font-bold text-indigo-400 block tracking-wider">
+                      Audition Script:
+                    </span>
+                    <p className="font-sans italic line-clamp-2 leading-tight text-slate-300">
+                      "{model.samplePhrase}"
+                    </p>
+                  </div>
 
                   {/* Characteristic Badges */}
                   <div className="flex flex-wrap gap-1.5 text-[10px] font-mono text-slate-400 mb-2">
@@ -153,17 +163,21 @@ export const VoiceLibrary: React.FC<VoiceLibraryProps> = ({
                 <div className="pt-3 border-t border-slate-800 flex items-center justify-between gap-2">
                   <button
                     onClick={() => handleAudition(model)}
-                    className={`p-2 rounded-xl transition-colors ${
+                    className={`px-3 py-1.5 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition-all cursor-pointer ${
                       isAuditioning
                         ? 'bg-rose-600 text-white animate-pulse'
-                        : 'bg-slate-800 hover:bg-slate-700 text-slate-200'
+                        : 'bg-indigo-600 hover:bg-indigo-500 text-white shadow-sm'
                     }`}
-                    title="Audition Spoken Words"
+                    title="Audition Spoken Script"
                   >
                     {isAuditioning ? (
-                      <Square className="w-4 h-4 fill-current" />
+                      <>
+                        <Square className="w-3.5 h-3.5 fill-current" /> Stop
+                      </>
                     ) : (
-                      <Volume2 className="w-4 h-4" />
+                      <>
+                        <Volume2 className="w-3.5 h-3.5" /> Audition Script
+                      </>
                     )}
                   </button>
 
