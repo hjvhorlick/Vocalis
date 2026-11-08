@@ -1,11 +1,9 @@
 import React, { useState } from 'react';
 import {
   Sliders,
-  Mic2,
+  Sparkles,
   Users,
   BookmarkCheck,
-  Plus,
-  Sparkles,
   Volume2,
   Download,
   Check,
@@ -21,11 +19,12 @@ const GitHubIcon = ({ className = 'w-3.5 h-3.5' }: { className?: string }) => (
   </svg>
 );
 
+export type AppNavTab = 'hub' | 'creator' | 'dialogue' | 'library';
+
 interface VoiceNavbarProps {
-  activeTab: 'studio' | 'dialogue' | 'library';
-  onSelectTab: (tab: 'studio' | 'dialogue' | 'library') => void;
+  activeTab: AppNavTab;
+  onSelectTab: (tab: AppNavTab) => void;
   savedVoicesCount: number;
-  onNewVoice: () => void;
   onOpenGitHubModal: () => void;
 }
 
@@ -33,7 +32,6 @@ export const VoiceNavbar: React.FC<VoiceNavbarProps> = ({
   activeTab,
   onSelectTab,
   savedVoicesCount,
-  onNewVoice,
   onOpenGitHubModal,
 }) => {
   const [isDownloading, setIsDownloading] = useState(false);
@@ -67,18 +65,20 @@ export const VoiceNavbar: React.FC<VoiceNavbarProps> = ({
       setIsDownloading(false);
     }
   };
-  const tabs = [
-    { id: 'studio', label: 'Voice Hub & Studio', icon: Sliders, desc: 'Predefined Voices & Live Synthesizer' },
-    { id: 'dialogue', label: 'Dialogue Screenplay', icon: Users, desc: 'Two Voices in Conversation' },
-    { id: 'library', label: 'Takes Vault', icon: BookmarkCheck, desc: 'Generated Audio Archive' },
-  ] as const;
+
+  const tabs: { id: AppNavTab; label: string; icon: React.ElementType }[] = [
+    { id: 'hub', label: 'Voice Hub', icon: Sliders },
+    { id: 'creator', label: 'Voice Creator', icon: Sparkles },
+    { id: 'dialogue', label: 'Dialogue Screenplay', icon: Users },
+    { id: 'library', label: 'Takes Vault', icon: BookmarkCheck },
+  ];
 
   return (
     <header className="sticky top-0 z-50 bg-slate-950/85 backdrop-blur-xl border-b border-slate-800/80">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div className="flex items-center justify-between h-16">
+        <div className="flex items-center justify-between h-16 gap-3">
           {/* Logo */}
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-3 shrink-0">
             <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-cyan-500 via-indigo-500 to-fuchsia-500 p-0.5 shadow-lg shadow-indigo-500/20">
               <div className="w-full h-full bg-slate-950 rounded-[10px] flex items-center justify-center">
                 <Volume2 className="w-5 h-5 text-indigo-400" />
@@ -89,18 +89,18 @@ export const VoiceNavbar: React.FC<VoiceNavbarProps> = ({
                 <span className="text-xl font-bold tracking-tight bg-gradient-to-r from-white via-indigo-100 to-indigo-300 bg-clip-text text-transparent">
                   Vocalis
                 </span>
-                <span className="text-[10px] font-semibold uppercase px-2 py-0.5 rounded-full bg-indigo-500/10 text-indigo-400 border border-indigo-500/20">
+                <span className="text-[10px] font-semibold uppercase px-2 py-0.5 rounded-full bg-indigo-500/10 text-indigo-400 border border-indigo-500/20 hidden sm:inline-block">
                   Voice Creation Studio
                 </span>
               </div>
-              <p className="text-xs text-slate-400 hidden sm:block">
-                Custom Voice Design & Spoken Word Synthesizer
+              <p className="text-xs text-slate-400 hidden lg:block">
+                Real Human Acoustic Synthesis &bull; 60 Speakers
               </p>
             </div>
           </div>
 
-          {/* Navigation */}
-          <nav className="hidden md:flex items-center gap-1 bg-slate-900/70 p-1 rounded-xl border border-slate-800/60">
+          {/* Unified Navigation Tabs (All top buttons look identical in size & shape) */}
+          <nav className="hidden md:flex items-center gap-2">
             {tabs.map((tab) => {
               const Icon = tab.icon;
               const isActive = activeTab === tab.id;
@@ -108,16 +108,20 @@ export const VoiceNavbar: React.FC<VoiceNavbarProps> = ({
                 <button
                   key={tab.id}
                   onClick={() => onSelectTab(tab.id)}
-                  className={`flex items-center gap-2 px-3.5 py-1.5 rounded-lg text-sm font-medium transition-all duration-150 ${
+                  className={`h-9 px-3.5 rounded-xl border text-xs font-semibold inline-flex items-center gap-2 transition-all duration-150 cursor-pointer shadow-sm ${
                     isActive
-                      ? 'bg-indigo-600 text-white shadow-md shadow-indigo-600/30'
-                      : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/50'
+                      ? 'bg-indigo-600 text-white border-indigo-500 shadow-indigo-600/30'
+                      : 'bg-slate-900/90 text-slate-300 border-slate-800 hover:text-white hover:bg-slate-800/90 hover:border-slate-700'
                   }`}
                 >
-                  <Icon className={`w-4 h-4 ${isActive ? 'text-white' : 'text-slate-400'}`} />
-                  {tab.label}
+                  <Icon className={`w-3.5 h-3.5 ${isActive ? 'text-white' : 'text-slate-400'}`} />
+                  <span>{tab.label}</span>
                   {tab.id === 'library' && savedVoicesCount > 0 && (
-                    <span className="ml-1 text-[10px] px-1.5 py-0.2 rounded-full bg-indigo-500/30 text-indigo-200 font-mono">
+                    <span
+                      className={`text-[10px] px-1.5 py-0.2 rounded-full font-mono ${
+                        isActive ? 'bg-white/20 text-white' : 'bg-indigo-500/20 text-indigo-300'
+                      }`}
+                    >
                       {savedVoicesCount}
                     </span>
                   )}
@@ -126,41 +130,34 @@ export const VoiceNavbar: React.FC<VoiceNavbarProps> = ({
             })}
           </nav>
 
-          {/* Actions */}
-          <div className="flex items-center gap-2">
+          {/* Right Action Buttons (Styled identically with exact same h-9 px-3.5 rounded-xl border) */}
+          <div className="flex items-center gap-2 shrink-0">
             {/* 1-Click Codebase ZIP Download */}
             <button
               onClick={handleQuickDownload}
-              className="hidden sm:flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold bg-slate-900 hover:bg-slate-800 text-slate-200 border border-slate-700 hover:border-slate-600 transition-all cursor-pointer shadow-sm"
+              className="h-9 px-3.5 rounded-xl border border-slate-800 bg-slate-900/90 hover:bg-slate-800/90 hover:border-slate-700 text-slate-300 hover:text-white text-xs font-semibold inline-flex items-center gap-2 transition-all duration-150 cursor-pointer shadow-sm"
               title="Download full project code as .zip"
             >
               <Download className="w-3.5 h-3.5 text-emerald-400" />
-              <span>{isDownloading ? 'Downloading...' : 'Download Code (.zip)'}</span>
+              <span className="hidden sm:inline">
+                {isDownloading ? 'Downloading...' : 'Download Code (.zip)'}
+              </span>
             </button>
 
             {/* GitHub Sync Button */}
             <button
               onClick={onOpenGitHubModal}
-              className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold bg-slate-900 hover:bg-slate-800 text-indigo-300 border border-indigo-500/40 hover:border-indigo-400 transition-all cursor-pointer shadow-sm"
+              className="h-9 px-3.5 rounded-xl border border-indigo-500/40 bg-slate-900/90 hover:bg-slate-800/90 hover:border-indigo-400 text-indigo-300 hover:text-indigo-100 text-xs font-semibold inline-flex items-center gap-2 transition-all duration-150 cursor-pointer shadow-sm"
               title="Push changes to your GitHub repository"
             >
               <GitHubIcon className="w-3.5 h-3.5 text-indigo-400" />
               <span>Push to GitHub</span>
             </button>
-
-            {/* Create New Voice Button */}
-            <button
-              onClick={onNewVoice}
-              className="flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-semibold bg-gradient-to-r from-indigo-500 via-indigo-600 to-cyan-500 text-white shadow-lg shadow-indigo-500/25 hover:brightness-110 active:scale-95 transition-all cursor-pointer"
-            >
-              <Plus className="w-4 h-4 text-white" />
-              <span className="tracking-wide hidden md:inline">Create New Voice</span>
-            </button>
           </div>
         </div>
 
         {/* Mobile Navigation */}
-        <div className="flex md:hidden overflow-x-auto py-2 gap-1 border-t border-slate-800/40 -mx-4 px-4 scrollbar-none">
+        <div className="flex md:hidden overflow-x-auto py-2 gap-1.5 border-t border-slate-800/40 -mx-4 px-4 scrollbar-none">
           {tabs.map((tab) => {
             const Icon = tab.icon;
             const isActive = activeTab === tab.id;
@@ -168,14 +165,14 @@ export const VoiceNavbar: React.FC<VoiceNavbarProps> = ({
               <button
                 key={tab.id}
                 onClick={() => onSelectTab(tab.id)}
-                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium whitespace-nowrap transition-colors ${
+                className={`h-9 px-3 rounded-xl border text-xs font-semibold whitespace-nowrap inline-flex items-center gap-1.5 transition-colors cursor-pointer ${
                   isActive
-                    ? 'bg-indigo-600 text-white shadow-sm'
-                    : 'text-slate-400 bg-slate-900/50 hover:bg-slate-800'
+                    ? 'bg-indigo-600 text-white border-indigo-500 shadow-sm'
+                    : 'bg-slate-900/90 text-slate-400 border-slate-800 hover:bg-slate-800 hover:text-white'
                 }`}
               >
                 <Icon className="w-3.5 h-3.5" />
-                {tab.label}
+                <span>{tab.label}</span>
               </button>
             );
           })}

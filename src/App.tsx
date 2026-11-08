@@ -1,17 +1,17 @@
 import React, { useEffect, useState } from 'react';
 import { initializeLocalSpeechEngine, VoiceModelConfig, PRESET_VOICE_MODELS } from './utils/naturalVoiceEngine';
 import { GeneratedTake } from './types/voice';
-import { VoiceNavbar } from './components/VoiceNavbar';
-import { PredefinedVoiceList } from './components/PredefinedVoiceList';
-import { VoiceManipulator } from './components/VoiceManipulator';
-import { SpeechStudio } from './components/SpeechStudio';
+import { VoiceNavbar, AppNavTab } from './components/VoiceNavbar';
+import { VoiceHub } from './components/VoiceHub';
+import { VoiceCreator } from './components/VoiceCreator';
 import { DialogueStudio } from './components/DialogueStudio';
 import { VoiceLibrary } from './components/VoiceLibrary';
 import { GitHubSyncModal } from './components/GitHubSyncModal';
 import { VoiceCredits } from './components/VoiceCredits';
 
 export function App() {
-  const [activeTab, setActiveTab] = useState<'studio' | 'dialogue' | 'library'>('studio');
+  // Voice Hub is the main page default
+  const [activeTab, setActiveTab] = useState<AppNavTab>('hub');
   const [isGitHubModalOpen, setIsGitHubModalOpen] = useState(false);
 
   // Load models from localStorage
@@ -35,7 +35,7 @@ export function App() {
     initializeLocalSpeechEngine(activeModel);
   }, [activeModel.gender, activeModel.baseVoiceId, activeModel.synthesisMethod]);
 
-  // Saved audio takes
+  // Saved audio takes vault
   const [savedTakes, setSavedTakes] = useState<GeneratedTake[]>(() => {
     try {
       const saved = localStorage.getItem('vocalis_saved_takes');
@@ -72,21 +72,6 @@ export function App() {
     });
 
     setActiveModel(toSave);
-  };
-
-  const handleResetActiveVoice = () => {
-    const originalPreset = PRESET_VOICE_MODELS.find((p) => p.id === activeModel.id);
-    if (originalPreset) {
-      setActiveModel({ ...originalPreset });
-    } else {
-      setActiveModel((prev) => ({
-        ...prev,
-        pitch: 1.0,
-        rate: 1.0,
-        volume: 1.0,
-        toneStyle: 'natural',
-      }));
-    }
   };
 
   const handleDeleteCustomModel = (id: string) => {
@@ -130,39 +115,13 @@ export function App() {
     });
   };
 
-  const handleNewVoice = () => {
-    const fresh: VoiceModelConfig = {
-      id: 'custom-' + Date.now(),
-      name: 'Custom Crafted Voice',
-      archetype: 'Articulate Speaker',
-      description: 'Custom tuned vocal pitch, pacing, and tone.',
-      gender: 'Neutral',
-      synthesisMethod: 'cmu-arctic',
-      baseSampleId: 'cmu-slt-1',
-      baseVoiceId: 'slt',
-      accent: 'US',
-      flag: '✨',
-      pitch: 1.0,
-      rate: 1.0,
-      volume: 1.0,
-      toneStyle: 'natural',
-      samplePhrase: 'Hello! I am your custom voice model speaking real intelligible words.',
-      avatarColor: '#3b82f6',
-      isCustom: true,
-    };
-    handleSaveModel(fresh);
-    setActiveModel(fresh);
-    setActiveTab('studio');
-  };
-
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col font-sans selection:bg-indigo-500/30 selection:text-indigo-200">
-      {/* Top Header */}
+      {/* Top Header with Unified Buttons */}
       <VoiceNavbar
         activeTab={activeTab}
         onSelectTab={setActiveTab}
         savedVoicesCount={models.filter((m) => m.isCustom).length}
-        onNewVoice={handleNewVoice}
         onOpenGitHubModal={() => setIsGitHubModalOpen(true)}
       />
 
@@ -174,52 +133,54 @@ export function App() {
 
       {/* Main Viewport */}
       <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-6">
-        {activeTab === 'studio' && (
-          <div className="space-y-6">
-            {/* 1. Predefined Voices List (Select to Manipulate) */}
-            <PredefinedVoiceList
-              voices={models}
-              activeVoice={activeModel}
-              onSelectVoice={(v) => setActiveModel(v)}
-              onNewVoice={handleNewVoice}
-            />
-
-            {/* 2. Voice Manipulator Panel for the Active Voice */}
-            <VoiceManipulator
-              voice={activeModel}
-              onUpdateVoice={setActiveModel}
-              onSaveAsCustom={handleSaveModel}
-              onResetToDefault={handleResetActiveVoice}
-            />
-
-            {/* 3. Spoken Word Studio & Real-time Synthesizer */}
-            <SpeechStudio
-              models={models}
-              activeModel={activeModel}
-              onSelectModel={setActiveModel}
-              onUpdateActiveModel={setActiveModel}
-              onSaveTake={handleSaveTake}
-            />
-          </div>
+        {/* 1. Voice Hub (Main Page) */}
+        {activeTab === 'hub' && (
+          <VoiceHub
+            voices={models}
+            activeVoice={activeModel}
+            onSelectVoice={(v) => setActiveModel(v)}
+            onUpdateActiveVoice={setActiveModel}
+            onSaveTake={handleSaveTake}
+            onOpenVoiceCreator={(baseVoice) => {
+              if (baseVoice) setActiveModel(baseVoice);
+              setActiveTab('creator');
+            }}
+          />
         )}
 
+        {/* 2. Merged Voice Creator Studio */}
+        {activeTab === 'creator' && (
+          <VoiceCreator
+            voices={models}
+            activeVoice={activeModel}
+            onSaveModel={handleSaveModel}
+            onSaveTake={handleSaveTake}
+            onGoToHub={(model) => {
+              if (model) setActiveModel(model);
+              setActiveTab('hub');
+            }}
+          />
+        )}
+
+        {/* 3. Dialogue Screenplay Studio */}
         {activeTab === 'dialogue' && <DialogueStudio models={models} />}
 
+        {/* 4. Takes Vault (Audio Archive) */}
         {activeTab === 'library' && (
           <VoiceLibrary
             models={models}
             savedTakes={savedTakes}
             onSelectModelForShaper={(m) => {
               setActiveModel(m);
-              setActiveTab('studio');
+              setActiveTab('creator');
             }}
             onSelectModelForStudio={(m) => {
               setActiveModel(m);
-              setActiveTab('studio');
+              setActiveTab('hub');
             }}
             onDeleteCustomModel={handleDeleteCustomModel}
             onDeleteTake={handleDeleteTake}
-            onGoToNewModel={handleNewVoice}
+            onGoToNewModel={() => setActiveTab('creator')}
           />
         )}
       </main>
@@ -233,11 +194,11 @@ export function App() {
             <span>Voice Creation & Spoken Word Synthesizer</span>
           </div>
           <div className="flex items-center gap-4 text-[11px] text-slate-500">
-            <span>CMU ARCTIC Recorded Speech Units · No AI</span>
+            <span>60 Real Human Speakers · 100% Genuine Studio Recordings</span>
             <span>&bull;</span>
-            <span>Custom Pitch & Cadence Knobs</span>
+            <span>Zero AI</span>
             <span>&bull;</span>
-            <span>Dual-Speaker Dialogue</span>
+            <span>Real-time Waveform Oscilloscope</span>
             <span>&bull;</span>
             <span>WAV Audio Export</span>
             <span>&bull;</span>
