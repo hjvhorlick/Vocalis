@@ -79,17 +79,23 @@ export const VoiceNavbar: React.FC<VoiceNavbarProps> = ({
         <div className="flex items-center justify-between h-16 gap-3">
           {/* Logo */}
           <div className="flex items-center gap-3 shrink-0">
-            <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-cyan-500 via-indigo-500 to-fuchsia-500 p-0.5 shadow-lg shadow-indigo-500/20">
-              <div className="w-full h-full bg-slate-950 rounded-[10px] flex items-center justify-center">
-                <Volume2 className="w-5 h-5 text-indigo-400" />
-              </div>
+            <span className="sr-only">Vocalis</span>
+            {/* Lockup: the logo V stands in for the "V", "ocalis" continues the word in the V's own gold */}
+            <div className="flex items-center" aria-hidden="true">
+              <img
+                src="/brand/vocalis-mark.png"
+                alt=""
+                width={30}
+                height={30}
+                className="h-[30px] w-[30px] object-contain drop-shadow-[0_2px_6px_rgba(0,0,0,0.55)]"
+              />
+              <span className="-ml-[3px] font-extrabold text-[26px] leading-none tracking-[-0.03em] bg-gradient-to-b from-[#fef5bd] via-[#eccb85] to-[#c39b52] bg-clip-text text-transparent">
+                ocalis
+              </span>
             </div>
             <div>
               <div className="flex items-center gap-2">
-                <span className="text-xl font-bold tracking-tight bg-gradient-to-r from-white via-indigo-100 to-indigo-300 bg-clip-text text-transparent">
-                  Vocalis
-                </span>
-                <span className="text-[10px] font-semibold uppercase px-2 py-0.5 rounded-full bg-indigo-500/10 text-indigo-400 border border-indigo-500/20 hidden sm:inline-block">
+                <span className="text-[10px] font-semibold uppercase px-2 py-0.5 rounded-full bg-[#e8c981]/10 text-[#e8c981] border border-[#e8c981]/25 hidden sm:inline-block">
                   Voice Creation Studio
                 </span>
               </div>
