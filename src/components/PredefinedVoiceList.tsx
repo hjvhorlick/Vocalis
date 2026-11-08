@@ -1,14 +1,13 @@
 import React, { useState } from 'react';
-import { VoiceModelConfig, speakRealWords, stopSpeaking } from '../utils/naturalVoiceEngine';
+import { VoiceModelConfig, speakVoiceText, stopSpokenVoice } from '../utils/naturalVoiceEngine';
 import {
-  Volume2,
-  Square,
   Sliders,
   Check,
   Search,
   ShieldCheck,
   UserCheck,
 } from 'lucide-react';
+import { PersonaScriptPlayer } from './PersonaScriptPlayer';
 
 interface PredefinedVoiceListProps {
   voices: VoiceModelConfig[];
@@ -25,23 +24,6 @@ export const PredefinedVoiceList: React.FC<PredefinedVoiceListProps> = ({
   const [filterRegion, setFilterRegion] = useState<'ALL' | 'US' | 'UK' | 'CA' | 'IN' | 'EU' | 'Custom'>('ALL');
   const [filterGender, setFilterGender] = useState<'ALL' | 'Female' | 'Male'>('ALL');
   const [searchQuery, setSearchQuery] = useState('');
-  const [auditioningId, setAuditioningId] = useState<string | null>(null);
-
-  const handleAudition = (e: React.MouseEvent, voice: VoiceModelConfig) => {
-    e.stopPropagation();
-    if (auditioningId === voice.id) {
-      stopSpeaking();
-      setAuditioningId(null);
-      return;
-    }
-
-    setAuditioningId(voice.id);
-    speakRealWords(voice.samplePhrase, voice, {
-      onEnd: () => setAuditioningId(null),
-      onError: () => setAuditioningId(null),
-    });
-  };
-
   const filteredVoices = voices.filter((v) => {
     if (filterRegion === 'Custom' && !v.isCustom) return false;
     if (filterRegion !== 'ALL' && filterRegion !== 'Custom' && v.accent !== filterRegion) return false;
@@ -146,7 +128,6 @@ export const PredefinedVoiceList: React.FC<PredefinedVoiceListProps> = ({
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-3 gap-3.5 max-h-[420px] overflow-y-auto pr-1">
         {filteredVoices.map((voice) => {
           const isSelected = activeVoice.id === voice.id;
-          const isAuditioning = auditioningId === voice.id;
 
           return (
             <div
@@ -160,14 +141,15 @@ export const PredefinedVoiceList: React.FC<PredefinedVoiceListProps> = ({
             >
               <div>
                 <div className="flex items-start justify-between gap-2 mb-2">
-                  <div className="flex items-center gap-2.5">
+                  <div className="flex items-center gap-3">
                     <div className="relative shrink-0">
-                      <div
-                        className="w-10 h-10 rounded-xl flex items-center justify-center font-bold text-white shadow-sm text-sm uppercase ring-1 ring-white/10"
-                        style={{ backgroundColor: voice.avatarColor }}
-                      >
-                        {voice.name.charAt(0)}
-                      </div>
+                      <VoiceAvatar
+                        id={voice.id}
+                        name={voice.name}
+                        avatarImage={voice.avatarImage}
+                        color={voice.avatarColor}
+                        size="lg"
+                      />
                       {voice.flag && (
                         <div
                           className="absolute -bottom-1 -right-1.5 bg-slate-900 border border-slate-700/80 rounded-md px-1 py-0.2 text-[10px] leading-tight shadow-md flex items-center justify-center pointer-events-none"
@@ -218,26 +200,12 @@ export const PredefinedVoiceList: React.FC<PredefinedVoiceListProps> = ({
 
               {/* Bottom Card Actions */}
               <div className="pt-2 border-t border-slate-900 flex items-center justify-between gap-2">
-                <button
-                  type="button"
-                  onClick={(e) => handleAudition(e, voice)}
-                  className={`px-3 py-1.5 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition-all shadow-sm active:scale-95 cursor-pointer ${
-                    isAuditioning
-                      ? 'bg-rose-600 hover:bg-rose-500 text-white shadow-rose-600/40 animate-pulse'
-                      : 'bg-slate-900 hover:bg-slate-800 text-slate-200 border border-slate-700/80 hover:border-slate-600'
-                  }`}
-                  title="Audition real human recording"
-                >
-                  {isAuditioning ? (
-                    <>
-                      <Square className="w-3 h-3 fill-current" /> Stop
-                    </>
-                  ) : (
-                    <>
-                      <Volume2 className="w-3.5 h-3.5 text-indigo-400" /> Audition Script
-                    </>
-                  )}
-                </button>
+                <PersonaScriptPlayer
+                  voiceId={voice.id}
+                  name={voice.name}
+                  audioUrl={voice.auditionAudio}
+                  script={voice.samplePhrase}
+                />
 
                 <span
                   className={`text-[11px] font-semibold flex items-center gap-1 ${
@@ -261,3 +229,5 @@ export const PredefinedVoiceList: React.FC<PredefinedVoiceListProps> = ({
     </div>
   );
 };
+
+import { VoiceAvatar } from './VoiceAvatar';

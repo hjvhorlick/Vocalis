@@ -23,6 +23,15 @@ export function isDspPlaying(): boolean {
 }
 
 /**
+ * Attach an analyser for playback that is driven outside this module (the local
+ * text synthesiser plays its own buffer but still feeds the live waveform).
+ */
+export function setDspAnalyser(analyser: AnalyserNode | null): void {
+  activeAnalyserNode = analyser;
+  isAudioPlaying = analyser !== null;
+}
+
+/**
  * Configure acoustic DSP nodes (EQ, formants, distortion, ring mod)
  */
 function buildDspGraph(

@@ -2,8 +2,8 @@ import React, { useState } from 'react';
 import {
   VoiceModelConfig,
   NATURAL_HUMAN_SAMPLES,
-  speakRealWords,
-  stopSpeaking,
+  speakVoiceText,
+  stopSpokenVoice,
 } from '../utils/naturalVoiceEngine';
 import { VoiceVisualizer } from './VoiceVisualizer';
 import {
@@ -18,6 +18,7 @@ import {
   User,
   Activity,
 } from 'lucide-react';
+import { VoiceAvatar } from './VoiceAvatar';
 
 interface VoiceManipulatorProps {
   voice: VoiceModelConfig;
@@ -37,13 +38,13 @@ export const VoiceManipulator: React.FC<VoiceManipulatorProps> = ({
 
   const handleAudition = () => {
     if (isAuditioning) {
-      stopSpeaking();
+      stopSpokenVoice();
       setIsAuditioning(false);
       return;
     }
 
     setIsAuditioning(true);
-    speakRealWords(voice.samplePhrase, voice, {
+    speakVoiceText(voice.samplePhrase, voice, {
       onStart: () => setIsAuditioning(true),
       onEnd: () => setIsAuditioning(false),
       onError: () => setIsAuditioning(false),
@@ -68,12 +69,13 @@ export const VoiceManipulator: React.FC<VoiceManipulatorProps> = ({
       <div className="flex flex-wrap items-center justify-between gap-4 border-b border-slate-800 pb-4">
         <div className="flex items-center gap-3">
           <div className="relative shrink-0">
-            <div
-              className="w-12 h-12 rounded-2xl flex items-center justify-center font-bold text-lg text-white shadow-md uppercase ring-1 ring-white/10"
-              style={{ backgroundColor: voice.avatarColor }}
-            >
-              {voice.name.charAt(0)}
-            </div>
+            <VoiceAvatar
+              id={voice.id}
+              name={voice.name}
+              avatarImage={voice.avatarImage}
+              color={voice.avatarColor}
+              size="md"
+            />
             {voice.flag && (
               <div
                 className="absolute -bottom-1 -right-1 bg-slate-900 border border-slate-700/80 rounded-md px-1.5 py-0.5 text-xs shadow-md leading-none flex items-center justify-center pointer-events-none"

@@ -2,8 +2,8 @@ import React, { useState, useRef } from 'react';
 import {
   VoiceModelConfig,
   NATURAL_HUMAN_SAMPLES,
-  speakRealWords,
-  stopSpeaking,
+  speakVoiceText,
+  stopSpokenVoice,
   generateSpokenAudioWav,
   setUserAudioBuffer,
   getUserAudioBuffer,
@@ -26,6 +26,8 @@ import {
   Radio,
   StopCircle,
 } from 'lucide-react';
+import { VoiceAvatar } from './VoiceAvatar';
+import { PersonaScriptPlayer } from './PersonaScriptPlayer';
 
 interface SpeechStudioProps {
   models: VoiceModelConfig[];
@@ -68,13 +70,13 @@ export const SpeechStudio: React.FC<SpeechStudioProps> = ({
   // Play converted voice in real time through speakers
   const handlePlayLive = () => {
     if (isPlayingLive) {
-      stopSpeaking();
+      stopSpokenVoice();
       setIsPlayingLive(false);
       return;
     }
 
     setIsPlayingLive(true);
-    speakRealWords(activeModel.samplePhrase, activeModel, {
+    speakVoiceText(activeModel.samplePhrase, activeModel, {
       onStart: () => setIsPlayingLive(true),
       onEnd: () => setIsPlayingLive(false),
       onError: () => setIsPlayingLive(false),
@@ -227,12 +229,14 @@ export const SpeechStudio: React.FC<SpeechStudioProps> = ({
         <div className="flex flex-wrap items-center justify-between gap-4">
           <div className="flex items-center gap-3">
             <div className="relative shrink-0">
-              <div
-                className="w-12 h-12 rounded-2xl flex items-center justify-center font-bold text-lg text-white shadow-md uppercase ring-1 ring-white/10"
-                style={{ backgroundColor: activeModel.avatarColor }}
-              >
-                {activeModel.name.charAt(0)}
-              </div>
+              <VoiceAvatar
+                id={activeModel.id}
+                name={activeModel.name}
+                avatarImage={activeModel.avatarImage}
+                color={activeModel.avatarColor}
+                size="xl"
+                speaking={isPlayingLive}
+              />
               {activeModel.flag && (
                 <div
                   className="absolute -bottom-1 -right-1 bg-slate-900 border border-slate-700/80 rounded-md px-1.5 py-0.5 text-xs shadow-md leading-none flex items-center justify-center pointer-events-none"
@@ -449,7 +453,13 @@ export const SpeechStudio: React.FC<SpeechStudioProps> = ({
               <Volume2 className="w-3.5 h-3.5" />
               Audition & Test Script
             </span>
-            <span className="text-[10px] text-emerald-400 font-mono">100% Non-AI Human Speech</span>
+            <PersonaScriptPlayer
+              voiceId={activeModel.id}
+              name={activeModel.name}
+              audioUrl={activeModel.auditionAudio}
+              script={activeModel.samplePhrase}
+              compact
+            />
           </div>
           <p className="text-sm sm:text-base text-slate-100 font-medium leading-relaxed italic">
             "{activeModel.samplePhrase}"

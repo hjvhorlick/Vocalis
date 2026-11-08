@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { VoiceModelConfig, speakRealWords, stopSpeaking } from '../utils/naturalVoiceEngine';
+import { VoiceModelConfig, speakVoiceTextWithTimings, stopSpokenVoice } from '../utils/naturalVoiceEngine';
 import {
   Sliders,
   Play,
@@ -12,6 +12,7 @@ import {
   Sparkles,
   Layers,
 } from 'lucide-react';
+import { VoiceAvatar } from './VoiceAvatar';
 
 interface VoiceShaperProps {
   model: VoiceModelConfig;
@@ -34,14 +35,14 @@ export const VoiceShaper: React.FC<VoiceShaperProps> = ({
 
   const handleAudition = () => {
     if (isSpeaking) {
-      stopSpeaking();
+      stopSpokenVoice();
       setIsSpeaking(false);
       setActiveWordRange(null);
       return;
     }
 
     setIsSpeaking(true);
-    speakRealWords(model.samplePhrase, model, {
+    speakVoiceTextWithTimings(model.samplePhrase, model, {
       onStart: () => setIsSpeaking(true),
       onWord: (charIndex, charLength) => {
         setActiveWordRange({ start: charIndex, length: charLength });
@@ -88,12 +89,13 @@ export const VoiceShaper: React.FC<VoiceShaperProps> = ({
           <div className="bg-slate-900/90 border border-slate-800 rounded-3xl p-6 shadow-xl space-y-5">
             <div className="flex items-center justify-between border-b border-slate-800 pb-3">
               <div className="flex items-center gap-3">
-                <div
-                  className="w-11 h-11 rounded-2xl flex items-center justify-center font-bold text-white shadow-md text-base"
-                  style={{ backgroundColor: model.avatarColor }}
-                >
-                  {model.name.charAt(0)}
-                </div>
+                <VoiceAvatar
+                  id={model.id}
+                  name={model.name}
+                  avatarImage={model.avatarImage}
+                  color={model.avatarColor}
+                  size="lg"
+                />
                 <div>
                   <h3 className="font-bold text-white text-base">{model.name}</h3>
                   <span className="text-xs text-indigo-400 font-medium">{model.archetype}</span>

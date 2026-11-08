@@ -1,6 +1,7 @@
 import React, { useState, useRef } from 'react';
-import { VoiceModelConfig, speakRealWords, stopSpeaking } from '../utils/naturalVoiceEngine';
+import { VoiceModelConfig, speakVoiceText, stopSpokenVoice } from '../utils/naturalVoiceEngine';
 import { Users, Plus, Trash2, Play, Square, Volume2 } from 'lucide-react';
+import { VoiceAvatar } from './VoiceAvatar';
 
 interface DialogueLine {
   id: string;
@@ -75,7 +76,7 @@ export const DialogueStudio: React.FC<DialogueStudioProps> = ({ models }) => {
   const playDialogue = async () => {
     if (isPlayingDialogue) {
       cancelRequestedRef.current = true;
-      stopSpeaking();
+      stopSpokenVoice();
       setIsPlayingDialogue(false);
       setActiveLineIdx(-1);
       return;
@@ -94,7 +95,7 @@ export const DialogueStudio: React.FC<DialogueStudioProps> = ({ models }) => {
       const voice = line.speakerId === 'A' ? modelA : modelB;
 
       await new Promise<void>((resolve) => {
-        speakRealWords(line.text, voice, {
+        speakVoiceText(line.text, voice, {
           onEnd: () => resolve(),
           onError: () => resolve(),
         });
@@ -132,12 +133,13 @@ export const DialogueStudio: React.FC<DialogueStudioProps> = ({ models }) => {
             </div>
             <div className="flex items-center gap-3">
               <div className="relative shrink-0">
-                <div
-                  className="w-9 h-9 rounded-xl flex items-center justify-center font-bold text-white shadow-sm text-sm uppercase ring-1 ring-white/10"
-                  style={{ backgroundColor: modelA.avatarColor }}
-                >
-                  {modelA.name.charAt(0)}
-                </div>
+                <VoiceAvatar
+                  id={modelA.id}
+                  name={modelA.name}
+                  avatarImage={modelA.avatarImage}
+                  color={modelA.avatarColor}
+                  size="sm"
+                />
                 {modelA.flag && (
                   <div
                     className="absolute -bottom-1 -right-1 bg-slate-900 border border-slate-700/80 rounded-md px-1 py-0.2 text-[9px] leading-tight shadow-md flex items-center justify-center pointer-events-none"
@@ -171,12 +173,13 @@ export const DialogueStudio: React.FC<DialogueStudioProps> = ({ models }) => {
             </div>
             <div className="flex items-center gap-3">
               <div className="relative shrink-0">
-                <div
-                  className="w-9 h-9 rounded-xl flex items-center justify-center font-bold text-white shadow-sm text-sm uppercase ring-1 ring-white/10"
-                  style={{ backgroundColor: modelB.avatarColor }}
-                >
-                  {modelB.name.charAt(0)}
-                </div>
+                <VoiceAvatar
+                  id={modelB.id}
+                  name={modelB.name}
+                  avatarImage={modelB.avatarImage}
+                  color={modelB.avatarColor}
+                  size="sm"
+                />
                 {modelB.flag && (
                   <div
                     className="absolute -bottom-1 -right-1 bg-slate-900 border border-slate-700/80 rounded-md px-1 py-0.2 text-[9px] leading-tight shadow-md flex items-center justify-center pointer-events-none"
