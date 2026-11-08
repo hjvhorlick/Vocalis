@@ -22,7 +22,7 @@ export const PredefinedVoiceList: React.FC<PredefinedVoiceListProps> = ({
   activeVoice,
   onSelectVoice,
 }) => {
-  const [filterRegion, setFilterRegion] = useState<'ALL' | 'US' | 'UK' | 'CA' | 'IN' | 'Custom'>('ALL');
+  const [filterRegion, setFilterRegion] = useState<'ALL' | 'US' | 'UK' | 'CA' | 'IN' | 'EU' | 'Custom'>('ALL');
   const [filterGender, setFilterGender] = useState<'ALL' | 'Female' | 'Male'>('ALL');
   const [searchQuery, setSearchQuery] = useState('');
   const [auditioningId, setAuditioningId] = useState<string | null>(null);
@@ -94,6 +94,7 @@ export const PredefinedVoiceList: React.FC<PredefinedVoiceListProps> = ({
             { id: 'UK', label: '🇬🇧 UK & Scottish' },
             { id: 'CA', label: '🇨🇦 Canadian' },
             { id: 'IN', label: '🇮🇳 Indian English' },
+            { id: 'EU', label: '🇪🇺 European' },
             { id: 'Custom', label: '✨ Custom' },
           ].map((f) => (
             <button

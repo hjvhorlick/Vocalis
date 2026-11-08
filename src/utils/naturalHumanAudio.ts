@@ -3,7 +3,7 @@ export interface HumanVoiceSample {
   name: string;
   speaker: string;
   gender: 'Female' | 'Male';
-  accent: 'US' | 'UK' | 'CA' | 'IN' | 'Global';
+  accent: 'US' | 'UK' | 'CA' | 'IN' | 'EU' | 'Global';
   transcript: string;
   url: string;
   attribution: string;
@@ -371,6 +371,306 @@ export const NATURAL_HUMAN_SAMPLES: HumanVoiceSample[] = [
     license: 'Free Open License (BSD-style attribution)',
     duration: 2.8,
     category: 'CMU ARCTIC (Speech Science)',
+  },
+
+  // 20. FEM - American Clear Mezzo Female
+  {
+    id: 'cmu-fem-1',
+    name: 'Fiona / FEM (American Clear Mezzo)',
+    speaker: 'Real Human Female (CMU ARCTIC FEM, Studio Acoustic)',
+    gender: 'Female',
+    accent: 'US',
+    transcript: 'Author of the danger trail, Philip Steels, etc.',
+    url: '/samples/cmu_fem_arctic_a0001.wav',
+    attribution: 'Carnegie Mellon University (CMU ARCTIC Corpus - Speaker FEM)',
+    license: 'Free Open License (BSD-style attribution)',
+    duration: 3.5,
+    category: 'CMU ARCTIC (Speech Science)',
+  },
+
+  // 21. AEW - US Midwestern Radio Host
+  {
+    id: 'cmu-aew-1',
+    name: 'Alexander / AEW (US Midwestern Male)',
+    speaker: 'Real Human Male (CMU ARCTIC AEW, Studio Acoustic)',
+    gender: 'Male',
+    accent: 'US',
+    transcript: 'Author of the danger trail, Philip Steels, etc.',
+    url: '/samples/cmu_aew_arctic_a0001.wav',
+    attribution: 'Carnegie Mellon University (CMU ARCTIC Corpus - Speaker AEW)',
+    license: 'Free Open License (BSD-style attribution)',
+    duration: 3.8,
+    category: 'CMU ARCTIC (Speech Science)',
+  },
+
+  // 22. AHW - Continental European / German English Male
+  {
+    id: 'cmu-ahw-1',
+    name: 'Hans / AHW (European Academic Presenter)',
+    speaker: 'Real Human Male (CMU ARCTIC AHW, German Accent)',
+    gender: 'Male',
+    accent: 'EU',
+    transcript: 'Author of the danger trail, Philip Steels, etc.',
+    url: '/samples/cmu_ahw_arctic_a0001.wav',
+    attribution: 'Carnegie Mellon University (CMU ARCTIC Corpus - Speaker AHW)',
+    license: 'Free Open License (BSD-style attribution)',
+    duration: 3.4,
+    category: 'CMU ARCTIC (Speech Science)',
+  },
+
+  // 23. AUP - Indian English Male
+  {
+    id: 'cmu-aup-1',
+    name: 'Arjun / AUP (Indian English Tech Leader)',
+    speaker: 'Real Human Male (CMU ARCTIC AUP, Indian English)',
+    gender: 'Male',
+    accent: 'IN',
+    transcript: 'Author of the danger trail, Philip Steels, etc.',
+    url: '/samples/cmu_aup_arctic_a0001.wav',
+    attribution: 'Carnegie Mellon University (CMU ARCTIC Corpus - Speaker AUP)',
+    license: 'Free Open License (BSD-style attribution)',
+    duration: 2.9,
+    category: 'CMU ARCTIC (Speech Science)',
+  },
+
+  // 24. AXB - Indian English Female
+  {
+    id: 'cmu-axb-1',
+    name: 'Ananya / AXB (Indian English Studio Host)',
+    speaker: 'Real Human Female (CMU ARCTIC AXB, Indian English)',
+    gender: 'Female',
+    accent: 'IN',
+    transcript: 'Author of the danger trail, Philip Steels, etc.',
+    url: '/samples/cmu_axb_arctic_a0001.wav',
+    attribution: 'Carnegie Mellon University (CMU ARCTIC Corpus - Speaker AXB)',
+    license: 'Free Open License (BSD-style attribution)',
+    duration: 3.4,
+    category: 'CMU ARCTIC (Speech Science)',
+  },
+
+  // 25. EEY - Conversational Audio Narrator
+  {
+    id: 'cmu-eey-1',
+    name: 'Ethan / EEY (Conversational Narrator)',
+    speaker: 'Real Human Male (CMU ARCTIC EEY, Studio Acoustic)',
+    gender: 'Male',
+    accent: 'US',
+    transcript: 'Author of the danger trail, Philip Steels, etc.',
+    url: '/samples/cmu_eey_arctic_a0001.wav',
+    attribution: 'Carnegie Mellon University (CMU ARCTIC Corpus - Speaker EEY)',
+    license: 'Free Open License (BSD-style attribution)',
+    duration: 3.0,
+    category: 'CMU ARCTIC (Speech Science)',
+  },
+
+  // 26. GKA - International Conference Speaker
+  {
+    id: 'cmu-gka-1',
+    name: 'Gaurav / GKA (International Conference Speaker)',
+    speaker: 'Real Human Male (CMU ARCTIC GKA, Indian English)',
+    gender: 'Male',
+    accent: 'IN',
+    transcript: 'Author of the danger trail, Philip Steels, etc.',
+    url: '/samples/cmu_gka_arctic_a0001.wav',
+    attribution: 'Carnegie Mellon University (CMU ARCTIC Corpus - Speaker GKA)',
+    license: 'Free Open License (BSD-style attribution)',
+    duration: 3.1,
+    category: 'CMU ARCTIC (Speech Science)',
+  },
+
+  // 27. LJM - US Broadcast Journalist
+  {
+    id: 'cmu-ljm-1',
+    name: 'Lauren / LJM (US Broadcast Journalist)',
+    speaker: 'Real Human Female (CMU ARCTIC LJM, Studio Acoustic)',
+    gender: 'Female',
+    accent: 'US',
+    transcript: 'Author of the danger trail, Philip Steels, etc.',
+    url: '/samples/cmu_ljm_arctic_a0001.wav',
+    attribution: 'Carnegie Mellon University (CMU ARCTIC Corpus - Speaker LJM)',
+    license: 'Free Open License (BSD-style attribution)',
+    duration: 3.0,
+    category: 'CMU ARCTIC (Speech Science)',
+  },
+
+  // 28. LNH - US Narrative Storyteller
+  {
+    id: 'cmu-lnh-1',
+    name: 'Nora / LNH (US Narrative Storyteller)',
+    speaker: 'Real Human Female (CMU ARCTIC LNH, Studio Acoustic)',
+    gender: 'Female',
+    accent: 'US',
+    transcript: 'Author of the danger trail, Philip Steels, etc.',
+    url: '/samples/cmu_lnh_arctic_a0001.wav',
+    attribution: 'Carnegie Mellon University (CMU ARCTIC Corpus - Speaker LNH)',
+    license: 'Free Open License (BSD-style attribution)',
+    duration: 4.5,
+    category: 'CMU ARCTIC (Speech Science)',
+  },
+
+  // 29. SLP - Warm Indian English Lecturer
+  {
+    id: 'cmu-slp-1',
+    name: 'Priya / SLP (Warm Indian English Lecturer)',
+    speaker: 'Real Human Female (CMU ARCTIC SLP, Indian English)',
+    gender: 'Female',
+    accent: 'IN',
+    transcript: 'Author of the danger trail, Philip Steels, etc.',
+    url: '/samples/cmu_slp_arctic_a0001.wav',
+    attribution: 'Carnegie Mellon University (CMU ARCTIC Corpus - Speaker SLP)',
+    license: 'Free Open License (BSD-style attribution)',
+    duration: 3.3,
+    category: 'CMU ARCTIC (Speech Science)',
+  },
+
+  // 30. RXR - Expressive Cinematic Reader
+  {
+    id: 'cmu-rxr-1',
+    name: 'Rowan / RXR (Expressive Cinematic Reader)',
+    speaker: 'Real Human Male (CMU ARCTIC RXR, Studio Acoustic)',
+    gender: 'Male',
+    accent: 'US',
+    transcript: 'Author of the danger trail, Philip Steels, etc.',
+    url: '/samples/cmu_rxr_arctic_a0001.wav',
+    attribution: 'Carnegie Mellon University (CMU ARCTIC Corpus - Speaker RXR)',
+    license: 'Free Open License (BSD-style attribution)',
+    duration: 3.7,
+    category: 'CMU ARCTIC (Speech Science)',
+  },
+
+  // 31. OSR UK Male 3 - Arthur
+  {
+    id: 'osr-uk-male-3',
+    name: 'Arthur / OSR (Royal Society British RP)',
+    speaker: 'Real Human Male (Open Speech Repository UK)',
+    gender: 'Male',
+    accent: 'UK',
+    transcript: 'The birch canoe slid on the smooth planks. Four hours of steady work faced us.',
+    url: '/samples/osr_uk_male_3.wav',
+    attribution: 'Open Speech Repository (OSR British English Sentences)',
+    license: 'Free Open License (Credit to Open Speech Repository)',
+    duration: 38.4,
+    category: 'Open Speech Repository (Harvard Sentences)',
+  },
+
+  // 32. OSR UK Male 4 - Oliver
+  {
+    id: 'osr-uk-male-4',
+    name: 'Oliver / OSR (London Audio Producer)',
+    speaker: 'Real Human Male (Open Speech Repository UK)',
+    gender: 'Male',
+    accent: 'UK',
+    transcript: 'These days a chicken leg is a rare dish. The play seems dull and quite stupid.',
+    url: '/samples/osr_uk_male_4.wav',
+    attribution: 'Open Speech Repository (OSR British English Sentences)',
+    license: 'Free Open License (Credit to Open Speech Repository)',
+    duration: 39.0,
+    category: 'Open Speech Repository (Harvard Sentences)',
+  },
+
+  // 33. OSR UK Female 1 - Gwendolyn
+  {
+    id: 'osr-uk-female-1',
+    name: 'Gwendolyn / OSR (Oxford Scholarly Reader)',
+    speaker: 'Real Human Female (Open Speech Repository UK)',
+    gender: 'Female',
+    accent: 'UK',
+    transcript: 'The birch canoe slid on the smooth planks. Glue the sheet to the dark blue background.',
+    url: '/samples/osr_uk_female_1.wav',
+    attribution: 'Open Speech Repository (OSR British English Sentences)',
+    license: 'Free Open License (Credit to Open Speech Repository)',
+    duration: 43.4,
+    category: 'Open Speech Repository (Harvard Sentences)',
+  },
+
+  // 34. OSR UK Female 2 - Penelope
+  {
+    id: 'osr-uk-female-2',
+    name: 'Penelope / OSR (London Theatre Artist)',
+    speaker: 'Real Human Female (Open Speech Repository UK)',
+    gender: 'Female',
+    accent: 'UK',
+    transcript: 'These days a chicken leg is a rare dish. The beam balanced easily on each pin.',
+    url: '/samples/osr_uk_female_2.wav',
+    attribution: 'Open Speech Repository (OSR British English Sentences)',
+    license: 'Free Open License (Credit to Open Speech Repository)',
+    duration: 52.4,
+    category: 'Open Speech Repository (Harvard Sentences)',
+  },
+
+  // 35. OSR US Female 3 - Seraphina
+  {
+    id: 'osr-us-female-3',
+    name: 'Seraphina / OSR (American Public Radio Lead)',
+    speaker: 'Real Human Female (Open Speech Repository US)',
+    gender: 'Female',
+    accent: 'US',
+    transcript: 'The soft cushion was light and friendly. The salt breeze came across from the sea.',
+    url: '/samples/osr_us_female_3.wav',
+    attribution: 'Open Speech Repository (OSR IEEE Harvard Sentences)',
+    license: 'Free Open License (Credit to Open Speech Repository)',
+    duration: 33.2,
+    category: 'Open Speech Repository (Harvard Sentences)',
+  },
+
+  // 36. OSR US Female 4 - Madeline
+  {
+    id: 'osr-us-female-4',
+    name: 'Madeline / OSR (American Classical Reader)',
+    speaker: 'Real Human Female (Open Speech Repository US)',
+    gender: 'Female',
+    accent: 'US',
+    transcript: 'A king ruled the state in the early days. The ship was torn on the sharp reef.',
+    url: '/samples/osr_us_female_4.wav',
+    attribution: 'Open Speech Repository (OSR IEEE Harvard Sentences)',
+    license: 'Free Open License (Credit to Open Speech Repository)',
+    duration: 32.5,
+    category: 'Open Speech Repository (Harvard Sentences)',
+  },
+
+  // 37. OSR US Male 3 - Harrison
+  {
+    id: 'osr-us-male-3',
+    name: 'Harrison / OSR (US Documentary Voice)',
+    speaker: 'Real Human Male (Open Speech Repository US)',
+    gender: 'Male',
+    accent: 'US',
+    transcript: 'The birch canoe slid on the smooth planks. Four hours of steady work faced us.',
+    url: '/samples/osr_us_male_3.wav',
+    attribution: 'Open Speech Repository (OSR IEEE Harvard Sentences)',
+    license: 'Free Open License (Credit to Open Speech Repository)',
+    duration: 52.4,
+    category: 'Open Speech Repository (Harvard Sentences)',
+  },
+
+  // 38. OSR India Speaker 1 - Vikram
+  {
+    id: 'osr-in-speaker-1',
+    name: 'Vikram / OSR (Delhi Studio Announcer)',
+    speaker: 'Real Human Male (Open Speech Repository India)',
+    gender: 'Male',
+    accent: 'IN',
+    transcript: 'Standardized acoustic speech recording for international telecommunications testing.',
+    url: '/samples/osr_in_speaker_1.wav',
+    attribution: 'Open Speech Repository (OSR Indian English Speech Series)',
+    license: 'Free Open License (Credit to Open Speech Repository)',
+    duration: 68.3,
+    category: 'Open Speech Repository (Harvard Sentences)',
+  },
+
+  // 39. OSR France Speaker 1 - Étienne
+  {
+    id: 'osr-fr-speaker-1',
+    name: 'Étienne / OSR (Parisian Radio Presenter)',
+    speaker: 'Real Human Male (Open Speech Repository France)',
+    gender: 'Male',
+    accent: 'EU',
+    transcript: 'Enregistrement acoustique de référence pour les systèmes de télécommunications.',
+    url: '/samples/osr_fr_speaker_1.wav',
+    attribution: 'Open Speech Repository (OSR French Speech Series)',
+    license: 'Free Open License (Credit to Open Speech Repository)',
+    duration: 79.6,
+    category: 'Open Speech Repository (Harvard Sentences)',
   },
 ];
 
