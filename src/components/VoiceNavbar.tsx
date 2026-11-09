@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import {
   Sliders,
+  Mic,
   Sparkles,
   Users,
   BookmarkCheck,
@@ -19,7 +20,7 @@ const GitHubIcon = ({ className = 'w-3.5 h-3.5' }: { className?: string }) => (
   </svg>
 );
 
-export type AppNavTab = 'hub' | 'creator' | 'dialogue' | 'library';
+export type AppNavTab = 'hub' | 'creator' | 'dialogue' | 'library' | 'recording';
 
 interface VoiceNavbarProps {
   activeTab: AppNavTab;
@@ -60,7 +61,7 @@ export const VoiceNavbar: React.FC<VoiceNavbarProps> = ({
       document.body.removeChild(link);
       setTimeout(() => URL.revokeObjectURL(blobUrl), 2000);
     } catch (err) {
-      console.error('Download failed:', err);
+      window.alert('Source download failed. This is available only on the development server with Python 3 installed. You can transfer the repository directly instead.');
     } finally {
       setIsDownloading(false);
     }
@@ -68,6 +69,7 @@ export const VoiceNavbar: React.FC<VoiceNavbarProps> = ({
 
   const tabs: { id: AppNavTab; label: string; icon: React.ElementType }[] = [
     { id: 'hub', label: 'Voice Hub', icon: Sliders },
+    { id: 'recording', label: 'Record a Voice', icon: Mic },
     { id: 'creator', label: 'Voice Creator', icon: Sparkles },
     { id: 'dialogue', label: 'Dialogue Screenplay', icon: Users },
     { id: 'library', label: 'Takes Vault', icon: BookmarkCheck },
@@ -100,49 +102,19 @@ export const VoiceNavbar: React.FC<VoiceNavbarProps> = ({
                 </span>
               </div>
               <p className="text-xs text-slate-400 hidden lg:block">
-                Real Human Acoustic Synthesis &bull; 60 Speakers
+                Local recordings &bull; Non-neural voice tools
               </p>
             </div>
           </div>
-
-          {/* Unified Navigation Tabs (All top buttons look identical in size & shape) */}
-          <nav className="hidden md:flex items-center gap-2">
-            {tabs.map((tab) => {
-              const Icon = tab.icon;
-              const isActive = activeTab === tab.id;
-              return (
-                <button
-                  key={tab.id}
-                  onClick={() => onSelectTab(tab.id)}
-                  className={`h-9 px-3.5 rounded-xl border text-xs font-semibold inline-flex items-center gap-2 transition-all duration-150 cursor-pointer shadow-sm ${
-                    isActive
-                      ? 'bg-indigo-600 text-white border-indigo-500 shadow-indigo-600/30'
-                      : 'bg-slate-900/90 text-slate-300 border-slate-800 hover:text-white hover:bg-slate-800/90 hover:border-slate-700'
-                  }`}
-                >
-                  <Icon className={`w-3.5 h-3.5 ${isActive ? 'text-white' : 'text-slate-400'}`} />
-                  <span>{tab.label}</span>
-                  {tab.id === 'library' && savedVoicesCount > 0 && (
-                    <span
-                      className={`text-[10px] px-1.5 py-0.2 rounded-full font-mono ${
-                        isActive ? 'bg-white/20 text-white' : 'bg-indigo-500/20 text-indigo-300'
-                      }`}
-                    >
-                      {savedVoicesCount}
-                    </span>
-                  )}
-                </button>
-              );
-            })}
-          </nav>
 
           {/* Right Action Buttons (Styled identically with exact same h-9 px-3.5 rounded-xl border) */}
           <div className="flex items-center gap-2 shrink-0">
             {/* 1-Click Codebase ZIP Download */}
             <button
               onClick={handleQuickDownload}
+              disabled={!import.meta.env.DEV || isDownloading}
               className="h-9 px-3.5 rounded-xl border border-slate-800 bg-slate-900/90 hover:bg-slate-800/90 hover:border-slate-700 text-slate-300 hover:text-white text-xs font-semibold inline-flex items-center gap-2 transition-all duration-150 cursor-pointer shadow-sm"
-              title="Download full project code as .zip"
+              title={import.meta.env.DEV ? "Download application source (recording data is exported separately)" : "Source export is disabled in production"}
             >
               <Download className="w-3.5 h-3.5 text-emerald-400" />
               <span className="hidden sm:inline">
@@ -154,16 +126,16 @@ export const VoiceNavbar: React.FC<VoiceNavbarProps> = ({
             <button
               onClick={onOpenGitHubModal}
               className="h-9 px-3.5 rounded-xl border border-indigo-500/40 bg-slate-900/90 hover:bg-slate-800/90 hover:border-indigo-400 text-indigo-300 hover:text-indigo-100 text-xs font-semibold inline-flex items-center gap-2 transition-all duration-150 cursor-pointer shadow-sm"
-              title="Push changes to your GitHub repository"
+              title="Transfer the application and your voice files"
             >
               <GitHubIcon className="w-3.5 h-3.5 text-indigo-400" />
-              <span>Push to GitHub</span>
+              <span>Transfer app</span>
             </button>
           </div>
         </div>
 
-        {/* Mobile Navigation */}
-        <div className="flex md:hidden overflow-x-auto py-2 gap-1.5 border-t border-slate-800/40 -mx-4 px-4 scrollbar-none">
+        {/* Scrollable navigation stays usable on desktop, tablet and mobile. */}
+        <nav aria-label="Vocalis sections" className="flex overflow-x-auto py-2 gap-1.5 border-t border-slate-800/40 -mx-4 px-4 scrollbar-none">
           {tabs.map((tab) => {
             const Icon = tab.icon;
             const isActive = activeTab === tab.id;
@@ -171,6 +143,7 @@ export const VoiceNavbar: React.FC<VoiceNavbarProps> = ({
               <button
                 key={tab.id}
                 onClick={() => onSelectTab(tab.id)}
+                aria-current={isActive ? 'page' : undefined}
                 className={`h-9 px-3 rounded-xl border text-xs font-semibold whitespace-nowrap inline-flex items-center gap-1.5 transition-colors cursor-pointer ${
                   isActive
                     ? 'bg-indigo-600 text-white border-indigo-500 shadow-sm'
@@ -179,10 +152,11 @@ export const VoiceNavbar: React.FC<VoiceNavbarProps> = ({
               >
                 <Icon className="w-3.5 h-3.5" />
                 <span>{tab.label}</span>
+                {tab.id === 'library' && savedVoicesCount > 0 && <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-indigo-500/20 text-indigo-200">{savedVoicesCount}</span>}
               </button>
             );
           })}
-        </div>
+        </nav>
       </div>
     </header>
   );

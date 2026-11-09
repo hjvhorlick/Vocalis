@@ -14,6 +14,8 @@ import {
   Volume2,
 } from 'lucide-react';
 import { VoiceAvatar } from './VoiceAvatar';
+import { VoiceSourceNote } from './VoiceSourceNote';
+import { VoiceRating } from './VoiceRating';
 
 interface VoiceLibraryProps {
   models: VoiceModelConfig[];
@@ -160,6 +162,9 @@ export const VoiceLibrary: React.FC<VoiceLibraryProps> = ({
                   </div>
                 </div>
 
+                <VoiceSourceNote model={model} />
+                <VoiceRating voiceId={model.id} voiceName={model.name} />
+
                 {/* Actions */}
                 <div className="pt-3 border-t border-slate-800 flex items-center justify-between gap-2">
                   <button
@@ -201,7 +206,7 @@ export const VoiceLibrary: React.FC<VoiceLibraryProps> = ({
 
                     {model.isCustom && (
                       <button
-                        onClick={() => onDeleteCustomModel(model.id)}
+                        onClick={() => { if (window.confirm('Delete this voice profile? Its sound bank will also be removed if no other profile uses it. Export a backup first if needed.')) onDeleteCustomModel(model.id); }}
                         className="p-1.5 rounded-lg text-slate-500 hover:text-rose-400 transition-colors"
                         title="Delete Custom Voice"
                       >

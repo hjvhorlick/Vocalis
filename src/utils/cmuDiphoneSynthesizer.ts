@@ -14,6 +14,7 @@ const SAMPLE_RATE = 16000;
 const packs = new Map<string, Promise<VoicePack>>();
 
 export function speakerForModel(model: VoiceModelConfig): 'slt' | 'bdl' {
+  if (model.baseVoiceId) return model.baseVoiceId;
   if (model.gender === 'Male') return 'bdl';
   if (model.gender === 'Female') return 'slt';
   return model.baseVoiceId || 'slt';
@@ -31,6 +32,10 @@ async function loadVoicePack(speaker: 'slt' | 'bdl'): Promise<VoicePack> {
     if (!manifestResponse.ok || !audioResponse.ok) throw new Error(`Could not load the CMU ARCTIC ${speaker.toUpperCase()} voice pack.`);
     const manifest = await manifestResponse.json() as DiphoneManifest;
     const buffer = await audioResponse.arrayBuffer();
+    if (manifest.format !== 'vocalis-cmu-diphones-v1' || manifest.speakerId !== speaker || manifest.sampleRate !== SAMPLE_RATE || buffer.byteLength % 2 || !manifest.units || typeof manifest.units !== 'object') throw new Error('Invalid packaged CMU voice manifest.');
+    for (const entry of Object.values(manifest.units)) {
+      if (!entry || !Number.isSafeInteger(entry.offset) || entry.offset < 0 || entry.offset % 2 || !Number.isSafeInteger(entry.length) || entry.length < 1 || entry.offset + entry.length * 2 > buffer.byteLength) throw new Error('CMU voice unit points outside the packaged audio.');
+    }
     return { manifest, samples: new Int16Array(buffer) };
   })();
   packs.set(speaker, request);
@@ -50,7 +55,7 @@ function crossfadeJoin(chunks: Float32Array[]): Float32Array {
   if (!chunks.length) return new Float32Array(0);
   if (chunks.length === 1) return chunks[0];
   const overlap = Math.floor(SAMPLE_RATE * 0.006);
-  const total = chunks.reduce((sum, chunk) => sum + chunk.length, 0) - overlap * (chunks.length - 1);
+  const total = chunks.reduce((sum, chunk) => sum + chunk.length, 0);
   const output = new Float32Array(total);
   let cursor = 0;
   for (const chunk of chunks) {
@@ -68,7 +73,7 @@ function crossfadeJoin(chunks: Float32Array[]): Float32Array {
     output.set(chunk.subarray(blend), cursor);
     cursor += chunk.length - blend;
   }
-  return output;
+  return output.slice(0, cursor);
 }
 
 export async function renderCmuDiphones(
@@ -83,7 +88,7 @@ export async function renderCmuDiphones(
   let fallbackDiphones = 0;
   let cursor = absoluteOffset;
 
-  try {
+  {
     const pack = await loadVoicePack(speaker);
     const stream = ['pau', ...phones.map((phone) => phone.toLowerCase()), 'pau'];
     for (let i = 0; i < stream.length - 1; i++) {
@@ -101,15 +106,6 @@ export async function renderCmuDiphones(
         cursor += chunk.length;
         fallbackDiphones++;
       }
-    }
-  } catch {
-    // If local corpus files are missing or fail integrity checks, retain a
-    // deterministic formant fallback rather than calling a remote service.
-    for (const phone of phones) {
-      const chunk = fallbackPhone(phone, cursor);
-      chunks.push(chunk);
-      cursor += chunk.length;
-      fallbackDiphones++;
     }
   }
 
@@ -230,7 +226,7 @@ export function processCmuVoice(samples: Float32Array, model: VoiceModelConfig):
   const stylePitch = model.toneStyle === 'deep' ? 0.92 : model.toneStyle === 'energetic' ? 1.06 : 1;
   const pitch = resample(samples, model.pitch * stylePitch);
   const rateStyle = model.toneStyle === 'deep' ? 0.92 : model.toneStyle === 'energetic' ? 1.1 : 1;
-  const stretch = wsolaStretch(pitch, Math.floor(pitch.length / Math.max(0.55, model.rate * rateStyle)));
+  const stretch = wsolaStretch(pitch, Math.floor(samples.length / Math.max(0.55, model.rate * rateStyle)));
   return applyStyle(stretch, model.toneStyle);
 }
 

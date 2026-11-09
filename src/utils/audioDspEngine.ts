@@ -175,6 +175,7 @@ export function playTransformedVoice(
     isAudioPlaying = true;
 
     source.onended = () => {
+      if (activeSourceNode !== source) return;
       isAudioPlaying = false;
       activeSourceNode = null;
       if (callbacks?.onEnded) callbacks.onEnded();

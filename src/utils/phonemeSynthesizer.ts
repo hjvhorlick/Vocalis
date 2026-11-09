@@ -74,7 +74,7 @@ async function loadDictionary(): Promise<Map<string, string[]>> {
           const divider = row.indexOf('|');
           if (divider < 1) continue;
           const word = row.slice(0, divider);
-          if (!words.has(word)) words.set(word, row.slice(divider + 1).trim().split(/\s+/));
+          if (!words.has(word)) words.set(word, row.slice(divider + 1).split('#')[0].trim().split(/\s+/));
         }
       }
     } catch (error) {
@@ -110,7 +110,7 @@ function numberWords(value: string): string[] | null {
   };
   if (n < 1000) return underThousand(n);
   if (n < 1_000_000) return [...underThousand(Math.floor(n / 1000)), 'thousand', ...underThousand(n % 1000)];
-  if (n < 1_000_000_000) return [...underThousand(Math.floor(n / 1_000_000)), 'million', ...underThousand(n % 1_000_000)];
+  if (n < 1_000_000_000) return [...underThousand(Math.floor(n / 1_000_000)), 'million', ...(numberWords(String(n % 1_000_000)) || []).filter(word => word !== 'zero')];
   return null;
 }
 
@@ -493,6 +493,7 @@ function writeWav(samples: Float32Array, volume: number): Blob {
 }
 
 export async function synthesizeText(text: string, model: VoiceModelConfig): Promise<SynthesisResult> {
+  if (model.synthesisMethod === 'recorded-units') throw new Error('Use the recorded sound-bank renderer for this profile.');
   const dictionary = await loadDictionary();
   const synthesisMethod = model.synthesisMethod ?? 'cmu-arctic';
   const matches = getWordMatches(text);

@@ -5,3 +5,12 @@ dist
 .DS_Store
 __pycache__/
 *.pyc
+
+# Private, potentially large recording exports
+*.vproject
+*.vvoice
+
+.cache/
+
+# Generated handoff packages
+exports/

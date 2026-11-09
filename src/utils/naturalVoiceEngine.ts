@@ -1,8 +1,13 @@
+import { synthesizeText, preparePronunciationDictionary } from './phonemeSynthesizer';
+import { prepareCmuVoice } from './cmuDiphoneSynthesizer';
+import { renderVoiceBank } from './voiceBankEngine';
+import { loadVoiceBank } from './voiceBankStorage';
 import {
   NATURAL_HUMAN_SAMPLES,
   HumanVoiceSample,
   loadHumanVoiceBuffer,
   ATTRIBUTION_DETAILS,
+  getSharedAudioContext,
 } from './naturalHumanAudio';
 import {
   VoiceDspConfig,
@@ -30,7 +35,8 @@ export interface VoiceModelConfig {
   isCustom?: boolean;
   baseSampleId: string; // ID of the natural human voice recording used as source
   baseVoiceId?: 'slt' | 'bdl'; // Optional alias for diphone engine
-  synthesisMethod?: 'cmu-arctic' | 'formant'; // Optional method tag
+  synthesisMethod?: 'cmu-arctic' | 'formant' | 'recorded-units';
+  unitVoiceId?: string; // Optional method tag
   throatWarmth?: number; // Formant F1 (-12 to +12 dB)
   oralClarity?: number; // Formant F2 (-12 to +12 dB)
   airPresence?: number; // Formant F3 (-12 to +12 dB)
@@ -1078,20 +1084,13 @@ export function getUserAudioBuffer(): AudioBuffer | null {
   return userRecordedAudioBuffer;
 }
 
-/**
- * Preload foundational natural human speech recordings
- */
+/** Preload the actual synthesis resources, not an unrelated demo recording. */
 export async function initializeLocalSpeechEngine(voice?: VoiceModelConfig): Promise<void> {
+  if (voice?.synthesisMethod === 'recorded-units') return;
   try {
-    if (typeof window !== 'undefined') {
-      const url = voice?.baseSampleId
-        ? NATURAL_HUMAN_SAMPLES.find((s) => s.id === voice.baseSampleId)?.url || NATURAL_HUMAN_SAMPLES[0].url
-        : NATURAL_HUMAN_SAMPLES[0].url;
-      await loadHumanVoiceBuffer(url);
-    }
-  } catch {
-    // Non-blocking preload
-  }
+    await preparePronunciationDictionary();
+    if (voice?.synthesisMethod !== 'formant') await prepareCmuVoice(voice || PRESET_VOICE_MODELS[0]);
+  } catch (error) { console.warn('Local speech resources will be retried on playback:', error); }
 }
 
 /**
@@ -1109,84 +1108,126 @@ export async function resolveBufferForModel(model: VoiceModelConfig): Promise<Au
   return await loadHumanVoiceBuffer(sample.url);
 }
 
-/**
- * Play authentic human voice through Web Audio output.
- * 100% genuine real human audio recordings — NO AI, NO window.speechSynthesis.
- */
-export async function speakRealWords(
-  text: string,
-  model: VoiceModelConfig,
-  callbacks?: {
-    onStart?: () => void;
-    onWord?: (charIndex: number, charLength: number) => void;
-    onEnd?: () => void;
-    onError?: (err: any) => void;
-  }
-): Promise<void> {
-  try {
-    const buffer = await resolveBufferForModel(model);
+type SpeechCallbacks = {
+  onStart?: () => void;
+  onWord?: (charIndex: number, charLength: number) => void;
+  onEnd?: () => void;
+  onCancel?: () => void;
+  onError?: (error: unknown) => void;
+};
+type RenderedSpeech = { audioUrl: string; duration: number; wordTimings: { charIndex: number; charLength: number; start: number; end: number }[] };
+let speechGeneration = 0;
+let wordTimer: ReturnType<typeof setInterval> | null = null;
+let activeSpeechEnd: (() => void) | undefined;
+let activeSpeechCancel: (() => void) | undefined;
 
-    playTransformedVoice(
-      buffer,
-      {
-        pitch: model.pitch,
-        rate: model.rate,
-        volume: model.volume,
-        toneStyle: model.toneStyle,
-        throatWarmth: model.throatWarmth,
-        oralClarity: model.oralClarity,
-        airPresence: model.airPresence,
-      },
-      {
-        onStart: () => {
-          if (callbacks?.onStart) callbacks.onStart();
-        },
-        onEnded: () => {
-          if (callbacks?.onEnd) callbacks.onEnd();
-        },
-        onError: (err) => {
-          if (callbacks?.onError) callbacks.onError(err);
-          if (callbacks?.onEnd) callbacks.onEnd();
-        },
-      }
-    );
-  } catch (err: any) {
-    console.error('Error in speakRealWords:', err);
-    if (callbacks?.onError) callbacks.onError(err);
-    if (callbacks?.onEnd) callbacks.onEnd();
-  }
+function reportSpeechError(error: unknown) {
+  if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('vocalis-speech-error', { detail: error instanceof Error ? error.message : 'Speech generation failed.' }));
 }
 
-/**
- * Stop any ongoing voice playback
- */
-export function stopSpeaking(): void {
+async function renderTextForModel(text: string, model: VoiceModelConfig): Promise<RenderedSpeech> {
+  if (!text.trim() || text.length > 1000) throw new Error('Enter between 1 and 1,000 characters for one speech render.');
+  let rendered: RenderedSpeech;
+  const isUserBank = model.synthesisMethod === 'recorded-units';
+  if (isUserBank) {
+    if (!model.unitVoiceId) throw new Error('This profile has no sound bank. Import and install its .vvoice file.');
+    const result = await renderVoiceBank(text, await loadVoiceBank(model.unitVoiceId));
+    rendered = { audioUrl: URL.createObjectURL(result.audio), duration: result.duration, wordTimings: result.wordTimings };
+  } else {
+    rendered = await synthesizeText(text, model);
+  }
+  // The base engine already applies pitch/rate/style. Only apply those here for
+  // user banks; EQ can be applied to either path. Do not double-process speech.
+  const extraDsp = isUserBank ? (model.pitch !== 1 || model.rate !== 1 || model.volume !== 1 || model.toneStyle !== 'natural') : false;
+  if (extraDsp || model.throatWarmth || model.oralClarity || model.airPresence) {
+    const decoder = new OfflineAudioContext(1, 1, 24000);
+    try {
+      const buffer = await decoder.decodeAudioData(await (await fetch(rendered.audioUrl)).arrayBuffer());
+      const config: VoiceDspConfig = { ...model, pitch: isUserBank ? model.pitch : 1, rate: isUserBank ? model.rate : 1, volume: isUserBank ? model.volume : 1, toneStyle: isUserBank ? model.toneStyle : 'natural' };
+      const final = await renderTransformedWav(buffer, config);
+      const factor = Math.max(0.4, Math.min(2.5, config.pitch * config.rate));
+      rendered.wordTimings = rendered.wordTimings.map(timing => ({ ...timing, start: timing.start / factor, end: timing.end / factor }));
+      URL.revokeObjectURL(rendered.audioUrl);
+      rendered = { ...rendered, audioUrl: final.wavUrl, duration: final.duration };
+    } catch (error) { URL.revokeObjectURL(rendered.audioUrl); throw error; }
+  }
+  return rendered;
+}
+
+function cancelSpeech(notify: boolean) {
+  speechGeneration++;
+  if (wordTimer) clearInterval(wordTimer);
+  wordTimer = null;
+  const end = activeSpeechCancel || activeSpeechEnd; activeSpeechEnd = undefined; activeSpeechCancel = undefined;
   stopTransformedVoice();
+  if (notify) end?.();
 }
 
-/**
- * Render voice into a downloadable 16-bit uncompressed WAV file
- */
-export async function generateSpokenAudioWav(
-  text: string,
-  model: VoiceModelConfig
-): Promise<{ audioUrl: string; source: 'vocalis-natural-dsp'; duration: number }> {
-  const buffer = await resolveBufferForModel(model);
-  const { wavUrl, duration } = await renderTransformedWav(buffer, {
-    pitch: model.pitch,
-    rate: model.rate,
-    volume: model.volume,
-    toneStyle: model.toneStyle,
-    throatWarmth: model.throatWarmth,
-    oralClarity: model.oralClarity,
-    airPresence: model.airPresence,
-  });
+/** Speak the actual supplied text, not the profile's unrelated source clip. */
+export async function speakRealWords(text: string, model: VoiceModelConfig, callbacks?: SpeechCallbacks): Promise<void> {
+  cancelSpeech(false);
+  const token = speechGeneration;
+  activeSpeechEnd = callbacks?.onEnd;
+  activeSpeechCancel = callbacks?.onCancel;
+  let url: string | undefined;
+  try {
+    const context = getSharedAudioContext(); // Resume while still in the user gesture.
+    const rendered = await renderTextForModel(text, model); url = rendered.audioUrl;
+    if (token !== speechGeneration) return;
+    const buffer = await context.decodeAudioData(await (await fetch(url)).arrayBuffer());
+    if (token !== speechGeneration) return;
+    const started = context.currentTime;
+    let wordIndex = 0;
+    playTransformedVoice(buffer, { pitch: 1, rate: 1, volume: 1, toneStyle: 'natural' }, {
+      onStart: () => {
+        callbacks?.onStart?.();
+        if (callbacks?.onWord) wordTimer = setInterval(() => {
+          if (token !== speechGeneration) return;
+          const elapsed = context.currentTime - started;
+          while (wordIndex < rendered.wordTimings.length && rendered.wordTimings[wordIndex].start <= elapsed) {
+            const timing = rendered.wordTimings[wordIndex++]; callbacks.onWord?.(timing.charIndex, timing.charLength);
+          }
+        }, 30);
+      },
+      onEnded: () => {
+        if (token !== speechGeneration) return;
+        if (wordTimer) clearInterval(wordTimer); wordTimer = null; activeSpeechEnd = undefined; activeSpeechCancel = undefined;
+        callbacks?.onEnd?.();
+      },
+      onError: error => {
+        if (token !== speechGeneration) return;
+        if (wordTimer) clearInterval(wordTimer); wordTimer = null; activeSpeechEnd = undefined; activeSpeechCancel = undefined;
+        reportSpeechError(error); if (callbacks?.onError) callbacks.onError(error); else callbacks?.onEnd?.();
+      },
+    });
+  } catch (error) {
+    if (token !== speechGeneration) return;
+    activeSpeechEnd = undefined; activeSpeechCancel = undefined; reportSpeechError(error);
+    if (callbacks?.onError) callbacks.onError(error); else callbacks?.onEnd?.();
+  } finally { if (url) URL.revokeObjectURL(url); }
+}
 
-  return {
-    audioUrl: wavUrl,
-    source: 'vocalis-natural-dsp',
-    duration,
-  };
+/** Original imported recordings remain separately auditionable, clearly labelled. */
+export async function auditionSourceRecording(model: VoiceModelConfig): Promise<void> {
+  cancelSpeech(true);
+  const token = speechGeneration;
+  try {
+    getSharedAudioContext();
+    if (model.synthesisMethod === 'recorded-units') throw new Error('Your sound bank has no imported source demo. Audition its generated speech instead.');
+    const buffer = await resolveBufferForModel(model);
+    if (token !== speechGeneration) return;
+    playTransformedVoice(buffer, model, { onError: reportSpeechError });
+  } catch (error) { if (token === speechGeneration) reportSpeechError(error); }
+}
+
+export function stopSpeaking(): void { cancelSpeech(true); }
+
+/** WAV export uses the same text renderer as playback. Caller owns the object URL. */
+export async function generateSpokenAudioWav(text: string, model: VoiceModelConfig): Promise<{ audioUrl: string; source: 'vocalis-local-synthesis'; duration: number }> {
+  try {
+    const rendered = await renderTextForModel(text, model);
+    return { audioUrl: rendered.audioUrl, source: 'vocalis-local-synthesis', duration: rendered.duration };
+  } catch (error) { reportSpeechError(error); throw error; }
 }
 
 export { getDspAnalyser, isDspPlaying };

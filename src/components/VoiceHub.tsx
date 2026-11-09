@@ -26,13 +26,15 @@ import {
   ExternalLink,
 } from 'lucide-react';
 import { VoiceAvatar } from './VoiceAvatar';
+import { VoiceSourceNote } from './VoiceSourceNote';
+import { VoiceRating } from './VoiceRating';
 
 interface VoiceHubProps {
   voices: VoiceModelConfig[];
   activeVoice: VoiceModelConfig;
   onSelectVoice: (voice: VoiceModelConfig) => void;
   onUpdateActiveVoice: (voice: VoiceModelConfig) => void;
-  onSaveTake: (take: GeneratedTake) => void;
+  onSaveTake: (take: GeneratedTake) => Promise<void>;
   onOpenVoiceCreator: (baseVoice?: VoiceModelConfig) => void;
 }
 
@@ -65,8 +67,10 @@ export const VoiceHub: React.FC<VoiceHubProps> = ({
   const [isExportingWav, setIsExportingWav] = useState(false);
   const [exportedWavUrl, setExportedWavUrl] = useState<string | null>(null);
   const [exportedDuration, setExportedDuration] = useState(0);
+  const [exportedInfo, setExportedInfo] = useState<{ voiceName: string; text: string } | null>(null);
   const [isPlayingExportedWav, setIsPlayingExportedWav] = useState(false);
   const [takeSavedToast, setTakeSavedToast] = useState(false);
+  const [savingTake, setSavingTake] = useState(false);
   const audioPlayerRef = useRef<HTMLAudioElement | null>(null);
 
   // Filter voices
@@ -144,6 +148,7 @@ export const VoiceHub: React.FC<VoiceHubProps> = ({
       const textToRender = customScript.trim() || activeVoice.samplePhrase;
       const { audioUrl, duration } = await generateSpokenAudioWav(textToRender, activeVoice);
       setExportedWavUrl(audioUrl);
+      setExportedInfo({ voiceName: activeVoice.name, text: textToRender });
       setExportedDuration(duration);
       if (audioPlayerRef.current) {
         audioPlayerRef.current.src = audioUrl;
@@ -157,21 +162,22 @@ export const VoiceHub: React.FC<VoiceHubProps> = ({
   };
 
   // Save exported WAV take to vault
-  const handleSaveTake = () => {
-    if (!exportedWavUrl) return;
-    const textSnippet = customScript.trim() || activeVoice.samplePhrase;
+  const handleSaveTake = async () => {
+    if (!exportedWavUrl || !exportedInfo || savingTake) return;
+    const textSnippet = exportedInfo.text;
     const take: GeneratedTake = {
       id: 'take-' + Date.now(),
-      title: `${activeVoice.name} - ${textSnippet.slice(0, 32)}...`,
+      title: `${exportedInfo.voiceName} - ${textSnippet.slice(0, 32)}...`,
       audioUrl: exportedWavUrl,
-      voiceName: activeVoice.name,
+      voiceName: exportedInfo.voiceName,
       durationSeconds: Math.round(exportedDuration || 4),
       createdAt: Date.now(),
       textSnippet,
     };
-    onSaveTake(take);
-    setTakeSavedToast(true);
-    setTimeout(() => setTakeSavedToast(false), 2400);
+    setSavingTake(true);
+    try { await onSaveTake(take); setTakeSavedToast(true); setTimeout(() => setTakeSavedToast(false), 2400); }
+    catch { /* The app displays the persistence error. */ }
+    finally { setSavingTake(false); }
   };
 
   // Preset script templates
@@ -183,11 +189,11 @@ export const VoiceHub: React.FC<VoiceHubProps> = ({
     },
     {
       label: 'Commercial',
-      text: 'Experience sound redefined. Crisp acoustic balance, natural human cadence, and zero artificial distortion.',
+      text: 'Welcome to our studio. Find a comfortable place, take a deep breath, and listen to the next story.',
     },
     {
       label: 'News Flash',
-      text: 'This is the hourly report. Studio acoustic measurements verify pristine human audio quality across all global accents.',
+      text: 'This is the hourly report. The afternoon train will depart from platform two, with the next service arriving at half past three.',
     },
   ];
 
@@ -252,6 +258,10 @@ export const VoiceHub: React.FC<VoiceHubProps> = ({
             </button>
           </div>
         </div>
+
+        <VoiceRating key={activeVoice.id} voiceId={activeVoice.id} voiceName={activeVoice.name} />
+
+        <VoiceSourceNote model={activeVoice} />
 
         {/* Script Input & Template Bar */}
         <div className="space-y-2">
@@ -388,7 +398,7 @@ export const VoiceHub: React.FC<VoiceHubProps> = ({
               </div>
               <div>
                 <span className="text-xs font-bold text-white block">
-                  Exported WAV File Ready ({Math.round(exportedDuration)}s)
+                  Exported WAV: {exportedInfo?.voiceName} ({Math.round(exportedDuration)}s)
                 </span>
                 <span className="text-[10px] text-slate-400">
                   Ready to download and use as your own copy
@@ -399,6 +409,7 @@ export const VoiceHub: React.FC<VoiceHubProps> = ({
             <div className="flex items-center gap-2">
               <button
                 onClick={handleSaveTake}
+                disabled={savingTake}
                 className="h-8 px-3 rounded-lg bg-slate-900 hover:bg-slate-800 text-slate-200 border border-slate-700 text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer"
               >
                 {takeSavedToast ? (
@@ -414,7 +425,7 @@ export const VoiceHub: React.FC<VoiceHubProps> = ({
 
               <a
                 href={exportedWavUrl}
-                download={`${activeVoice.name.toLowerCase().replace(/\s+/g, '-')}-narration.wav`}
+                download={`${(exportedInfo?.voiceName || activeVoice.name).toLowerCase().replace(/\s+/g, '-')}-narration.wav`}
                 className="h-8 px-3.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold flex items-center gap-1.5 shadow transition-colors"
               >
                 <Download className="w-3.5 h-3.5" /> Download Audio File (.wav)
@@ -433,22 +444,24 @@ export const VoiceHub: React.FC<VoiceHubProps> = ({
           <div>
             <div className="flex items-center gap-2">
               <h3 className="font-extrabold text-white text-lg tracking-tight">
-                Real Human Audio Voice Catalog
+                Voice Profile Catalog
               </h3>
               <span className="text-xs bg-indigo-500/20 text-indigo-300 font-mono px-2 py-0.5 rounded-full border border-indigo-500/30">
-                {voices.length} Real Human Speakers
+                {voices.length} Voice Profiles
               </span>
             </div>
             <p className="text-xs text-slate-400 mt-0.5">
-              Browse, audition, and test any voice with custom scripts &bull; 100% Genuine Studio Recordings
+              Browse and test profiles with typed text. Source clips and synthesis bases are different.
             </p>
           </div>
 
           <div className="flex items-center gap-2 bg-emerald-950/40 border border-emerald-500/30 px-3 py-1.5 rounded-xl text-emerald-300 text-xs">
             <ShieldCheck className="w-4 h-4 text-emerald-400 shrink-0" />
-            <span className="font-medium">100% Real Human Voice Actors &bull; Zero AI</span>
+            <span className="font-medium">Local synthesis &bull; No neural models</span>
           </div>
         </div>
+
+        <p className="text-xs text-slate-400">Grade each voice from 1 to 5 stars. Your personal ratings are saved in this browser, not shared publicly.</p>
 
         {/* Filter and Search Bar */}
         <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3 pt-1">
@@ -580,6 +593,8 @@ export const VoiceHub: React.FC<VoiceHubProps> = ({
                   </div>
                 </div>
 
+                <VoiceRating voiceId={voice.id} voiceName={voice.name} />
+
                 {/* Bottom Card Actions */}
                 <div className="pt-2 border-t border-slate-900 flex items-center justify-between gap-2">
                   <button
@@ -590,7 +605,7 @@ export const VoiceHub: React.FC<VoiceHubProps> = ({
                         ? 'bg-rose-600 hover:bg-rose-500 text-white shadow-rose-600/40 animate-pulse'
                         : 'bg-slate-900 hover:bg-slate-800 text-slate-200 border border-slate-700/80 hover:border-slate-600'
                     }`}
-                    title="Audition real human recording with script"
+                    title="Generate the displayed script with this profile"
                   >
                     {isAuditioning ? (
                       <>
