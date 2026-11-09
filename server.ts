@@ -1,152 +1,63 @@
-import express, { Request, Response } from 'express';
+import express from 'express';
+import type { Request, Response } from 'express';
 import { createServer as createHttpServer } from 'node:http';
-import { createServer as createViteServer } from 'vite';
-import path from 'path';
-import fs from 'fs';
-import { exec } from 'child_process';
-import { fileURLToPath } from 'url';
+import path from 'node:path';
+import fs from 'node:fs/promises';
+import { execFile } from 'node:child_process';
+import { promisify } from 'node:util';
+import { randomUUID } from 'node:crypto';
+import { fileURLToPath } from 'node:url';
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
+const root = path.dirname(fileURLToPath(import.meta.url));
+const runFile = promisify(execFile);
+const production = process.env.NODE_ENV === 'production';
 
 async function startServer() {
   const app = express();
-  const PORT = process.env.PORT || 3000;
-
-  app.use(express.json({ limit: '30mb' }));
-  app.use(express.urlencoded({ extended: true, limit: '30mb' }));
-
-  // Status endpoint confirming 100% Vocalis local voice generator
+  app.disable('x-powered-by');
+  const port = Number(process.env.PORT || 3000);
   app.get('/api/voice/status', (_req: Request, res: Response) => {
-    res.json({
-      engine: 'Vocalis Speech Synthesizer & Voice Generator',
-      mode: '100% Local Voice Synthesis & Waveform Generator',
-      externalTTSFiles: false,
-      status: 'active',
-    });
+    res.json({ engine: 'Vocalis', mode: 'Local non-neural synthesis; experimental sound-bank builder', status: 'active', audioUploads: false });
   });
 
-  // 1-Click ZIP Project Download Endpoint with explicit Content-Length
-  app.get('/api/project/download-zip', (_req: Request, res: Response) => {
-    exec('python3 scripts/export_zip.py', (err) => {
-      const zipFile = path.join(process.cwd(), 'vocalis-project.zip');
-      if (err || !fs.existsSync(zipFile)) {
-        return res.status(500).json({ error: 'Failed to generate project zip' });
-      }
-      const zipBuffer = fs.readFileSync(zipFile);
-      res.setHeader('Content-Type', 'application/zip');
-      res.setHeader('Content-Length', zipBuffer.length.toString());
-      res.setHeader('Content-Disposition', 'attachment; filename="vocalis-project.zip"');
-      res.end(zipBuffer);
+  // Source export is development-only. No token collection, shell interpolation,
+  // repository mutation, arbitrary file reading, or public production source API.
+  app.use('/api/project', (_req, res, next) => {
+    if (production) { res.status(404).json({ error: 'Source export is disabled in production.' }); return; }
+    next();
+  });
+  for (const endpoint of ['download-zip', 'download-base64']) {
+    app.get(`/api/project/${endpoint}`, async (_req, res) => {
+      const directory = path.join(root, '.cache');
+      const archive = path.join(directory, `vocalis-${randomUUID()}.zip`);
+      try {
+        await fs.mkdir(directory, { recursive: true });
+        await runFile('python3', [path.join(root, 'scripts/export_zip.py'), '--output', archive], { cwd: root, timeout: 60000 });
+        const data = await fs.readFile(archive);
+        if (endpoint === 'download-base64') res.json({ filename: 'vocalis-project.zip', base64: data.toString('base64'), size: data.length });
+        else res.type('application/zip').attachment('vocalis-project.zip').send(data);
+      } catch {
+        res.status(500).json({ error: 'Source export failed. Check that Python 3 is installed, or transfer the repository directly.' });
+      } finally { await fs.rm(archive, { force: true }).catch(() => {}); }
     });
-  });
+  }
+  app.use('/api', (_req, res) => { res.status(404).json({ error: 'Unknown endpoint.' }); });
 
-  // 100% Reliable In-Memory Base64 ZIP Export for iFrames
-  app.get('/api/project/download-base64', (_req: Request, res: Response) => {
-    exec('python3 scripts/export_zip.py', (err) => {
-      const zipFile = path.join(process.cwd(), 'vocalis-project.zip');
-      if (err || !fs.existsSync(zipFile)) {
-        return res.status(500).json({ error: 'Failed to generate project zip' });
-      }
-      const zipBuffer = fs.readFileSync(zipFile);
-      res.json({
-        success: true,
-        filename: 'vocalis-project.zip',
-        size: zipBuffer.length,
-        base64: zipBuffer.toString('base64'),
-      });
-    });
-  });
-
-  // Return all project files for in-browser file browser & copy
-  app.get('/api/project/files', (_req: Request, res: Response) => {
-    try {
-      const fileList: { path: string; size: number; content: string }[] = [];
-      const walk = (dir: string) => {
-        const entries = fs.readdirSync(dir, { withFileTypes: true });
-        for (const entry of entries) {
-          const fullPath = path.join(dir, entry.name);
-          const relPath = path.relative(process.cwd(), fullPath);
-          if (
-            relPath.startsWith('node_modules') ||
-            relPath.startsWith('dist') ||
-            relPath.startsWith('.git') ||
-            relPath.endsWith('.zip') ||
-            relPath.startsWith('scripts')
-          ) {
-            continue;
-          }
-          if (entry.isDirectory()) {
-            walk(fullPath);
-          } else {
-            const stat = fs.statSync(fullPath);
-            const content = fs.readFileSync(fullPath, 'utf-8');
-            fileList.push({ path: relPath, size: stat.size, content });
-          }
-        }
-      };
-      walk(process.cwd());
-      res.json({ files: fileList });
-    } catch (err: any) {
-      res.status(500).json({ error: err.message });
-    }
-  });
-  app.post('/api/project/push-github', (req: Request, res: Response) => {
-    const { token } = req.body;
-    if (!token || typeof token !== 'string') {
-      return res.status(400).json({ error: 'GitHub Personal Access Token is required' });
-    }
-    const cleanToken = token.trim();
-    const remoteUrl = `https://${encodeURIComponent(cleanToken)}@github.com/hjvhorlick/Vocalis.git`;
-    
-    // Ensure all changes are committed before pushing
-    exec(`git config --global --add safe.directory /app/applet; git add .; git commit -m "feat: complete Vocalis voice studio" || true; git push "${remoteUrl}" main --force`, (err, _stdout, stderr) => {
-      if (err) {
-        const errorMsg = stderr || err.message;
-        const isAuthFail = errorMsg.includes('403') || errorMsg.includes('Authentication') || errorMsg.includes('Invalid username or password');
-        return res.status(400).json({
-          error: isAuthFail
-            ? 'GitHub rejected the token. Please make sure your token is valid and has "repo" permission checked.'
-            : errorMsg,
-        });
-      }
-      res.json({
-        success: true,
-        message: 'Successfully pushed all files to https://github.com/hjvhorlick/Vocalis',
-      });
-    });
-  });
-
-  // Use one HTTP server for Express and Vite. In middleware mode, Vite otherwise
-  // opens a separate HMR-only port, which can be mistaken for the app preview.
   const httpServer = createHttpServer(app);
-
-  // Mount Vite in development or static in production
-  if (process.env.NODE_ENV === 'production') {
-    app.use(express.static(path.join(__dirname, 'dist')));
-    app.get('*', (_req: Request, res: Response) => {
-      res.sendFile(path.join(__dirname, 'dist', 'index.html'));
+  if (production) {
+    app.use(express.static(path.join(root, 'dist')));
+    app.get('/{*route}', (req, res) => {
+      if (path.extname(req.path)) { res.status(404).send('Asset not found'); return; }
+      res.sendFile(path.join(root, 'dist', 'index.html'));
     });
   } else {
+    const { createServer: createViteServer } = await import('vite');
     const vite = await createViteServer({
-      server: {
-        middlewareMode: true,
-        host: '0.0.0.0',
-        allowedHosts: ['.e2b.app'],
-        port: 3000,
-        hmr: { server: httpServer },
-      },
+      server: { middlewareMode: true, host: '0.0.0.0', allowedHosts: ['.e2b.app'], hmr: { server: httpServer } },
       appType: 'spa',
     });
     app.use(vite.middlewares);
   }
-
-  httpServer.listen(Number(PORT), '0.0.0.0', () => {
-    console.log(`Vocalis Voice Studio Server listening on http://0.0.0.0:${PORT}`);
-  });
+  httpServer.listen(port, '0.0.0.0', () => console.log(`Vocalis listening on http://0.0.0.0:${port} (${production ? 'production' : 'development'})`));
 }
-
-startServer().catch((err) => {
-  console.error('Server startup failed:', err);
-  process.exit(1);
-});
+startServer().catch(error => { console.error('Server startup failed:', error); process.exit(1); });

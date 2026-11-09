@@ -10,6 +10,7 @@ import {
   UserCheck,
 } from 'lucide-react';
 import { VoiceAvatar } from './VoiceAvatar';
+import { VoiceRating } from './VoiceRating';
 
 interface PredefinedVoiceListProps {
   voices: VoiceModelConfig[];
@@ -216,6 +217,8 @@ export const PredefinedVoiceList: React.FC<PredefinedVoiceListProps> = ({
                   </p>
                 </div>
               </div>
+
+              <VoiceRating voiceId={voice.id} voiceName={voice.name} />
 
               {/* Bottom Card Actions */}
               <div className="pt-2 border-t border-slate-900 flex items-center justify-between gap-2">

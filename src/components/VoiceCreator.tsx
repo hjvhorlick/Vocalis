@@ -28,12 +28,14 @@ import {
   RefreshCw,
 } from 'lucide-react';
 import { VoiceAvatar } from './VoiceAvatar';
+import { VoiceSourceNote } from './VoiceSourceNote';
+import { VoiceRating } from './VoiceRating';
 
 interface VoiceCreatorProps {
   voices: VoiceModelConfig[];
   activeVoice: VoiceModelConfig;
   onSaveModel: (newModel: VoiceModelConfig) => void;
-  onSaveTake: (take: GeneratedTake) => void;
+  onSaveTake: (take: GeneratedTake) => Promise<void>;
   onGoToHub: (voice?: VoiceModelConfig) => void;
 }
 
@@ -134,7 +136,8 @@ export const VoiceCreator: React.FC<VoiceCreatorProps> = ({
     archetype: archetype.trim() || 'Custom Speaker',
     description: description.trim() || 'A custom crafted vocal model.',
     gender,
-    synthesisMethod: 'cmu-arctic',
+    synthesisMethod: voices.find(v => v.id === selectedBaseId)?.synthesisMethod || 'cmu-arctic',
+    unitVoiceId: voices.find(v => v.id === selectedBaseId)?.unitVoiceId,
     baseSampleId: voices.find((v) => v.id === selectedBaseId)?.baseSampleId || 'cmu-slt-1',
     baseVoiceId: voices.find((v) => v.id === selectedBaseId)?.baseVoiceId || 'slt',
     realSpeakerName: voices.find((v) => v.id === selectedBaseId)?.realSpeakerName || 'Original Speaker',
@@ -210,7 +213,7 @@ export const VoiceCreator: React.FC<VoiceCreatorProps> = ({
         createdAt: Date.now(),
         textSnippet: finalModel.samplePhrase,
       };
-      onSaveTake(newTake);
+      await onSaveTake(newTake);
 
       setSavedTakeUrl(audioUrl);
       setSavedTakeDuration(duration);
@@ -251,10 +254,12 @@ export const VoiceCreator: React.FC<VoiceCreatorProps> = ({
           <div className="flex items-center gap-2">
             <span className="text-xs bg-emerald-950/50 text-emerald-300 border border-emerald-500/30 px-3 py-1.5 rounded-xl font-medium flex items-center gap-1.5">
               <ShieldCheck className="w-4 h-4 text-emerald-400" />
-              100% Real Human Acoustic Foundation
+              Local non-neural synthesis
             </span>
           </div>
         </div>
+
+        <VoiceSourceNote model={currentDraftModel} />
 
         {/* STEP 1: Select Original Base Voice (Out of 60) */}
         <div className="bg-slate-950/80 border border-slate-800 rounded-2xl p-5 space-y-3">
@@ -263,7 +268,7 @@ export const VoiceCreator: React.FC<VoiceCreatorProps> = ({
               <span className="w-5 h-5 rounded-full bg-indigo-600 text-white flex items-center justify-center text-[10px] font-bold">
                 1
               </span>
-              Select Original Base Voice to Adapt (60 Real Speakers Available):
+              Select Original Base Voice to Adapt (Voice Profiles Available):
             </label>
             <span className="text-[11px] font-mono text-indigo-400">
               Selected: {selectedBaseVoice.name} &bull; {selectedBaseVoice.gender} &bull; {selectedBaseVoice.accent}
@@ -274,37 +279,39 @@ export const VoiceCreator: React.FC<VoiceCreatorProps> = ({
             {voices.map((v) => {
               const isChosen = v.id === selectedBaseId;
               return (
-                <button
-                  key={v.id}
-                  type="button"
-                  onClick={() => handleSelectBaseVoice(v.id)}
-                  className={`p-2.5 rounded-xl border text-left flex items-center gap-3 transition-all cursor-pointer ${
-                    isChosen
-                      ? 'bg-indigo-950/70 border-indigo-500 text-white shadow-md ring-1 ring-indigo-500'
-                      : 'bg-slate-950/60 border-slate-800 text-slate-300 hover:border-slate-700 hover:bg-slate-900/60'
-                  }`}
-                >
-                  <div className="relative shrink-0">
-                    <VoiceAvatar
-                      id={v.id}
-                      name={v.name}
-                      color={v.avatarColor}
-                      size="sm"
-                    />
-                    {v.flag && (
-                      <span className="absolute -bottom-1 -right-1 text-[9px] bg-slate-900 rounded border border-slate-700 px-0.5 leading-none">
-                        {v.flag}
-                      </span>
-                    )}
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    <div className="font-semibold text-xs truncate text-white">{v.name}</div>
-                    <div className="text-[10px] text-slate-400 truncate">
-                      {v.archetype} &bull; {v.gender}
+                <div key={v.id} className="rounded-xl border border-slate-800 p-2 space-y-2">
+                  <button
+                    type="button"
+                    onClick={() => handleSelectBaseVoice(v.id)}
+                    className={`w-full p-2.5 rounded-xl border text-left flex items-center gap-3 transition-all cursor-pointer ${
+                      isChosen
+                        ? 'bg-indigo-950/70 border-indigo-500 text-white shadow-md ring-1 ring-indigo-500'
+                        : 'bg-slate-950/60 border-slate-800 text-slate-300 hover:border-slate-700 hover:bg-slate-900/60'
+                    }`}
+                  >
+                    <div className="relative shrink-0">
+                      <VoiceAvatar
+                        id={v.id}
+                        name={v.name}
+                        color={v.avatarColor}
+                        size="sm"
+                      />
+                      {v.flag && (
+                        <span className="absolute -bottom-1 -right-1 text-[9px] bg-slate-900 rounded border border-slate-700 px-0.5 leading-none">
+                          {v.flag}
+                        </span>
+                      )}
                     </div>
-                  </div>
-                  {isChosen && <Check className="w-4 h-4 text-indigo-400 shrink-0" />}
-                </button>
+                    <div className="min-w-0 flex-1">
+                      <div className="font-semibold text-xs truncate text-white">{v.name}</div>
+                      <div className="text-[10px] text-slate-400 truncate">
+                        {v.archetype} &bull; {v.gender}
+                      </div>
+                    </div>
+                    {isChosen && <Check className="w-4 h-4 text-indigo-400 shrink-0" />}
+                  </button>
+                  <VoiceRating voiceId={v.id} voiceName={v.name} />
+                </div>
               );
             })}
           </div>

@@ -1,12 +1,16 @@
 {
   "name": "Vocalis - Local Speech Studio",
-  "description": "Non-AI local text-to-speech from CMU ARCTIC recorded units, with an experimental mathematical formant voice, configurable delivery profiles, and pitch analysis.",
+  "description": "Experimental non-neural voice studio: local recording, manually reviewed sound labels, reusable sound banks, new-text synthesis, and WAV export.",
   "permissions": [
     "microphone"
   ],
   "capabilities": [
+    "LOCAL_MICROPHONE_RECORDING",
+    "MANUAL_SOUND_ALIGNMENT",
+    "RECORDED_UNIT_BANK_AUTHORING",
     "LOCAL_RECORDED_UNIT_SPEECH_SYNTHESIS",
     "EXPERIMENTAL_LOCAL_MATHEMATICAL_FORMANT_SYNTHESIS",
-    "MICROPHONE_PITCH_ANALYSIS"
+    "PORTABLE_VOICE_PROJECTS",
+    "WAV_EXPORT"
   ]
 }

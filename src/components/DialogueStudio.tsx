@@ -1,7 +1,8 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { VoiceModelConfig, speakRealWords, stopSpeaking } from '../utils/naturalVoiceEngine';
 import { Users, Plus, Trash2, Play, Square, Volume2 } from 'lucide-react';
 import { VoiceAvatar } from './VoiceAvatar';
+import { VoiceSourceNote } from './VoiceSourceNote';
 
 interface DialogueLine {
   id: string;
@@ -46,6 +47,8 @@ export const DialogueStudio: React.FC<DialogueStudioProps> = ({ models }) => {
   const [isPlayingDialogue, setIsPlayingDialogue] = useState(false);
   const [activeLineIdx, setActiveLineIdx] = useState<number>(-1);
   const cancelRequestedRef = useRef(false);
+  const playbackGeneration = useRef(0);
+  useEffect(() => () => { cancelRequestedRef.current = true; playbackGeneration.current++; stopSpeaking(); }, []);
 
   const addLine = () => {
     const lastLine = lines[lines.length - 1];
@@ -75,18 +78,19 @@ export const DialogueStudio: React.FC<DialogueStudioProps> = ({ models }) => {
   // Play conversation aloud line by line
   const playDialogue = async () => {
     if (isPlayingDialogue) {
-      cancelRequestedRef.current = true;
+      cancelRequestedRef.current = true; playbackGeneration.current++;
       stopSpeaking();
       setIsPlayingDialogue(false);
       setActiveLineIdx(-1);
       return;
     }
 
+    const token = ++playbackGeneration.current;
     setIsPlayingDialogue(true);
     cancelRequestedRef.current = false;
 
     for (let i = 0; i < lines.length; i++) {
-      if (cancelRequestedRef.current) break;
+      if (cancelRequestedRef.current || token !== playbackGeneration.current) break;
       setActiveLineIdx(i);
 
       const line = lines[i];
@@ -97,7 +101,8 @@ export const DialogueStudio: React.FC<DialogueStudioProps> = ({ models }) => {
       await new Promise<void>((resolve) => {
         speakRealWords(line.text, voice, {
           onEnd: () => resolve(),
-          onError: () => resolve(),
+          onCancel: () => { cancelRequestedRef.current = true; resolve(); },
+          onError: () => { cancelRequestedRef.current = true; resolve(); },
         });
       });
 
@@ -105,12 +110,13 @@ export const DialogueStudio: React.FC<DialogueStudioProps> = ({ models }) => {
       await new Promise((r) => setTimeout(r, 350));
     }
 
-    setIsPlayingDialogue(false);
-    setActiveLineIdx(-1);
+    if (token === playbackGeneration.current) { setIsPlayingDialogue(false); setActiveLineIdx(-1); }
   };
 
   return (
     <div className="space-y-6 max-w-5xl mx-auto">
+      <VoiceSourceNote model={modelA} />
+      <VoiceSourceNote model={modelB} />
       {/* Dialogue Cast Configuration */}
       <div className="bg-slate-900/90 border border-slate-800 rounded-3xl p-6 shadow-xl space-y-4">
         <div>

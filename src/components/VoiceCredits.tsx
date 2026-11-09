@@ -48,11 +48,13 @@ export const VoiceCredits: React.FC = () => {
               <p>
                 <strong className="text-white">Open Speech Repository (OSR)</strong> &mdash; Telchemy Open Speech Repository.
                 Includes standardized IEEE Harvard benchmark sentences read by professional British English and American male and female human speakers.
-                Freely available for audio applications and speech analysis with credit.
+                Check the original source terms for your intended use; availability does not itself clear commercial or redistribution rights.
               </p>
               <p className="text-xs text-slate-400">
                 The CMU ARCTIC license requires copyright notices and conditions to be retained. All speech samples in Vocalis are non-AI human recordings.
               </p>
+              <p className="text-xs text-slate-400">New-text synthesis uses the packaged BDL/SLT diphone banks or your own installed sound bank. Preset names and portraits are delivery profiles, not evidence of distinct trained speakers. User-recorded banks retain their own recording and speaker rights.</p>
+              <div className="flex flex-wrap gap-3 text-xs"><a href="/voicepacks/cmu-arctic/bdl/LICENSE.txt" target="_blank" rel="noreferrer" className="text-cyan-300">BDL notice</a><a href="/voicepacks/cmu-arctic/slt/LICENSE.txt" target="_blank" rel="noreferrer" className="text-cyan-300">SLT notice</a><a href="/CMUDICT-LICENSE.txt" target="_blank" rel="noreferrer" className="text-cyan-300">Pronunciation dictionary notice</a></div>
               <div className="flex flex-wrap gap-3 border-t border-slate-800 pt-4 text-xs">
                 <a className="inline-flex items-center gap-1.5 text-cyan-300 hover:text-cyan-200" href="http://festvox.org/cmu_arctic/" target="_blank" rel="noreferrer">
                   CMU ARCTIC Project <ExternalLink className="h-3 w-3" />
