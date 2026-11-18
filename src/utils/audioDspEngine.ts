@@ -1,4 +1,5 @@
 import { getSharedAudioContext } from './naturalHumanAudio';
+import { transformPitchAndRate } from './cmuDiphoneSynthesizer';
 
 export interface VoiceDspConfig {
   pitch: number; // 0.5 to 1.8 (1.0 = normal)
@@ -30,11 +31,12 @@ function buildDspGraph(
   source: AudioBufferSourceNode,
   config: VoiceDspConfig
 ): { finalNode: AudioNode; analyser?: AnalyserNode } {
-  // 1. Pitch & Speed playbackRate
-  const playbackFactor = Math.max(0.4, Math.min(2.5, config.pitch * config.rate));
-  source.playbackRate.value = playbackFactor;
+  // 1. Never multiply pitch and speed into playbackRate: that couples two
+  // controls. Offline derived renders prepare timing with transformPitchAndRate;
+  // live/source playback stays at its stored rate.
+  source.playbackRate.value = 1;
 
-  // 2. Formant Filters (F1: Throat, F2: Oral, F3: Air)
+  // 2. Fixed-frequency spectral filters (not measured formants)
   const f1Filter = ctx.createBiquadFilter();
   f1Filter.type = 'peaking';
   f1Filter.frequency.value = 450;
@@ -213,34 +215,31 @@ export async function renderTransformedWav(
   audioBuffer: AudioBuffer,
   config: VoiceDspConfig
 ): Promise<{ wavBlob: Blob; wavUrl: string; duration: number }> {
-  const playbackFactor = Math.max(0.4, Math.min(2.5, config.pitch * config.rate));
-  const renderedDuration = audioBuffer.duration / playbackFactor + 0.3;
   const sampleRate = audioBuffer.sampleRate;
-  const totalFrames = Math.ceil(renderedDuration * sampleRate);
-
-  const offlineCtx = new OfflineAudioContext(
-    audioBuffer.numberOfChannels,
-    totalFrames,
-    sampleRate
+  // Do not use source.playbackRate here: it necessarily couples pitch and
+  // duration. The bounded resample + WSOLA pipeline applies them separately.
+  const transformedChannels = Array.from({ length: audioBuffer.numberOfChannels }, (_, channel) =>
+    transformPitchAndRate(audioBuffer.getChannelData(channel), config.pitch, config.rate),
   );
+  const transformedLength = Math.max(1, ...transformedChannels.map(channel => channel.length));
+  const totalFrames = transformedLength + Math.ceil(sampleRate * 0.3);
+  const offlineCtx = new OfflineAudioContext(audioBuffer.numberOfChannels, totalFrames, sampleRate);
+  const transformedBuffer = offlineCtx.createBuffer(audioBuffer.numberOfChannels, transformedLength, sampleRate);
+  transformedChannels.forEach((channel, channelIndex) => {
+    transformedBuffer.getChannelData(channelIndex).set(channel.subarray(0, transformedLength));
+  });
 
   const source = offlineCtx.createBufferSource();
-  source.buffer = audioBuffer;
-
-  const { finalNode } = buildDspGraph(offlineCtx, source, config);
+  source.buffer = transformedBuffer;
+  const neutralTimingConfig: VoiceDspConfig = { ...config, pitch: 1, rate: 1 };
+  const { finalNode } = buildDspGraph(offlineCtx, source, neutralTimingConfig);
   finalNode.connect(offlineCtx.destination);
-
   source.start(0);
 
   const renderedBuffer = await offlineCtx.startRendering();
   const wavBlob = audioBufferToWavBlob(renderedBuffer);
   const wavUrl = URL.createObjectURL(wavBlob);
-
-  return {
-    wavBlob,
-    wavUrl,
-    duration: renderedDuration,
-  };
+  return { wavBlob, wavUrl, duration: renderedBuffer.duration };
 }
 
 /**

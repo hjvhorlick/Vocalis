@@ -42,6 +42,9 @@ export function voiceModelForBank(bank: VoiceBank): VoiceModelConfig {
     toneStyle: 'natural', samplePhrase: bank.exampleText || 'Hello.', avatarColor: '#b08945',
     isCustom: true, baseSampleId: 'user-sound-bank', unitVoiceId: bank.id,
     synthesisMethod: 'recorded-units', realSpeakerName: bank.name,
+    sourceType: 'derived', sourceId: 'user-sound-bank', recipeId: `recorded-units-v1:${bank.id}`,
+    reviewState: 'approved', validatedRecipeId: `recorded-units-v1:${bank.id}`,
+    approvedEnvironmentRecipeIds: ['dry-reference@modelled-v1:rt0.00:pd0:wet0.00:d0.2'],
   };
 }
 

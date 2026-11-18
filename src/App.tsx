@@ -13,6 +13,8 @@ import { stopSpeaking } from './utils/naturalVoiceEngine';
 import { saveVoiceBank, voiceModelForBank, deleteVoiceBank } from './utils/voiceBankStorage';
 import type { VoiceBank } from './types/voiceBank';
 import { readStoredTakes, storeTake, removeStoredTake } from './utils/takeStorage';
+import { assertCanPersistVoiceDefinition } from './utils/voiceProvenance';
+import { ensureOriginalAssetRecords } from './utils/voiceAssetStorage';
 
 export function App() {
   // Voice Hub is the main page default
@@ -40,7 +42,16 @@ export function App() {
       const saved = localStorage.getItem('vocalis_natural_models');
       if (saved) {
         const parsed = JSON.parse(saved);
-        const customOnly = Array.isArray(parsed) ? parsed.filter((m: VoiceModelConfig) => m.isCustom) : [];
+        const customOnly = Array.isArray(parsed)
+          ? parsed.filter((m: VoiceModelConfig) => m.isCustom).map((m: VoiceModelConfig) => ({
+              ...m,
+              // Browser storage may contain an old schema, but it can never be
+              // allowed to reclassify a custom entry as a protected original.
+              sourceType: m.sourceType === 'original' ? 'derived' : (m.sourceType || 'derived'),
+              isLockedOriginal: false,
+              reviewState: m.reviewState || 'candidate',
+            }))
+          : [];
         return [...PRESET_VOICE_MODELS, ...customOnly];
       }
     } catch {
@@ -50,6 +61,12 @@ export function App() {
   });
 
   const [activeModel, setActiveModel] = useState<VoiceModelConfig>(models[0]);
+
+  useEffect(() => {
+    void ensureOriginalAssetRecords(PRESET_VOICE_MODELS).catch(() => {
+      setSpeechError('Original source provenance metadata could not be opened in browser storage. Source audio remains read-only.');
+    });
+  }, []);
 
   useEffect(() => {
     initializeLocalSpeechEngine(activeModel);
@@ -70,9 +87,18 @@ export function App() {
 
   // Save custom voice model
   const handleSaveModel = (newModel: VoiceModelConfig) => {
+    try {
+      assertCanPersistVoiceDefinition(newModel);
+    } catch (error) {
+      setSpeechError(error instanceof Error ? error.message : 'Original library definitions cannot be changed.');
+      return;
+    }
     const toSave: VoiceModelConfig = {
       ...newModel,
       isCustom: true,
+      sourceType: newModel.sourceType || 'derived',
+      reviewState: newModel.reviewState || 'candidate',
+      isLockedOriginal: false,
     };
 
     setModels((prev) => {

@@ -6,7 +6,7 @@ export function VoiceSourceNote({ model }: { model: VoiceModelConfig }) {
   const userBank = model.synthesisMethod === 'recorded-units';
   return <div className="rounded-xl border border-amber-300/20 bg-amber-300/5 p-3 text-xs text-slate-300 space-y-2">
     <p>{userBank
-      ? 'Speech source: your recorded sound bank. New text uses only its labelled units. Missing sounds or unknown pronunciations stop rendering. Pitch/rate tuning currently uses coupled playback adjustments.'
+      ? 'Speech source: your recorded sound bank. New text uses only its labelled units. Missing sounds or unknown pronunciations stop rendering. Derived pitch/rate renders use bounded resampling plus WSOLA duration correction; the stored recordings are never overwritten.'
       : model.synthesisMethod === 'formant'
         ? 'Speech source: experimental mathematical formant synthesis. This is not a human recording.'
         : `Speech source: CMU ARCTIC ${speakerForModel(model).toUpperCase()} recorded units. This profile adjusts a base voice; it is not a separate recorded speaker. Regional accents are approximate. Missing units may use mathematical sounds.`}</p>

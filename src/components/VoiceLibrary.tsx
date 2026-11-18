@@ -1,5 +1,6 @@
-import React, { useState } from 'react';
-import { VoiceModelConfig, speakRealWords, stopSpeaking } from '../utils/naturalVoiceEngine';
+import React, { useRef, useState } from 'react';
+import { VoiceModelConfig } from '../utils/naturalVoiceEngine';
+import { createVoiceRenderRequest, playRenderedVoice, renderVoiceRequest } from '../utils/voiceRenderContract';
 import { GeneratedTake } from '../types/voice';
 import {
   BookmarkCheck,
@@ -38,19 +39,28 @@ export const VoiceLibrary: React.FC<VoiceLibraryProps> = ({
 }) => {
   const [activeTab, setActiveTab] = useState<'models' | 'takes'>('models');
   const [auditioningId, setAuditioningId] = useState<string | null>(null);
+  const playerRef = useRef<HTMLAudioElement | null>(null);
 
-  const handleAudition = (m: VoiceModelConfig) => {
+  const handleAudition = async (m: VoiceModelConfig) => {
     if (auditioningId === m.id) {
-      stopSpeaking();
-      setAuditioningId(null);
+      playerRef.current?.pause(); playerRef.current = null; setAuditioningId(null);
       return;
     }
-
+    playerRef.current?.pause();
     setAuditioningId(m.id);
-    speakRealWords(m.samplePhrase, m, {
-      onEnd: () => setAuditioningId(null),
-      onError: () => setAuditioningId(null),
-    });
+    try {
+      const request = createVoiceRenderRequest(m, m.samplePhrase, { environmentId: 'dry-reference', purpose: 'audition' });
+      const result = await renderVoiceRequest(m, request);
+      let player: HTMLAudioElement;
+      player = playRenderedVoice(result, {
+        onEnd: () => { if (playerRef.current === player) { playerRef.current = null; setAuditioningId(null); } },
+        onError: () => { if (playerRef.current === player) { playerRef.current = null; setAuditioningId(null); } },
+      });
+      playerRef.current = player;
+    } catch (error) {
+      console.error('Library audition failed:', error);
+      setAuditioningId(null);
+    }
   };
 
   return (

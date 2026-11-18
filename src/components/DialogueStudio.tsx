@@ -1,5 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { VoiceModelConfig, speakRealWords, stopSpeaking } from '../utils/naturalVoiceEngine';
+import { VoiceModelConfig } from '../utils/naturalVoiceEngine';
+import { createVoiceRenderRequest, playRenderedVoice, renderVoiceRequest } from '../utils/voiceRenderContract';
 import { Users, Plus, Trash2, Play, Square, Volume2 } from 'lucide-react';
 import { VoiceAvatar } from './VoiceAvatar';
 import { VoiceSourceNote } from './VoiceSourceNote';
@@ -48,7 +49,15 @@ export const DialogueStudio: React.FC<DialogueStudioProps> = ({ models }) => {
   const [activeLineIdx, setActiveLineIdx] = useState<number>(-1);
   const cancelRequestedRef = useRef(false);
   const playbackGeneration = useRef(0);
-  useEffect(() => () => { cancelRequestedRef.current = true; playbackGeneration.current++; stopSpeaking(); }, []);
+  const playerRef = useRef<HTMLAudioElement | null>(null);
+  const resolvePlaybackRef = useRef<(() => void) | null>(null);
+  const stopDialoguePlayback = () => {
+    playerRef.current?.pause();
+    playerRef.current = null;
+    resolvePlaybackRef.current?.();
+    resolvePlaybackRef.current = null;
+  };
+  useEffect(() => () => { cancelRequestedRef.current = true; playbackGeneration.current++; stopDialoguePlayback(); }, []);
 
   const addLine = () => {
     const lastLine = lines[lines.length - 1];
@@ -79,7 +88,7 @@ export const DialogueStudio: React.FC<DialogueStudioProps> = ({ models }) => {
   const playDialogue = async () => {
     if (isPlayingDialogue) {
       cancelRequestedRef.current = true; playbackGeneration.current++;
-      stopSpeaking();
+      stopDialoguePlayback();
       setIsPlayingDialogue(false);
       setActiveLineIdx(-1);
       return;
@@ -98,13 +107,27 @@ export const DialogueStudio: React.FC<DialogueStudioProps> = ({ models }) => {
 
       const voice = line.speakerId === 'A' ? modelA : modelB;
 
-      await new Promise<void>((resolve) => {
-        speakRealWords(line.text, voice, {
-          onEnd: () => resolve(),
-          onCancel: () => { cancelRequestedRef.current = true; resolve(); },
-          onError: () => { cancelRequestedRef.current = true; resolve(); },
+      try {
+        const request = createVoiceRenderRequest(voice, line.text, {
+          environmentId: 'dry-reference',
+          roomWet: 0,
+          purpose: 'dialogue',
         });
-      });
+        const result = await renderVoiceRequest(voice, request);
+        if (cancelRequestedRef.current || token !== playbackGeneration.current) break;
+        await new Promise<void>((resolve) => {
+          resolvePlaybackRef.current = resolve;
+          let player: HTMLAudioElement;
+          player = playRenderedVoice(result, {
+            onEnd: () => { if (playerRef.current === player) playerRef.current = null; resolvePlaybackRef.current = null; resolve(); },
+            onError: () => { if (playerRef.current === player) playerRef.current = null; cancelRequestedRef.current = true; resolvePlaybackRef.current = null; resolve(); },
+          });
+          playerRef.current = player;
+        });
+      } catch (error) {
+        console.error('Dialogue contract render failed:', error);
+        cancelRequestedRef.current = true;
+      }
 
       // Natural pause between speakers
       await new Promise((r) => setTimeout(r, 350));

@@ -1,5 +1,6 @@
-import React, { useState } from 'react';
-import { VoiceModelConfig, speakRealWords, stopSpeaking } from '../utils/naturalVoiceEngine';
+import React, { useRef, useState } from 'react';
+import { VoiceModelConfig } from '../utils/naturalVoiceEngine';
+import { createVoiceRenderRequest, playRenderedVoice, renderVoiceRequest } from '../utils/voiceRenderContract';
 import {
   Sliders,
   Play,
@@ -23,7 +24,7 @@ interface VoiceShaperProps {
 
 export const VoiceShaper: React.FC<VoiceShaperProps> = ({
   model,
-  onUpdateModel,
+  onUpdateModel: persistUpdateModel,
   onSaveModel,
   onSelectForStudio,
 }) => {
@@ -32,34 +33,50 @@ export const VoiceShaper: React.FC<VoiceShaperProps> = ({
     null
   );
   const [savedToast, setSavedToast] = useState(false);
+  const onUpdateModel = (updated: VoiceModelConfig) => {
+    if (model.isLockedOriginal || model.sourceType === 'original') return;
+    persistUpdateModel(updated);
+  };
+  const playerRef = useRef<HTMLAudioElement | null>(null);
+  const wordTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const stopAudition = () => {
+    playerRef.current?.pause(); playerRef.current = null;
+    if (wordTimerRef.current) clearInterval(wordTimerRef.current);
+    wordTimerRef.current = null;
+    setIsSpeaking(false); setActiveWordRange(null);
+  };
 
-  const handleAudition = () => {
-    if (isSpeaking) {
-      stopSpeaking();
-      setIsSpeaking(false);
-      setActiveWordRange(null);
-      return;
-    }
-
+  const handleAudition = async () => {
+    if (isSpeaking) { stopAudition(); return; }
     setIsSpeaking(true);
-    speakRealWords(model.samplePhrase, model, {
-      onStart: () => setIsSpeaking(true),
-      onWord: (charIndex, charLength) => {
-        setActiveWordRange({ start: charIndex, length: charLength });
-      },
-      onEnd: () => {
-        setIsSpeaking(false);
-        setActiveWordRange(null);
-      },
-      onError: () => {
-        setIsSpeaking(false);
-        setActiveWordRange(null);
-      },
-    });
+    try {
+      const result = await renderVoiceRequest(model, createVoiceRenderRequest(model, model.samplePhrase, { environmentId: 'dry-reference', purpose: 'audition' }));
+      let player: HTMLAudioElement;
+      player = playRenderedVoice(result, {
+        onEnd: () => { if (playerRef.current === player) stopAudition(); },
+        onError: () => { if (playerRef.current === player) stopAudition(); },
+      });
+      playerRef.current = player;
+      let next = 0;
+      wordTimerRef.current = setInterval(() => {
+        while (next < result.wordTimings.length && result.wordTimings[next].start <= player.currentTime) {
+          const timing = result.wordTimings[next++]; setActiveWordRange({ start: timing.charIndex, length: timing.charLength });
+        }
+      }, 30);
+    } catch (error) { console.error('Shaper audition failed:', error); stopAudition(); }
   };
 
   const handleSave = () => {
-    onSaveModel(model);
+    // Never hand an original profile back as a mutable save target.
+    const candidate: VoiceModelConfig = model.sourceType === 'original' || model.isLockedOriginal
+      ? {
+          ...model, id: `derived-${Date.now()}`, name: `${model.name} (Derived Candidate)`, isCustom: true,
+          sourceType: 'derived', parentVoiceDefinitionId: model.id, sourceId: model.sourceId || model.baseSampleId,
+          recipeId: `derived-local-v1:${model.id}:p${model.pitch.toFixed(2)}:r${model.rate.toFixed(2)}`,
+          reviewState: 'candidate', isLockedOriginal: false,
+        }
+      : model;
+    onSaveModel(candidate);
     setSavedToast(true);
     setTimeout(() => setSavedToast(false), 2500);
   };

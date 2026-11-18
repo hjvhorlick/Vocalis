@@ -3,10 +3,15 @@ import {
   VoiceModelConfig,
   NATURAL_HUMAN_SAMPLES,
   PRESET_VOICE_MODELS,
-  speakRealWords,
-  stopSpeaking,
-  generateSpokenAudioWav,
 } from '../utils/naturalVoiceEngine';
+import {
+  createVoiceRenderRequest,
+  playRenderedVoice,
+  renderResultToGeneratedTake,
+  renderVoiceRequest,
+  type VoiceRenderResult,
+} from '../utils/voiceRenderContract';
+import type { RoomEnvironmentId } from '../utils/roomEnvironment';
 import { GeneratedTake } from '../types/voice';
 import { VoiceVisualizer } from './VoiceVisualizer';
 import { SourceVoiceAttribution } from './SourceVoiceAttribution';
@@ -30,6 +35,8 @@ import {
 import { VoiceAvatar } from './VoiceAvatar';
 import { VoiceSourceNote } from './VoiceSourceNote';
 import { VoiceRating } from './VoiceRating';
+import { RoomEnvironmentStudio } from './RoomEnvironmentStudio';
+import { saveDerivedAsset, updateVoiceAssetReview } from '../utils/voiceAssetStorage';
 
 interface VoiceCreatorProps {
   voices: VoiceModelConfig[];
@@ -38,6 +45,8 @@ interface VoiceCreatorProps {
   onSaveTake: (take: GeneratedTake) => Promise<void>;
   onGoToHub: (voice?: VoiceModelConfig) => void;
 }
+
+export const VOICE_VALIDATION_SCRIPT = 'The morning train arrives at quarter past eight. Clear speech, warm vowels, and careful consonants should remain steady from the first sentence to the last.';
 
 const COLOR_SWATCHES = [
   '#3b82f6', // Blue
@@ -70,7 +79,7 @@ export const VoiceCreator: React.FC<VoiceCreatorProps> = ({
   onSaveTake,
   onGoToHub,
 }) => {
-  // Base voice selection (from the 60 original voices)
+  // Base profile selection; originals remain protected source references.
   const [selectedBaseId, setSelectedBaseId] = useState<string>(activeVoice.id);
 
   // Editable voice parameters
@@ -107,6 +116,12 @@ export const VoiceCreator: React.FC<VoiceCreatorProps> = ({
   const [savedTakeUrl, setSavedTakeUrl] = useState<string | null>(null);
   const [savedTakeDuration, setSavedTakeDuration] = useState<number>(0);
   const [saveSuccess, setSaveSuccess] = useState<boolean>(false);
+  const [environmentId, setEnvironmentId] = useState<RoomEnvironmentId>('dry-reference');
+  const [roomWet, setRoomWet] = useState(0);
+  const [validationResult, setValidationResult] = useState<VoiceRenderResult | null>(null);
+  const [roomValidationResult, setRoomValidationResult] = useState<VoiceRenderResult | null>(null);
+  const [isRenderingRoomValidation, setIsRenderingRoomValidation] = useState(false);
+  const auditionPlayerRef = React.useRef<HTMLAudioElement | null>(null);
 
   // Sync when activeVoice prop changes or base selection changes
   const handleSelectBaseVoice = (voiceId: string) => {
@@ -153,22 +168,41 @@ export const VoiceCreator: React.FC<VoiceCreatorProps> = ({
     samplePhrase: samplePhrase.trim() || 'Hello, I am a newly created voice in Vocalis.',
     avatarColor,
     isCustom: true,
+    sourceType: 'derived',
+    parentVoiceDefinitionId: selectedBaseId,
+    sourceId: voices.find(v => v.id === selectedBaseId)?.sourceId || voices.find(v => v.id === selectedBaseId)?.baseSampleId,
+    originalSourceHash: voices.find(v => v.id === selectedBaseId)?.originalSourceHash,
+    recipeId: `derived-local-v1:${selectedBaseId}:p${pitch.toFixed(2)}:r${rate.toFixed(2)}:tw${throatWarmth.toFixed(1)}:oc${oralClarity.toFixed(1)}:ap${airPresence.toFixed(1)}:${toneStyle}`,
+    reviewState: 'candidate',
   };
 
-  // Audition the shaped voice
-  const handleAudition = () => {
-    if (isAuditioning) {
-      stopSpeaking();
-      setIsAuditioning(false);
-      return;
-    }
+  const stopAudition = () => {
+    auditionPlayerRef.current?.pause();
+    auditionPlayerRef.current = null;
+    setIsAuditioning(false);
+  };
 
+  // A creator audition is a contract render too; no source clip is substituted.
+  const handleAudition = async () => {
+    if (isAuditioning) { stopAudition(); return; }
     setIsAuditioning(true);
-    speakRealWords(currentDraftModel.samplePhrase, currentDraftModel, {
-      onStart: () => setIsAuditioning(true),
-      onEnd: () => setIsAuditioning(false),
-      onError: () => setIsAuditioning(false),
-    });
+    try {
+      const request = createVoiceRenderRequest(currentDraftModel, currentDraftModel.samplePhrase, {
+        environmentId,
+        roomWet,
+        purpose: 'audition',
+      });
+      const result = await renderVoiceRequest(currentDraftModel, request);
+      let player: HTMLAudioElement;
+      player = playRenderedVoice(result, {
+        onEnd: () => { if (auditionPlayerRef.current === player) stopAudition(); },
+        onError: () => { if (auditionPlayerRef.current === player) stopAudition(); },
+      });
+      auditionPlayerRef.current = player;
+    } catch (error) {
+      console.error('Could not render candidate audition:', error);
+      setIsAuditioning(false);
+    }
   };
 
   // Reset to original settings of chosen base voice
@@ -184,45 +218,96 @@ export const VoiceCreator: React.FC<VoiceCreatorProps> = ({
     setToneStyle('natural');
   };
 
-  // Save new voice model AND generate/save the new audio sample file (.wav)
+  // Create a separate reviewable candidate. The base/original definition is never
+  // overwritten, and the mandatory validation take is a pinned dry contract render.
   const handleSaveNewVoiceAndSample = async () => {
     setIsSavingAndExporting(true);
     try {
       const finalModel: VoiceModelConfig = {
         ...currentDraftModel,
         id: `custom-voice-${Date.now()}`,
+        reviewState: 'candidate',
       };
-
-      // 1. Save voice model to localStorage/state
-      onSaveModel(finalModel);
-      setCreatedModel(finalModel);
-
-      // 2. Render real WAV audio sample file
-      const { audioUrl, duration } = await generateSpokenAudioWav(
-        finalModel.samplePhrase,
-        finalModel
-      );
-
-      // 3. Save as a generated audio take in the vault
-      const newTake: GeneratedTake = {
-        id: `take-${Date.now()}`,
-        title: `${finalModel.name} - Sample Take`,
-        audioUrl,
-        voiceName: finalModel.name,
-        durationSeconds: Math.round(duration || 4),
-        createdAt: Date.now(),
-        textSnippet: finalModel.samplePhrase,
+      const dryValidationRequest = createVoiceRenderRequest(finalModel, VOICE_VALIDATION_SCRIPT, {
+        environmentId: 'dry-reference',
+        roomWet: 0,
+        purpose: 'validation',
+      });
+      const result = await renderVoiceRequest(finalModel, dryValidationRequest);
+      const candidateWithValidation: VoiceModelConfig = {
+        ...finalModel,
+        validatedRecipeId: result.manifest.request.voiceRecipeId,
+        approvedEnvironmentRecipeIds: [],
       };
-      await onSaveTake(newTake);
+      onSaveModel(candidateWithValidation);
+      setCreatedModel(candidateWithValidation);
+      setValidationResult(result);
+      await saveDerivedAsset({
+        id: `asset-${finalModel.id}`,
+        role: 'dsp-variant',
+        profileId: finalModel.id,
+        parentAssetId: result.manifest.voice.sourceId ? `original-source-${result.manifest.voice.sourceId}` : undefined,
+        sourceId: result.manifest.voice.sourceId,
+        sourceHash: result.manifest.voice.sourceHash,
+        audioHash: result.manifest.outputHash || '',
+        createdAt: result.manifest.createdAt,
+        reviewState: 'candidate',
+        immutableOriginal: false,
+        disclosure: 'Derived local DSP candidate; separate from its protected original source.',
+        rendererManifest: result.manifest,
+      });
+      await onSaveTake(renderResultToGeneratedTake(result, `take-${Date.now()}`));
 
-      setSavedTakeUrl(audioUrl);
-      setSavedTakeDuration(duration);
+      setSavedTakeUrl(result.audioUrl);
+      setSavedTakeDuration(result.duration);
       setSaveSuccess(true);
     } catch (err) {
-      console.error('Failed to create voice and sample:', err);
+      console.error('Failed to create voice candidate and validation take:', err);
     } finally {
       setIsSavingAndExporting(false);
     }
+  };
+
+  const handleApproveCandidate = async () => {
+    if (!createdModel || !validationResult || validationResult.manifest.request.voiceRecipeId !== createdModel.recipeId) return;
+    const approved = {
+      ...createdModel,
+      reviewState: 'approved' as const,
+      validatedRecipeId: validationResult.manifest.request.voiceRecipeId,
+      approvedEnvironmentRecipeIds: [...new Set([...(createdModel.approvedEnvironmentRecipeIds || []), validationResult.manifest.environment.recipeId])],
+    };
+    try {
+      await updateVoiceAssetReview(`asset-${createdModel.id}`, 'approved');
+      onSaveModel(approved);
+      setCreatedModel(approved);
+    } catch (error) {
+      console.error('Could not record candidate approval:', error);
+    }
+  };
+
+  const handleRenderRoomValidation = async () => {
+    const candidate = createdModel || currentDraftModel;
+    setIsRenderingRoomValidation(true);
+    try {
+      const request = createVoiceRenderRequest(candidate, VOICE_VALIDATION_SCRIPT, { environmentId, roomWet, purpose: 'validation' });
+      const result = await renderVoiceRequest(candidate, request);
+      setRoomValidationResult(result);
+      await onSaveTake(renderResultToGeneratedTake(result, `take-room-validation-${Date.now()}`));
+    } catch (error) {
+      console.error('Could not render room validation take:', error);
+    } finally {
+      setIsRenderingRoomValidation(false);
+    }
+  };
+
+  const handleApproveRoom = () => {
+    if (!createdModel || !roomValidationResult || roomValidationResult.manifest.request.voiceRecipeId !== createdModel.recipeId) return;
+    const withApprovedRoom = {
+      ...createdModel,
+      approvedEnvironmentRecipeIds: [...new Set([...(createdModel.approvedEnvironmentRecipeIds || []), roomValidationResult.manifest.environment.recipeId])],
+    };
+    onSaveModel(withApprovedRoom);
+    setCreatedModel(withApprovedRoom);
   };
 
   const selectedBaseVoice = voices.find((v) => v.id === selectedBaseId) || voices[0];
@@ -245,7 +330,7 @@ export const VoiceCreator: React.FC<VoiceCreatorProps> = ({
                   Voice Creation Studio
                 </h2>
                 <p className="text-xs text-slate-400">
-                  Craft completely new vocal identities from any of the 60 original human voices
+                  Create separately labelled, reviewable DSP candidates from protected source profiles
                 </p>
               </div>
             </div>
@@ -324,7 +409,7 @@ export const VoiceCreator: React.FC<VoiceCreatorProps> = ({
               <span className="w-5 h-5 rounded-full bg-cyan-600 text-white flex items-center justify-center text-[10px] font-bold">
                 2
               </span>
-              Adapt Acoustic Properties (Transform into a Completely Different Voice Type):
+              Create a Separate Derived Candidate (bounded DSP, never edits the original):
             </label>
             <button
               onClick={handleResetToSource}
@@ -333,6 +418,8 @@ export const VoiceCreator: React.FC<VoiceCreatorProps> = ({
               <RotateCcw className="w-3 h-3" /> Reset Knobs
             </button>
           </div>
+
+          <p className="rounded-xl border border-slate-800 bg-slate-900/50 p-3 text-[11px] leading-relaxed text-slate-400">Pitch is a bounded resample plus WSOLA duration correction; pace sets the independent target duration. The spectral controls below are fixed-frequency EQ, not measured vocal-tract or speaker-identity modelling. Device effects are delivery colour, not a claim of a new human speaker.</p>
 
           {/* Core Controls: Pitch, Cadence, Volume */}
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -413,7 +500,7 @@ export const VoiceCreator: React.FC<VoiceCreatorProps> = ({
             <div className="flex items-center justify-between text-xs">
               <span className="font-bold text-slate-300 flex items-center gap-1.5 uppercase tracking-wider text-[11px]">
                 <Waves className="w-3.5 h-3.5 text-cyan-400" />
-                Vocal Tract Formant EQ Shaping (Resonance &amp; Timbre Shift)
+                Spectral EQ Shaping (delivery colour, not formant estimation)
               </span>
               <span className="text-[10px] text-slate-500 font-mono">Biquad Peaking DSP</span>
             </div>
@@ -422,7 +509,7 @@ export const VoiceCreator: React.FC<VoiceCreatorProps> = ({
               {/* F1 */}
               <div className="space-y-1">
                 <div className="flex justify-between text-[11px]">
-                  <span className="text-slate-400">Throat Warmth (F1 ~450Hz)</span>
+                  <span className="text-slate-400">Low-mid warmth (450 Hz EQ)</span>
                   <span className="font-mono text-cyan-300 font-bold">
                     {throatWarmth > 0 ? `+${throatWarmth}` : throatWarmth} dB
                   </span>
@@ -441,7 +528,7 @@ export const VoiceCreator: React.FC<VoiceCreatorProps> = ({
               {/* F2 */}
               <div className="space-y-1">
                 <div className="flex justify-between text-[11px]">
-                  <span className="text-slate-400">Oral Cavity Clarity (F2 ~1.8kHz)</span>
+                  <span className="text-slate-400">Presence clarity (1.8 kHz EQ)</span>
                   <span className="font-mono text-indigo-300 font-bold">
                     {oralClarity > 0 ? `+${oralClarity}` : oralClarity} dB
                   </span>
@@ -460,7 +547,7 @@ export const VoiceCreator: React.FC<VoiceCreatorProps> = ({
               {/* F3 */}
               <div className="space-y-1">
                 <div className="flex justify-between text-[11px]">
-                  <span className="text-slate-400">Air &amp; Breath (F3 ~4.5kHz)</span>
+                  <span className="text-slate-400">High-frequency air (4.2 kHz EQ)</span>
                   <span className="font-mono text-purple-300 font-bold">
                     {airPresence > 0 ? `+${airPresence}` : airPresence} dB
                   </span>
@@ -507,6 +594,11 @@ export const VoiceCreator: React.FC<VoiceCreatorProps> = ({
               ))}
             </div>
           </div>
+        </div>
+
+        <div className="rounded-2xl border border-slate-700 bg-slate-950/55 p-4 text-xs text-slate-400">
+          <div className="flex items-center gap-2 font-bold text-slate-200"><ShieldCheck className="h-4 w-4 text-slate-400" /> AI-created file boundary — disabled in this local build</div>
+          <p className="mt-1.5 leading-relaxed">No cloud or neural voice service runs from this studio. A future AI-created WAV workflow must show the exact source hash, rights/release, model version, retention period, intended use and AI disclosure, then require explicit confirmation before any provider receives data. It can only create a separately labelled candidate file and can never replace an original.</p>
         </div>
 
         {/* STEP 3: Voice Identity & Profile Customization */}
@@ -611,6 +703,14 @@ export const VoiceCreator: React.FC<VoiceCreatorProps> = ({
           </div>
         </div>
 
+        <RoomEnvironmentStudio
+          environmentId={environmentId}
+          wet={roomWet}
+          onEnvironmentChange={setEnvironmentId}
+          onWetChange={setRoomWet}
+          compact
+        />
+
         {/* Real-time Oscilloscope Waveform Visualizer */}
         <div className="space-y-1.5">
           <div className="flex items-center justify-between text-xs text-slate-400">
@@ -623,6 +723,11 @@ export const VoiceCreator: React.FC<VoiceCreatorProps> = ({
             </span>
           </div>
           <VoiceVisualizer isPlaying={isAuditioning} avatarColor={avatarColor} />
+        </div>
+
+        <div className="rounded-xl border border-amber-500/30 bg-amber-950/20 p-3 text-xs text-amber-100">
+          <span className="font-bold">Required validation route:</span> saving creates a separate <span className="font-mono">candidate</span> and renders this fixed script in <span className="font-semibold">Dry Reference</span> with the same locked voice definition/recipe used by exports. Room tests remain separate delivery treatments.
+          <p className="mt-1.5 italic text-amber-200/80">“{VOICE_VALIDATION_SCRIPT}”</p>
         </div>
 
         {/* Action Controls: Audition & Save As New Voice & Sample */}
@@ -655,12 +760,12 @@ export const VoiceCreator: React.FC<VoiceCreatorProps> = ({
             {isSavingAndExporting ? (
               <>
                 <RefreshCw className="w-4 h-4 animate-spin" />
-                <span>Creating Voice &amp; Rendering WAV...</span>
+                <span>Creating Candidate &amp; Validation WAV...</span>
               </>
             ) : (
               <>
                 <BookmarkCheck className="w-4 h-4" />
-                <span>Save New Voice &amp; Create Audio Sample</span>
+                <span>Create Candidate &amp; Dry Validation Take</span>
               </>
             )}
           </button>
@@ -676,11 +781,12 @@ export const VoiceCreator: React.FC<VoiceCreatorProps> = ({
                 </div>
                 <div>
                   <h4 className="text-sm font-bold text-white">
-                    New Voice "{name}" Created &amp; Saved Successfully!
+                    Candidate "{name}" Created — Review Required
                   </h4>
                   <p className="text-xs text-emerald-300">
-                    Saved to your application voice catalog &amp; new audio WAV sample generated in Takes Vault.
+                    A pinned Dry Reference validation take is in the vault. Review it before relying on this derived candidate for final work.
                   </p>
+                  {validationResult && <div className="mt-1.5 space-y-1"><p className="font-mono text-[10px] text-emerald-400/80">{validationResult.manifest.request.voiceDefinitionId} · {validationResult.manifest.environment.recipeId}</p><audio controls src={validationResult.audioUrl} className="h-8 w-full max-w-sm" /></div>}
                 </div>
               </div>
 
@@ -695,14 +801,40 @@ export const VoiceCreator: React.FC<VoiceCreatorProps> = ({
                   </a>
                 )}
 
+                {createdModel?.reviewState !== 'approved' && (
+                  <button
+                    onClick={handleApproveCandidate}
+                    className="h-9 px-4 rounded-xl border border-amber-400/60 bg-amber-500/15 hover:bg-amber-500/25 text-amber-100 font-bold text-xs flex items-center gap-1.5 transition-colors cursor-pointer"
+                    title="Confirm you listened to the Dry Reference validation take and approve this candidate version"
+                  >
+                    <Check className="w-3.5 h-3.5" /> Approve after review
+                  </button>
+                )}
                 <button
                   onClick={() => onGoToHub(createdModel || currentDraftModel)}
                   className="h-9 px-4 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs flex items-center gap-1.5 shadow transition-colors cursor-pointer"
                 >
-                  <span>Test in Voice Hub</span>
+                  <span>{createdModel?.reviewState === 'approved' ? 'Use Approved Voice' : 'Test Candidate'}</span>
                   <ArrowRight className="w-3.5 h-3.5" />
                 </button>
               </div>
+            </div>
+            <div className="border-t border-emerald-500/20 pt-4">
+              <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                  <h5 className="text-xs font-bold text-slate-100">Room treatment validation</h5>
+                  <p className="mt-0.5 text-[11px] text-slate-400">Render the same fixed script using the Room Environment Studio selection, listen, then approve that exact room recipe independently.</p>
+                </div>
+                <div className="flex gap-2">
+                  <button type="button" onClick={() => void handleRenderRoomValidation()} disabled={isRenderingRoomValidation} className="h-8 rounded-lg border border-cyan-400/40 bg-cyan-500/10 px-3 text-[11px] font-bold text-cyan-100 disabled:opacity-50">
+                    {isRenderingRoomValidation ? 'Rendering…' : 'Render room validation'}
+                  </button>
+                  <button type="button" onClick={handleApproveRoom} disabled={!roomValidationResult || createdModel?.approvedEnvironmentRecipeIds?.includes(roomValidationResult.manifest.environment.recipeId)} className="h-8 rounded-lg border border-emerald-400/40 bg-emerald-500/10 px-3 text-[11px] font-bold text-emerald-100 disabled:opacity-40">
+                    Approve room after review
+                  </button>
+                </div>
+              </div>
+              {roomValidationResult && <div className="mt-2 space-y-2"><p className="font-mono text-[10px] text-cyan-300">Validated room: {roomValidationResult.manifest.environment.recipeId}</p><audio controls src={roomValidationResult.audioUrl} className="h-8 w-full" /></div>}
             </div>
           </div>
         )}

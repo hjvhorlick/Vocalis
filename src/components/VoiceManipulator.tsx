@@ -1,10 +1,9 @@
-import React, { useState } from 'react';
+import React, { useRef, useState } from 'react';
 import {
   VoiceModelConfig,
   NATURAL_HUMAN_SAMPLES,
-  speakRealWords,
-  stopSpeaking,
 } from '../utils/naturalVoiceEngine';
+import { createVoiceRenderRequest, playRenderedVoice, renderVoiceRequest } from '../utils/voiceRenderContract';
 import { VoiceVisualizer } from './VoiceVisualizer';
 import {
   Sliders,
@@ -29,34 +28,46 @@ interface VoiceManipulatorProps {
 
 export const VoiceManipulator: React.FC<VoiceManipulatorProps> = ({
   voice,
-  onUpdateVoice,
+  onUpdateVoice: persistUpdateVoice,
   onSaveAsCustom,
   onResetToDefault,
 }) => {
   const [isAuditioning, setIsAuditioning] = useState(false);
   const [savedToast, setSavedToast] = useState(false);
+  const playerRef = useRef<HTMLAudioElement | null>(null);
+  // Protected originals cannot be modified in place, even through this legacy panel.
+  const onUpdateVoice = (updated: VoiceModelConfig) => {
+    if (voice.isLockedOriginal || voice.sourceType === 'original') return;
+    persistUpdateVoice(updated);
+  };
 
-  const handleAudition = () => {
-    if (isAuditioning) {
-      stopSpeaking();
-      setIsAuditioning(false);
-      return;
-    }
-
+  const handleAudition = async () => {
+    if (isAuditioning) { playerRef.current?.pause(); playerRef.current = null; setIsAuditioning(false); return; }
     setIsAuditioning(true);
-    speakRealWords(voice.samplePhrase, voice, {
-      onStart: () => setIsAuditioning(true),
-      onEnd: () => setIsAuditioning(false),
-      onError: () => setIsAuditioning(false),
-    });
+    try {
+      const result = await renderVoiceRequest(voice, createVoiceRenderRequest(voice, voice.samplePhrase, { environmentId: 'dry-reference', purpose: 'audition' }));
+      let player: HTMLAudioElement;
+      player = playRenderedVoice(result, {
+        onEnd: () => { if (playerRef.current === player) { playerRef.current = null; setIsAuditioning(false); } },
+        onError: () => { if (playerRef.current === player) { playerRef.current = null; setIsAuditioning(false); } },
+      });
+      playerRef.current = player;
+    } catch (error) { console.error('Manipulator audition failed:', error); setIsAuditioning(false); }
   };
 
   const handleSave = () => {
     const customCopy: VoiceModelConfig = {
       ...voice,
-      id: voice.isCustom ? voice.id : `custom-${Date.now()}`,
-      name: voice.isCustom ? voice.name : `${voice.name} (Custom DSP)`,
+      id: `derived-${Date.now()}`,
+      name: `${voice.name} (Derived DSP Candidate)`,
       isCustom: true,
+      sourceType: 'derived',
+      parentVoiceDefinitionId: voice.id,
+      sourceId: voice.sourceId || voice.baseSampleId,
+      originalSourceHash: voice.originalSourceHash,
+      recipeId: `derived-local-v1:${voice.id}:p${voice.pitch.toFixed(2)}:r${voice.rate.toFixed(2)}`,
+      reviewState: 'candidate',
+      isLockedOriginal: false,
     };
     onSaveAsCustom(customCopy);
     setSavedToast(true);
@@ -242,12 +253,12 @@ export const VoiceManipulator: React.FC<VoiceManipulatorProps> = ({
         </div>
       </div>
 
-      {/* Vocal Tract Formant Resonance Filters (F1, F2, F3) */}
+      {/* Fixed-frequency spectral EQ (not vocal-tract formant estimation) */}
       <div className="bg-slate-950/80 border border-slate-800/80 rounded-2xl p-4 space-y-3">
         <div className="flex items-center justify-between">
           <label className="text-[11px] font-bold uppercase tracking-wider text-slate-300 flex items-center gap-1.5">
             <Waves className="w-3.5 h-3.5 text-cyan-400" />
-            Vocal Tract Formant EQ Shaping (Resonance & Timbre)
+            Spectral EQ Shaping (delivery colour, not formant estimation)
           </label>
           <span className="text-[10px] text-slate-500 font-mono">Biquad Filter DSP</span>
         </div>
@@ -256,7 +267,7 @@ export const VoiceManipulator: React.FC<VoiceManipulatorProps> = ({
           {/* F1 Throat Warmth */}
           <div className="space-y-1">
             <div className="flex justify-between text-[11px]">
-              <span className="text-slate-400">Throat & Chest Warmth (F1 450Hz)</span>
+              <span className="text-slate-400">Low-mid warmth (450 Hz EQ)</span>
               <span className="font-mono text-cyan-300 font-bold">
                 {(voice.throatWarmth ?? 0) > 0 ? `+${voice.throatWarmth}` : voice.throatWarmth ?? 0} dB
               </span>
@@ -277,7 +288,7 @@ export const VoiceManipulator: React.FC<VoiceManipulatorProps> = ({
           {/* F2 Oral Clarity */}
           <div className="space-y-1">
             <div className="flex justify-between text-[11px]">
-              <span className="text-slate-400">Oral Cavity Clarity (F2 1.8kHz)</span>
+              <span className="text-slate-400">Presence clarity (1.8 kHz EQ)</span>
               <span className="font-mono text-indigo-300 font-bold">
                 {(voice.oralClarity ?? 0) > 0 ? `+${voice.oralClarity}` : voice.oralClarity ?? 0} dB
               </span>
@@ -298,7 +309,7 @@ export const VoiceManipulator: React.FC<VoiceManipulatorProps> = ({
           {/* F3 Air Presence */}
           <div className="space-y-1">
             <div className="flex justify-between text-[11px]">
-              <span className="text-slate-400">Air & Breath Presence (F3 4.2kHz)</span>
+              <span className="text-slate-400">High-frequency air (4.2 kHz EQ)</span>
               <span className="font-mono text-purple-300 font-bold">
                 {(voice.airPresence ?? 0) > 0 ? `+${voice.airPresence}` : voice.airPresence ?? 0} dB
               </span>

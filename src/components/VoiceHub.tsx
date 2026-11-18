@@ -2,10 +2,15 @@ import React, { useState, useRef, useEffect } from 'react';
 import {
   VoiceModelConfig,
   NATURAL_HUMAN_SAMPLES,
-  speakRealWords,
-  stopSpeaking,
-  generateSpokenAudioWav,
 } from '../utils/naturalVoiceEngine';
+import {
+  createVoiceRenderRequest,
+  playRenderedVoice,
+  renderResultToGeneratedTake,
+  renderVoiceRequest,
+  type VoiceRenderResult,
+} from '../utils/voiceRenderContract';
+import type { RoomEnvironmentId } from '../utils/roomEnvironment';
 import { GeneratedTake } from '../types/voice';
 import { VoiceVisualizer } from './VoiceVisualizer';
 import { SourceVoiceAttribution } from './SourceVoiceAttribution';
@@ -28,6 +33,7 @@ import {
 import { VoiceAvatar } from './VoiceAvatar';
 import { VoiceSourceNote } from './VoiceSourceNote';
 import { VoiceRating } from './VoiceRating';
+import { RoomEnvironmentStudio } from './RoomEnvironmentStudio';
 
 interface VoiceHubProps {
   voices: VoiceModelConfig[];
@@ -72,6 +78,11 @@ export const VoiceHub: React.FC<VoiceHubProps> = ({
   const [takeSavedToast, setTakeSavedToast] = useState(false);
   const [savingTake, setSavingTake] = useState(false);
   const audioPlayerRef = useRef<HTMLAudioElement | null>(null);
+  const livePlayerRef = useRef<HTMLAudioElement | null>(null);
+  const exportedRenderRef = useRef<VoiceRenderResult | null>(null);
+  const [environmentId, setEnvironmentId] = useState<RoomEnvironmentId>('dry-reference');
+  const [roomWet, setRoomWet] = useState(0);
+  const [renderError, setRenderError] = useState<string | null>(null);
 
   // Filter voices
   const filteredVoices = voices.filter((v) => {
@@ -90,93 +101,96 @@ export const VoiceHub: React.FC<VoiceHubProps> = ({
     return true;
   });
 
-  // Handle Audition from a card
+  const stopContractPlayback = () => {
+    if (livePlayerRef.current) {
+      livePlayerRef.current.pause();
+      livePlayerRef.current.currentTime = 0;
+      livePlayerRef.current = null;
+    }
+    setIsPlaying(false);
+    setAuditioningCardId(null);
+  };
+
+  /** Card audition, Listen, validation and export all construct the same request. */
+  const renderAndPlay = async (voice: VoiceModelConfig, text: string, purpose: 'audition' | 'validation' = 'audition') => {
+    stopContractPlayback();
+    setIsPlaying(true);
+    setAuditioningCardId(voice.id);
+    try {
+      const request = createVoiceRenderRequest(voice, text, { environmentId, roomWet, purpose });
+      const result = await renderVoiceRequest(voice, request);
+      let player: HTMLAudioElement;
+      player = playRenderedVoice(result, {
+        onEnd: () => {
+          if (livePlayerRef.current === player) {
+            livePlayerRef.current = null;
+            setIsPlaying(false);
+            setAuditioningCardId(null);
+          }
+        },
+        onError: () => {
+          if (livePlayerRef.current === player) {
+            livePlayerRef.current = null;
+            setIsPlaying(false);
+            setAuditioningCardId(null);
+          }
+        },
+      });
+      livePlayerRef.current = player;
+    } catch (err) {
+      console.error('Contract audition error:', err);
+      setRenderError(err instanceof Error ? err.message : 'The voice could not be rendered.');
+      setIsPlaying(false);
+      setAuditioningCardId(null);
+    }
+  };
+
   const handleAuditionCard = (e: React.MouseEvent, voice: VoiceModelConfig) => {
     e.stopPropagation();
-    if (auditioningCardId === voice.id) {
-      stopSpeaking();
-      setAuditioningCardId(null);
-      setIsPlaying(false);
-      return;
-    }
-
+    if (auditioningCardId === voice.id) { stopContractPlayback(); return; }
     onSelectVoice(voice);
-    setAuditioningCardId(voice.id);
-    setIsPlaying(true);
-    speakRealWords(voice.samplePhrase, voice, {
-      onEnd: () => {
-        setAuditioningCardId(null);
-        setIsPlaying(false);
-      },
-      onError: () => {
-        setAuditioningCardId(null);
-        setIsPlaying(false);
-      },
-    });
+    void renderAndPlay(voice, voice.samplePhrase);
   };
 
-  // Play narration of current custom script
   const handlePlayNarration = () => {
-    if (isPlaying) {
-      stopSpeaking();
-      setIsPlaying(false);
-      setAuditioningCardId(null);
-      return;
-    }
-
+    if (isPlaying) { stopContractPlayback(); return; }
     const textToSpeak = customScript.trim() || activeVoice.samplePhrase;
-    setIsPlaying(true);
-    setAuditioningCardId(activeVoice.id);
-
-    speakRealWords(textToSpeak, activeVoice, {
-      onStart: () => setIsPlaying(true),
-      onEnd: () => {
-        setIsPlaying(false);
-        setAuditioningCardId(null);
-      },
-      onError: () => {
-        setIsPlaying(false);
-        setAuditioningCardId(null);
-      },
-    });
+    void renderAndPlay(activeVoice, textToSpeak);
   };
 
-  // Export audio as downloadable WAV
+  // Final output is rendered from a locked snapshot, so its recipe matches the
+  // audition route and can be reviewed later in the saved manifest.
   const handleExportWav = async () => {
     setIsExportingWav(true);
     try {
       const textToRender = customScript.trim() || activeVoice.samplePhrase;
-      const { audioUrl, duration } = await generateSpokenAudioWav(textToRender, activeVoice);
-      setExportedWavUrl(audioUrl);
+      const request = createVoiceRenderRequest(activeVoice, textToRender, { environmentId, roomWet, purpose: 'final' });
+      const result = await renderVoiceRequest(activeVoice, request);
+      if (exportedWavUrl) URL.revokeObjectURL(exportedWavUrl);
+      exportedRenderRef.current = result;
+      setExportedWavUrl(result.audioUrl);
       setExportedInfo({ voiceName: activeVoice.name, text: textToRender });
-      setExportedDuration(duration);
+      setExportedDuration(result.duration);
       if (audioPlayerRef.current) {
-        audioPlayerRef.current.src = audioUrl;
+        audioPlayerRef.current.src = result.audioUrl;
         audioPlayerRef.current.load();
       }
     } catch (err) {
       console.error('WAV export error:', err);
+      setRenderError(err instanceof Error ? err.message : 'The WAV could not be rendered.');
     } finally {
       setIsExportingWav(false);
     }
   };
 
-  // Save exported WAV take to vault
   const handleSaveTake = async () => {
-    if (!exportedWavUrl || !exportedInfo || savingTake) return;
-    const textSnippet = exportedInfo.text;
-    const take: GeneratedTake = {
-      id: 'take-' + Date.now(),
-      title: `${exportedInfo.voiceName} - ${textSnippet.slice(0, 32)}...`,
-      audioUrl: exportedWavUrl,
-      voiceName: exportedInfo.voiceName,
-      durationSeconds: Math.round(exportedDuration || 4),
-      createdAt: Date.now(),
-      textSnippet,
-    };
+    if (!exportedWavUrl || !exportedRenderRef.current || savingTake) return;
     setSavingTake(true);
-    try { await onSaveTake(take); setTakeSavedToast(true); setTimeout(() => setTakeSavedToast(false), 2400); }
-    catch { /* The app displays the persistence error. */ }
+    try {
+      await onSaveTake(renderResultToGeneratedTake(exportedRenderRef.current, `take-${Date.now()}`));
+      setTakeSavedToast(true);
+      setTimeout(() => setTakeSavedToast(false), 2400);
+    } catch { /* The app displays the persistence error. */ }
     finally { setSavingTake(false); }
   };
 
@@ -199,6 +213,7 @@ export const VoiceHub: React.FC<VoiceHubProps> = ({
 
   return (
     <div className="space-y-6 max-w-7xl mx-auto">
+      {renderError && <div role="alert" className="flex items-center justify-between gap-3 rounded-xl border border-rose-700/60 bg-rose-950/30 px-4 py-3 text-xs text-rose-200"><span>{renderError}</span><button type="button" onClick={() => setRenderError(null)} className="underline">Dismiss</button></div>}
       <audio
         ref={audioPlayerRef}
         onEnded={() => setIsPlayingExportedWav(false)}
@@ -300,6 +315,13 @@ export const VoiceHub: React.FC<VoiceHubProps> = ({
           </div>
         </div>
 
+        <RoomEnvironmentStudio
+          environmentId={environmentId}
+          wet={roomWet}
+          onEnvironmentChange={setEnvironmentId}
+          onWetChange={setRoomWet}
+        />
+
         {/* Real-time Oscilloscope Wave Visualizer (In the same page) */}
         <div className="space-y-1.5 pt-2 border-t border-slate-800/60">
           <div className="flex items-center justify-between text-xs text-slate-400">
@@ -349,43 +371,8 @@ export const VoiceHub: React.FC<VoiceHubProps> = ({
             </button>
           </div>
 
-          {/* Quick Pitch & Pace Knobs */}
-          <div className="flex items-center gap-4 text-xs text-slate-400">
-            <div className="flex items-center gap-2">
-              <span className="text-[11px]">Pitch:</span>
-              <input
-                type="range"
-                min="0.5"
-                max="1.7"
-                step="0.05"
-                value={activeVoice.pitch}
-                onChange={(e) =>
-                  onUpdateActiveVoice({ ...activeVoice, pitch: parseFloat(e.target.value) })
-                }
-                className="w-20 accent-cyan-400 h-1 bg-slate-950 rounded cursor-pointer"
-              />
-              <span className="font-mono text-cyan-300 text-[11px] w-9">
-                {activeVoice.pitch.toFixed(2)}x
-              </span>
-            </div>
-
-            <div className="flex items-center gap-2">
-              <span className="text-[11px]">Pace:</span>
-              <input
-                type="range"
-                min="0.6"
-                max="1.5"
-                step="0.05"
-                value={activeVoice.rate}
-                onChange={(e) =>
-                  onUpdateActiveVoice({ ...activeVoice, rate: parseFloat(e.target.value) })
-                }
-                className="w-20 accent-indigo-400 h-1 bg-slate-950 rounded cursor-pointer"
-              />
-              <span className="font-mono text-indigo-300 text-[11px] w-9">
-                {activeVoice.rate.toFixed(2)}x
-              </span>
-            </div>
+          <div className="max-w-xs rounded-xl border border-slate-800 bg-slate-950/60 px-3 py-2 text-[10px] leading-relaxed text-slate-400">
+            <span className="font-semibold text-slate-300">Pinned voice recipe</span> · Pitch and pace are not adjusted here. Create a separate derived candidate in Voice Creator; changing a recipe requires a new validation take.
           </div>
         </div>
 
@@ -401,7 +388,7 @@ export const VoiceHub: React.FC<VoiceHubProps> = ({
                   Exported WAV: {exportedInfo?.voiceName} ({Math.round(exportedDuration)}s)
                 </span>
                 <span className="text-[10px] text-slate-400">
-                  Ready to download and use as your own copy
+                  {exportedRenderRef.current?.manifest.environment.disclosure || 'Ready to download and use as your own copy'}
                 </span>
               </div>
             </div>

@@ -1,5 +1,6 @@
-import React, { useState } from 'react';
-import { VoiceModelConfig, speakRealWords, stopSpeaking } from '../utils/naturalVoiceEngine';
+import React, { useRef, useState } from 'react';
+import { VoiceModelConfig } from '../utils/naturalVoiceEngine';
+import { createVoiceRenderRequest, playRenderedVoice, renderVoiceRequest } from '../utils/voiceRenderContract';
 import {
   Volume2,
   Square,
@@ -28,20 +29,25 @@ export const PredefinedVoiceList: React.FC<PredefinedVoiceListProps> = ({
   const [filterGender, setFilterGender] = useState<'ALL' | 'Female' | 'Male'>('ALL');
   const [searchQuery, setSearchQuery] = useState('');
   const [auditioningId, setAuditioningId] = useState<string | null>(null);
+  const playerRef = useRef<HTMLAudioElement | null>(null);
 
-  const handleAudition = (e: React.MouseEvent, voice: VoiceModelConfig) => {
+  const handleAudition = async (e: React.MouseEvent, voice: VoiceModelConfig) => {
     e.stopPropagation();
     if (auditioningId === voice.id) {
-      stopSpeaking();
-      setAuditioningId(null);
+      playerRef.current?.pause(); playerRef.current = null; setAuditioningId(null);
       return;
     }
-
+    playerRef.current?.pause();
     setAuditioningId(voice.id);
-    speakRealWords(voice.samplePhrase, voice, {
-      onEnd: () => setAuditioningId(null),
-      onError: () => setAuditioningId(null),
-    });
+    try {
+      const result = await renderVoiceRequest(voice, createVoiceRenderRequest(voice, voice.samplePhrase, { environmentId: 'dry-reference', purpose: 'audition' }));
+      let player: HTMLAudioElement;
+      player = playRenderedVoice(result, {
+        onEnd: () => { if (playerRef.current === player) { playerRef.current = null; setAuditioningId(null); } },
+        onError: () => { if (playerRef.current === player) { playerRef.current = null; setAuditioningId(null); } },
+      });
+      playerRef.current = player;
+    } catch (error) { console.error('Catalog audition failed:', error); setAuditioningId(null); }
   };
 
   const filteredVoices = voices.filter((v) => {
@@ -67,21 +73,21 @@ export const PredefinedVoiceList: React.FC<PredefinedVoiceListProps> = ({
         <div>
           <div className="flex items-center gap-2">
             <h3 className="font-extrabold text-white text-lg tracking-tight">
-              Real Human Audio Voice Catalog
+              Voice Profile Catalog
             </h3>
             <span className="text-xs bg-indigo-500/20 text-indigo-300 font-mono px-2 py-0.5 rounded-full border border-indigo-500/30">
-              {voices.length} Real Human Speakers
+              {voices.length} Voice Profiles
             </span>
           </div>
           <p className="text-xs text-slate-400 mt-0.5">
-            100% Genuine Human Studio Recordings &bull; No Synthetic Warping &bull; Tested & Attributed
+            Source clips are separately attributed references; typed scripts use local synthesis and a pinned render recipe.
           </p>
         </div>
 
         {/* 100% Non-AI Human Voice Badge */}
         <div className="flex items-center gap-2 bg-emerald-950/40 border border-emerald-500/30 px-3 py-1.5 rounded-xl text-emerald-300 text-xs">
           <ShieldCheck className="w-4 h-4 text-emerald-400 shrink-0" />
-          <span className="font-medium">100% Real Human Voice Actors &bull; Zero AI</span>
+          <span className="font-medium">Local synthesis &bull; No hidden AI</span>
         </div>
       </div>
 

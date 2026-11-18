@@ -222,12 +222,20 @@ function applyStyle(input: Float32Array, style: VoiceModelConfig['toneStyle']): 
   return output;
 }
 
+/**
+ * Bounded pitch shift followed by WSOLA duration correction. This is deliberately
+ * separate from playbackRate so pitch and rate are not advertised as independent
+ * when they are actually coupled by resampling.
+ */
+export function transformPitchAndRate(samples: Float32Array, pitchFactor: number, rateFactor: number): Float32Array {
+  const pitched = resample(samples, pitchFactor);
+  return wsolaStretch(pitched, Math.floor(samples.length / Math.max(0.55, rateFactor)));
+}
+
 export function processCmuVoice(samples: Float32Array, model: VoiceModelConfig): Float32Array {
   const stylePitch = model.toneStyle === 'deep' ? 0.92 : model.toneStyle === 'energetic' ? 1.06 : 1;
-  const pitch = resample(samples, model.pitch * stylePitch);
   const rateStyle = model.toneStyle === 'deep' ? 0.92 : model.toneStyle === 'energetic' ? 1.1 : 1;
-  const stretch = wsolaStretch(pitch, Math.floor(samples.length / Math.max(0.55, model.rate * rateStyle)));
-  return applyStyle(stretch, model.toneStyle);
+  return applyStyle(transformPitchAndRate(samples, model.pitch * stylePitch, model.rate * rateStyle), model.toneStyle);
 }
 
 export const CMU_SAMPLE_RATE = SAMPLE_RATE;

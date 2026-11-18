@@ -2,14 +2,12 @@ import React, { useState, useRef } from 'react';
 import {
   VoiceModelConfig,
   NATURAL_HUMAN_SAMPLES,
-  speakRealWords,
-  stopSpeaking,
-  generateSpokenAudioWav,
   setUserAudioBuffer,
   getUserAudioBuffer,
 } from '../utils/naturalVoiceEngine';
 import { decodeCustomAudioBlob } from '../utils/naturalHumanAudio';
 import { GeneratedTake } from '../types/voice';
+import { createVoiceRenderRequest, playRenderedVoice, renderResultToGeneratedTake, renderVoiceRequest, type VoiceRenderResult } from '../utils/voiceRenderContract';
 import { VoiceVisualizer } from './VoiceVisualizer';
 import { SourceVoiceAttribution } from './SourceVoiceAttribution';
 import {
@@ -61,39 +59,48 @@ export const SpeechStudio: React.FC<SpeechStudioProps> = ({
   const audioChunksRef = useRef<Blob[]>([]);
 
   const audioRef = useRef<HTMLAudioElement | null>(null);
+  const livePlayerRef = useRef<HTMLAudioElement | null>(null);
+  const renderedResultRef = useRef<VoiceRenderResult | null>(null);
 
   const activeSample =
     NATURAL_HUMAN_SAMPLES.find((s) => s.id === activeModel.baseSampleId) ||
     NATURAL_HUMAN_SAMPLES[0];
 
-  // Play converted voice in real time through speakers
-  const handlePlayLive = () => {
+  // All typed-text output uses the pinned render contract. The original source
+  // clip remains available only from its explicitly labelled source route.
+  const handlePlayLive = async () => {
     if (isPlayingLive) {
-      stopSpeaking();
+      livePlayerRef.current?.pause();
+      livePlayerRef.current = null;
       setIsPlayingLive(false);
       return;
     }
-
     setIsPlayingLive(true);
-    speakRealWords(activeModel.samplePhrase, activeModel, {
-      onStart: () => setIsPlayingLive(true),
-      onEnd: () => setIsPlayingLive(false),
-      onError: () => setIsPlayingLive(false),
-    });
+    try {
+      const request = createVoiceRenderRequest(activeModel, activeModel.samplePhrase, { environmentId: 'dry-reference', purpose: 'audition' });
+      const result = await renderVoiceRequest(activeModel, request);
+      let player: HTMLAudioElement;
+      player = playRenderedVoice(result, {
+        onEnd: () => { if (livePlayerRef.current === player) { livePlayerRef.current = null; setIsPlayingLive(false); } },
+        onError: () => { if (livePlayerRef.current === player) { livePlayerRef.current = null; setIsPlayingLive(false); } },
+      });
+      livePlayerRef.current = player;
+    } catch (err) {
+      console.error('Contract audition failed:', err);
+      setIsPlayingLive(false);
+    }
   };
 
-  // Render downloadable WAV audio
   const handleRenderWav = async () => {
     setIsRenderingWav(true);
     try {
-      const { audioUrl, duration: renderedDuration } = await generateSpokenAudioWav(
-        activeModel.samplePhrase,
-        activeModel
-      );
-      setGeneratedWavUrl(audioUrl);
-      setDuration(renderedDuration);
+      const request = createVoiceRenderRequest(activeModel, activeModel.samplePhrase, { environmentId: 'dry-reference', purpose: 'final' });
+      const result = await renderVoiceRequest(activeModel, request);
+      renderedResultRef.current = result;
+      setGeneratedWavUrl(result.audioUrl);
+      setDuration(result.duration);
       if (audioRef.current) {
-        audioRef.current.src = audioUrl;
+        audioRef.current.src = result.audioUrl;
         audioRef.current.load();
       }
     } catch (err) {
@@ -129,17 +136,8 @@ export const SpeechStudio: React.FC<SpeechStudioProps> = ({
   };
 
   const handleSaveTake = () => {
-    if (!generatedWavUrl) return;
-    const take: GeneratedTake = {
-      id: 'take-' + Date.now(),
-      title: `${activeModel.name} - ${activeSample.transcript.slice(0, 30)}...`,
-      audioUrl: generatedWavUrl,
-      voiceName: activeModel.name,
-      durationSeconds: Math.round(duration || activeSample.duration),
-      createdAt: Date.now(),
-      textSnippet: activeSample.transcript,
-    };
-    onSaveTake(take);
+    if (!generatedWavUrl || !renderedResultRef.current) return;
+    onSaveTake(renderResultToGeneratedTake(renderedResultRef.current, `take-${Date.now()}`));
     setTakeSaved(true);
     setTimeout(() => setTakeSaved(false), 2500);
   };
