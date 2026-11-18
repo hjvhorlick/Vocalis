@@ -269,3 +269,130 @@ Use a simple state machine: **candidate → approved / rejected**. Do not replac
 - **CMU ARCTIC source material:** the corpus was created for speech synthesis and distributed under a permissive BSD-style licence; the local packaged notice remains the operative distribution notice. <https://www.isca-archive.org/ssw_2004/kominek04b_ssw.html>
 
 This architecture does not promise that every transformed file will be natural. It makes the process scientifically grounded, non-destructive, transparent, testable by the listener, and suitable for a genuinely free voice-library workflow.
+
+---
+
+## 9. Voice-consistent test-script contract
+
+### Requirement
+
+A test script must be generated **by the same voice definition and the same rendering recipe** that will generate the final file. An original source recording is a separate reference and must never be substituted as a misleading “test” of a generated script.
+
+“Sounds the same” means the test and final files have the same speaker/variant identity, adaptation settings and delivery treatment. The spoken words will naturally have different pitch contours and durations, but the application must not quietly switch to another base voice, a generic sample, a different AI voice ID, or a different room effect.
+
+### One renderer for every output
+
+All script-producing paths must call one versioned render contract:
+
+```ts
+type VoiceRenderRequest = {
+  text: string;
+  voiceDefinitionId: string; // original source pack, DSP variant, or approved AI voice definition
+  voiceRecipeId: string;     // pinned DSP settings/version, if applicable
+  environmentId: string;     // Dry Reference or a pinned room preset/version
+  environmentRecipeId: string;
+  outputFormat: 'wav';
+};
+```
+
+The same `VoiceRenderRequest` path must be used for:
+
+- card audition;
+- the Voice Hub **Listen** button;
+- the Voice Hub WAV export;
+- Voice Creator audition/export;
+- Dialogue Studio playback/export;
+- the fixed validation test script; and
+- a final video/narration script.
+
+A render manifest accompanies every file with the voice-definition ID, source/variant hash, renderer version, parameters, room preset/impulse-response hash, text hash and output hash.
+
+### Creation and validation flow
+
+1. Create or choose a voice definition.
+2. Render the fixed **Voice Validation Script** with that exact definition in **Dry Reference** mode.
+3. Render the same script with each desired room environment.
+4. The listener approves or rejects the voice definition and each room treatment separately.
+5. Lock the approved definition/recipe version.
+6. All final scripts use that locked definition. A change to voice, DSP parameters, AI model/voice ID, or room preset creates a new candidate version and requires another test.
+
+For an AI-created reusable voice, this requires a persistent provider/custom voice definition ID, model version and approved source record. A one-off AI WAV can be tested only as that one file; it cannot honestly promise that a different script will use the same voice. The UI must make that limitation explicit.
+
+### Automated regression tests
+
+Add tests that assert the following:
+
+- audition, export and dialogue submit the same selected `voiceDefinitionId` and recipe for the same text;
+- the original-audition button remains a separate source-only playback route;
+- a final render cannot use a missing or different test-approved voice definition;
+- a room render cannot accidentally become the dry reference;
+- manifests preserve the parent/original hash and the room/voice recipe IDs.
+
+---
+
+## 10. Room Environment Studio
+
+Room acoustics are an output environment, not a change to the protected original voice or its identity. The Room Environment Studio therefore sits **after** the selected voice renderer:
+
+```text
+protected original (reference only, dry, untouched)
+
+selected voice definition -> voice adaptation recipe -> dry voice render
+                                              -> room environment / mix -> delivered WAV
+```
+
+An original-library audition bypasses the entire room and DSP chain. A voice test first uses **Dry Reference** so that voice quality can be judged without room coloration. The same test may then be rendered with a selected room preset when the intended delivery requires it.
+
+### 10.1 Real room technology
+
+The preferred room engine is convolution reverb. It convolves dry voice audio with a **room impulse response (IR)**: a measured or physically modelled record of how sound travels from a source to a microphone/listening position in a space. Early reflections, frequency-dependent decay and the late reverb tail are then properties of the selected environment rather than a fake “room” label.
+
+There are two honest preset kinds:
+
+1. **Measured Room** — uses a licensed, documented impulse response captured in a real named/anonymous space. Its preset displays IR source, licence, sample rate, source/listener geometry where known, RT60 measurements, and the IR hash.
+2. **Modelled Room** — uses a deterministic room/acoustic model built from declared dimensions, material absorption, source distance and listener position. It is labelled *modelled*, not recorded in a real room.
+
+Never call an exponentially decaying noise effect a specific real room. It can be a useful modelled reverb, but it must be labelled correctly.
+
+### 10.2 Room controls based on sound requirements
+
+| Control | Acoustic meaning | Example user need |
+| --- | --- | --- |
+| **Room type / IR** | Defines the actual measured or modelled reflections | “Small untreated office”, “narration booth”, “large hall”. |
+| **Source distance** | Direct-to-reverberant balance, early reflection strength and high-frequency loss | Close voice-over versus distant on-camera dialogue. |
+| **Listener position** | Selects a location-specific IR where available | Front row, middle room, back of hall. |
+| **Pre-delay** | Time before early reflections/reverb reach the listener | Preserve speech clarity while adding space. |
+| **RT60 / decay** | Time required for room energy to fall by 60 dB | Short dry booth versus long hall. |
+| **Early / late reflection mix** | Separates intimacy/localisation from spaciousness | Natural interior dialogue versus cinematic ambience. |
+| **Wet/dry level** | Delivered environmental amount | Narration clarity versus a scene’s realism. |
+| **Stereo position** | Placement in the delivered stereo scene | Screen placement or dialogue staging. |
+| **Output loudness ceiling** | Final delivery safety, independent of the room sound | Video/export conformity without clipping. |
+
+Initial delivery presets should be purpose-based and clearly described: **Dry Reference**, **Treated Narration Booth**, **Close Podcast Studio**, **Small Room**, **Office / Meeting Room**, **Living Room**, **Classroom**, **Theatre / Hall**, and **Large Reverberant Space**. “Telephone”, “radio”, and “cinematic EQ” are device/mix profiles rather than rooms and should remain separate effects.
+
+### 10.3 Room creation workflow
+
+1. Choose a licensed measured IR or create a declared modelled room.
+2. Set source/listener position and wet/dry mix.
+3. Render the fixed test script with the approved voice definition and that room recipe.
+4. A/B compare against **Dry Reference** at matched loudness.
+5. Approve/reject the environment independently from the voice.
+6. Save a versioned `RoomEnvironment` record with its IR/model parameters, hashes and output settings.
+
+A real room can be measured for the library using an exponential sine sweep played through a speaker and recorded at the intended microphone position; the deconvolved response becomes the room IR. This creates a reproducible, licence-owned room asset when the team has permission to measure the venue.
+
+### 10.4 Testing and safety rules
+
+- Room profiles never alter an original asset; they render a new delivered file from a dry working copy.
+- Do not bake a room into a reusable **voice identity**. Keep the voice recipe and room recipe independently selectable.
+- Test intelligibility before and after room treatment; reject a room setting that masks consonants or makes narration tiring.
+- Include room ID, preset version, IR/model hash, wet/dry amount, source/listener setting and output loudness in every export manifest.
+- Keep a zero-room **Dry Reference** option permanently available.
+
+---
+
+## 11. Additional references for room rendering and consistency
+
+- **Room impulse response and convolution:** measured room impulse responses can be convolved with dry audio to place that audio in the measured acoustic space. <http://arqen.com/acoustics/surround-sound-impulse-response/>
+- **Browser convolution support:** a Web Audio `ConvolverNode` receives an impulse-response buffer and applies it as a reverb effect. <https://docs.w3cub.com/dom/convolvernode/buffer.html>
+- **Voice consistency evaluation:** compare the same voice across multiple fixed scripts and keep intelligibility, naturalness, identity, stability and artefacts as separate review dimensions. <https://github.com/IsaacFLZA/voice-similarity-eval>
