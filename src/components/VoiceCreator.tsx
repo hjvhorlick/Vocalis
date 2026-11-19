@@ -102,7 +102,10 @@ export const VoiceCreator: React.FC<VoiceCreatorProps> = ({
   const [flag, setFlag] = useState<string>(activeVoice.flag || '✨');
   const [gender, setGender] = useState<'Female' | 'Male' | 'Neutral'>(activeVoice.gender || 'Neutral');
   const [avatarColor, setAvatarColor] = useState<string>(activeVoice.avatarColor || '#6366f1');
-  const [samplePhrase, setSamplePhrase] = useState<string>(activeVoice.samplePhrase);
+  // Script-capable sources begin with the shared validation sentence so every
+  // supported voice is judged on identical words. A source-only recording keeps
+  // its imported phrase because it cannot honestly speak unseen text.
+  const [samplePhrase, setSamplePhrase] = useState<string>(activeVoice.renderMode === 'script-renderable' ? VOICE_VALIDATION_SCRIPT : activeVoice.samplePhrase);
 
   // Acoustic DSP controls
   const [pitch, setPitch] = useState<number>(activeVoice.pitch || 1.0);
@@ -160,7 +163,7 @@ export const VoiceCreator: React.FC<VoiceCreatorProps> = ({
     setFlag(found.flag || '✨');
     setGender(found.gender || 'Neutral');
     setAvatarColor(found.avatarColor || '#6366f1');
-    setSamplePhrase(found.samplePhrase);
+    setSamplePhrase(found.renderMode === 'script-renderable' || found.synthesisMethod === 'recorded-units' ? VOICE_VALIDATION_SCRIPT : found.samplePhrase);
     setPitch(found.pitch || 1.0);
     setRate(found.rate || 1.0);
     setVolume(found.volume ?? 1.0);
@@ -762,8 +765,9 @@ export const VoiceCreator: React.FC<VoiceCreatorProps> = ({
           <label className="text-xs font-bold uppercase tracking-wider text-slate-300 flex items-center gap-2"><span className="flex h-5 w-5 items-center justify-center rounded-full bg-emerald-600 text-[10px] font-bold text-white">3</span>Name the new voice</label>
           <div className="grid gap-4 md:grid-cols-2">
             <label className="block"><span className="mb-1 block text-[11px] font-semibold text-slate-400">New voice name</span><input type="text" value={name} onChange={(event) => setName(event.target.value)} className="w-full rounded-xl border border-slate-800 bg-slate-900 px-3 py-2 text-xs text-white outline-none focus:ring-1 focus:ring-indigo-500" /></label>
-            <label className="block"><span className="mb-1 block text-[11px] font-semibold text-slate-400">Audition phrase</span><input type="text" value={samplePhrase} onChange={(event) => setSamplePhrase(event.target.value)} disabled={selectedBaseVoice.renderMode === 'source-clip-only'} className="w-full rounded-xl border border-slate-800 bg-slate-900 px-3 py-2 text-xs text-white outline-none focus:ring-1 focus:ring-indigo-500 disabled:cursor-not-allowed disabled:opacity-50" /></label>
+            <label className="block"><span className="mb-1 block text-[11px] font-semibold text-slate-400">Common test script</span><textarea value={samplePhrase} onChange={(event) => setSamplePhrase(event.target.value)} disabled={selectedBaseVoice.renderMode === 'source-clip-only'} rows={3} className="w-full rounded-xl border border-slate-800 bg-slate-900 px-3 py-2 text-xs leading-relaxed text-white outline-none focus:ring-1 focus:ring-indigo-500 disabled:cursor-not-allowed disabled:opacity-50" /></label>
           </div>
+          <p className={`rounded-xl border p-3 text-[11px] leading-relaxed ${selectedBaseVoice.renderMode === 'source-clip-only' ? 'border-amber-500/30 bg-amber-950/20 text-amber-100' : 'border-emerald-500/25 bg-emerald-950/15 text-emerald-100'}`}>{selectedBaseVoice.renderMode === 'source-clip-only' ? 'This original has only a short protected recording, so its imported words stay fixed. Audition transforms that recording; it cannot truthfully read the test script.' : 'Audition Sound Now reads this exact common test script with the selected voice recipe and room setting.'}</p>
         </section>
 
         <RoomEnvironmentStudio

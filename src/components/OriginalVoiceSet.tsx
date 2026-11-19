@@ -45,7 +45,7 @@ export function OriginalVoiceSet({ voices }: OriginalVoiceSetProps) {
       <header className="border-b border-slate-800 pb-4">
         <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-indigo-300">Section 1 of 4</p>
         <h1 className="mt-0.5 text-xl font-extrabold text-white">Original Voices</h1>
-        <p className="mt-1 max-w-3xl text-sm text-slate-400">Listen to each protected original recording and rate how natural it sounds. These are the unchanged imports; playback is unprocessed.</p>
+        <p className="mt-1 max-w-3xl text-sm text-slate-400">Listen to each protected original recording and rate how natural it sounds. These are unchanged imports, so each Test voice button plays its own recorded words rather than pretending every speaker can read a new script.</p>
       </header>
 
       <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
