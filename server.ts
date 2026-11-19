@@ -17,7 +17,10 @@ async function startServer() {
   app.disable('x-powered-by');
   const port = Number(process.env.PORT || 3000);
   app.get('/api/voice/status', (_req: Request, res: Response) => {
-    res.json({ engine: 'Vocalis', mode: 'Local non-neural synthesis; experimental sound-bank builder', status: 'active', audioUploads: false });
+    res.json({
+      engine: 'Vocalis', mode: 'Local non-neural synthesis; experimental sound-bank builder', status: 'active', audioUploads: false,
+      aiVoiceFileCreation: 'disabled — no reviewed provider/server adapter or source allowlist is configured',
+    });
   });
 
   // Source export is development-only. No token collection, shell interpolation,

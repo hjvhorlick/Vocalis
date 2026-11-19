@@ -1,5 +1,6 @@
 import type { VoiceBank } from '../types/voiceBank';
 import type { VoiceModelConfig } from './naturalVoiceEngine';
+import { roomEnvironmentForId, roomRecipeId } from './roomEnvironment';
 
 function open(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
@@ -42,6 +43,9 @@ export function voiceModelForBank(bank: VoiceBank): VoiceModelConfig {
     toneStyle: 'natural', samplePhrase: bank.exampleText || 'Hello.', avatarColor: '#b08945',
     isCustom: true, baseSampleId: 'user-sound-bank', unitVoiceId: bank.id,
     synthesisMethod: 'recorded-units', realSpeakerName: bank.name,
+    sourceType: 'derived', sourceId: 'user-sound-bank', recipeId: `recorded-units-v1:${bank.id}`,
+    reviewState: 'approved', renderMode: 'script-renderable', validatedRecipeId: `recorded-units-v1:${bank.id}`,
+    approvedEnvironmentRecipeIds: [roomRecipeId(roomEnvironmentForId('dry-reference'))],
   };
 }
 

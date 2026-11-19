@@ -1,11 +1,17 @@
 import React, { useState, useRef, useEffect } from 'react';
 import {
   VoiceModelConfig,
-  NATURAL_HUMAN_SAMPLES,
-  speakRealWords,
+  auditionSourceRecording,
   stopSpeaking,
-  generateSpokenAudioWav,
 } from '../utils/naturalVoiceEngine';
+import {
+  createVoiceRenderRequest,
+  playRenderedVoice,
+  renderResultToGeneratedTake,
+  renderVoiceRequest,
+  type VoiceRenderResult,
+} from '../utils/voiceRenderContract';
+import type { RoomEnvironmentId } from '../utils/roomEnvironment';
 import { GeneratedTake } from '../types/voice';
 import { VoiceVisualizer } from './VoiceVisualizer';
 import { SourceVoiceAttribution } from './SourceVoiceAttribution';
@@ -28,6 +34,7 @@ import {
 import { VoiceAvatar } from './VoiceAvatar';
 import { VoiceSourceNote } from './VoiceSourceNote';
 import { VoiceRating } from './VoiceRating';
+import { RoomEnvironmentStudio } from './RoomEnvironmentStudio';
 
 interface VoiceHubProps {
   voices: VoiceModelConfig[];
@@ -72,6 +79,12 @@ export const VoiceHub: React.FC<VoiceHubProps> = ({
   const [takeSavedToast, setTakeSavedToast] = useState(false);
   const [savingTake, setSavingTake] = useState(false);
   const audioPlayerRef = useRef<HTMLAudioElement | null>(null);
+  const livePlayerRef = useRef<HTMLAudioElement | null>(null);
+  const exportedRenderRef = useRef<VoiceRenderResult | null>(null);
+  const [environmentId, setEnvironmentId] = useState<RoomEnvironmentId>('dry-reference');
+  const [roomWet, setRoomWet] = useState(0);
+  const [renderError, setRenderError] = useState<string | null>(null);
+  const activeSourceOnly = activeVoice.renderMode === 'source-clip-only';
 
   // Filter voices
   const filteredVoices = voices.filter((v) => {
@@ -90,93 +103,111 @@ export const VoiceHub: React.FC<VoiceHubProps> = ({
     return true;
   });
 
-  // Handle Audition from a card
+  const stopContractPlayback = () => {
+    if (livePlayerRef.current) {
+      livePlayerRef.current.pause();
+      livePlayerRef.current.currentTime = 0;
+      livePlayerRef.current = null;
+    }
+    setIsPlaying(false);
+    setAuditioningCardId(null);
+  };
+
+  /** Card audition, Listen, validation and export all construct the same request. */
+  const renderAndPlay = async (voice: VoiceModelConfig, text: string, purpose: 'audition' | 'validation' = 'audition') => {
+    stopContractPlayback();
+    setIsPlaying(true);
+    setAuditioningCardId(voice.id);
+    try {
+      const request = createVoiceRenderRequest(voice, text, { environmentId, roomWet, purpose });
+      const result = await renderVoiceRequest(voice, request);
+      let player: HTMLAudioElement;
+      player = playRenderedVoice(result, {
+        onEnd: () => {
+          if (livePlayerRef.current === player) {
+            livePlayerRef.current = null;
+            setIsPlaying(false);
+            setAuditioningCardId(null);
+          }
+        },
+        onError: () => {
+          if (livePlayerRef.current === player) {
+            livePlayerRef.current = null;
+            setIsPlaying(false);
+            setAuditioningCardId(null);
+          }
+        },
+      });
+      livePlayerRef.current = player;
+    } catch (err) {
+      console.error('Contract audition error:', err);
+      setRenderError(err instanceof Error ? err.message : 'The voice could not be rendered.');
+      setIsPlaying(false);
+      setAuditioningCardId(null);
+    }
+  };
+
+  const playOriginalReference = (voice: VoiceModelConfig) => {
+    stopContractPlayback(); stopSpeaking();
+    setIsPlaying(true); setAuditioningCardId(voice.id);
+    void auditionSourceRecording(voice, {
+      onEnd: () => { setIsPlaying(false); setAuditioningCardId(null); },
+      onError: error => { setRenderError(error.message); setIsPlaying(false); setAuditioningCardId(null); },
+    });
+  };
+
   const handleAuditionCard = (e: React.MouseEvent, voice: VoiceModelConfig) => {
     e.stopPropagation();
-    if (auditioningCardId === voice.id) {
-      stopSpeaking();
-      setAuditioningCardId(null);
-      setIsPlaying(false);
-      return;
-    }
-
+    if (auditioningCardId === voice.id) { stopContractPlayback(); stopSpeaking(); return; }
     onSelectVoice(voice);
-    setAuditioningCardId(voice.id);
-    setIsPlaying(true);
-    speakRealWords(voice.samplePhrase, voice, {
-      onEnd: () => {
-        setAuditioningCardId(null);
-        setIsPlaying(false);
-      },
-      onError: () => {
-        setAuditioningCardId(null);
-        setIsPlaying(false);
-      },
-    });
+    if (voice.renderMode === 'source-clip-only') playOriginalReference(voice);
+    else void renderAndPlay(voice, voice.samplePhrase);
   };
 
-  // Play narration of current custom script
   const handlePlayNarration = () => {
-    if (isPlaying) {
-      stopSpeaking();
-      setIsPlaying(false);
-      setAuditioningCardId(null);
+    if (isPlaying) { stopContractPlayback(); stopSpeaking(); return; }
+    if (activeSourceOnly) { playOriginalReference(activeVoice); return; }
+    const textToSpeak = customScript.trim() || activeVoice.samplePhrase;
+    void renderAndPlay(activeVoice, textToSpeak);
+  };
+
+  // Final output is rendered from a locked snapshot, so its recipe matches the
+  // audition route and can be reviewed later in the saved manifest.
+  const handleExportWav = async () => {
+    if (activeSourceOnly) {
+      setRenderError('This protected source is a reference clip without a matching voice bank. Download its verified original from the source note or create a finite DSP source-clip variant; arbitrary-text export is unavailable.');
       return;
     }
-
-    const textToSpeak = customScript.trim() || activeVoice.samplePhrase;
-    setIsPlaying(true);
-    setAuditioningCardId(activeVoice.id);
-
-    speakRealWords(textToSpeak, activeVoice, {
-      onStart: () => setIsPlaying(true),
-      onEnd: () => {
-        setIsPlaying(false);
-        setAuditioningCardId(null);
-      },
-      onError: () => {
-        setIsPlaying(false);
-        setAuditioningCardId(null);
-      },
-    });
-  };
-
-  // Export audio as downloadable WAV
-  const handleExportWav = async () => {
     setIsExportingWav(true);
     try {
       const textToRender = customScript.trim() || activeVoice.samplePhrase;
-      const { audioUrl, duration } = await generateSpokenAudioWav(textToRender, activeVoice);
-      setExportedWavUrl(audioUrl);
+      const request = createVoiceRenderRequest(activeVoice, textToRender, { environmentId, roomWet, purpose: 'final' });
+      const result = await renderVoiceRequest(activeVoice, request);
+      if (exportedWavUrl) URL.revokeObjectURL(exportedWavUrl);
+      exportedRenderRef.current = result;
+      setExportedWavUrl(result.audioUrl);
       setExportedInfo({ voiceName: activeVoice.name, text: textToRender });
-      setExportedDuration(duration);
+      setExportedDuration(result.duration);
       if (audioPlayerRef.current) {
-        audioPlayerRef.current.src = audioUrl;
+        audioPlayerRef.current.src = result.audioUrl;
         audioPlayerRef.current.load();
       }
     } catch (err) {
       console.error('WAV export error:', err);
+      setRenderError(err instanceof Error ? err.message : 'The WAV could not be rendered.');
     } finally {
       setIsExportingWav(false);
     }
   };
 
-  // Save exported WAV take to vault
   const handleSaveTake = async () => {
-    if (!exportedWavUrl || !exportedInfo || savingTake) return;
-    const textSnippet = exportedInfo.text;
-    const take: GeneratedTake = {
-      id: 'take-' + Date.now(),
-      title: `${exportedInfo.voiceName} - ${textSnippet.slice(0, 32)}...`,
-      audioUrl: exportedWavUrl,
-      voiceName: exportedInfo.voiceName,
-      durationSeconds: Math.round(exportedDuration || 4),
-      createdAt: Date.now(),
-      textSnippet,
-    };
+    if (!exportedWavUrl || !exportedRenderRef.current || savingTake) return;
     setSavingTake(true);
-    try { await onSaveTake(take); setTakeSavedToast(true); setTimeout(() => setTakeSavedToast(false), 2400); }
-    catch { /* The app displays the persistence error. */ }
+    try {
+      await onSaveTake(renderResultToGeneratedTake(exportedRenderRef.current, `take-${Date.now()}`));
+      setTakeSavedToast(true);
+      setTimeout(() => setTakeSavedToast(false), 2400);
+    } catch { /* The app displays the persistence error. */ }
     finally { setSavingTake(false); }
   };
 
@@ -199,6 +230,7 @@ export const VoiceHub: React.FC<VoiceHubProps> = ({
 
   return (
     <div className="space-y-6 max-w-7xl mx-auto">
+      {renderError && <div role="alert" className="flex items-center justify-between gap-3 rounded-xl border border-rose-700/60 bg-rose-950/30 px-4 py-3 text-xs text-rose-200"><span>{renderError}</span><button type="button" onClick={() => setRenderError(null)} className="underline">Dismiss</button></div>}
       <audio
         ref={audioPlayerRef}
         onEnded={() => setIsPlayingExportedWav(false)}
@@ -268,7 +300,7 @@ export const VoiceHub: React.FC<VoiceHubProps> = ({
           <div className="flex items-center justify-between">
             <label className="text-xs font-bold uppercase tracking-wider text-slate-300 flex items-center gap-1.5">
               <FileText className="w-3.5 h-3.5 text-indigo-400" />
-              Add or Edit Script to Listen to Narration:
+              {activeSourceOnly ? 'Protected Source Reference — no arbitrary-text renderer:' : 'Add or Edit Script to Listen to Narration:'}
             </label>
             <div className="flex items-center gap-1 text-[11px] text-slate-400 font-mono">
               <span>{customScript.length} chars</span>
@@ -280,9 +312,10 @@ export const VoiceHub: React.FC<VoiceHubProps> = ({
           <textarea
             value={customScript}
             onChange={(e) => setCustomScript(e.target.value)}
+            disabled={activeSourceOnly}
             rows={3}
-            placeholder="Type or paste any text for this voice to narrate..."
-            className="w-full bg-slate-950 border border-slate-800 rounded-2xl p-3.5 text-sm text-slate-100 placeholder-slate-500 focus:outline-none focus:ring-1 focus:ring-indigo-500 leading-relaxed font-sans"
+            placeholder={activeSourceOnly ? 'This protected source has no matching arbitrary-text voice bank.' : 'Type or paste any text for this voice to narrate...'}
+            className="w-full bg-slate-950 border border-slate-800 rounded-2xl p-3.5 text-sm text-slate-100 placeholder-slate-500 focus:outline-none focus:ring-1 focus:ring-indigo-500 leading-relaxed font-sans disabled:cursor-not-allowed disabled:opacity-60"
           />
 
           {/* Script Template Quick Buttons */}
@@ -292,13 +325,21 @@ export const VoiceHub: React.FC<VoiceHubProps> = ({
               <button
                 key={t.label}
                 onClick={() => setCustomScript(t.text)}
-                className="text-[11px] px-2.5 py-1 rounded-lg bg-slate-950 hover:bg-slate-800 border border-slate-800/80 text-slate-300 transition-colors cursor-pointer"
+                disabled={activeSourceOnly}
+                className="text-[11px] px-2.5 py-1 rounded-lg bg-slate-950 hover:bg-slate-800 border border-slate-800/80 text-slate-300 transition-colors cursor-pointer disabled:cursor-not-allowed disabled:opacity-50"
               >
                 {t.label}
               </button>
             ))}
           </div>
         </div>
+
+        {!activeSourceOnly && <RoomEnvironmentStudio
+          environmentId={environmentId}
+          wet={roomWet}
+          onEnvironmentChange={setEnvironmentId}
+          onWetChange={setRoomWet}
+        />}
 
         {/* Real-time Oscilloscope Wave Visualizer (In the same page) */}
         <div className="space-y-1.5 pt-2 border-t border-slate-800/60">
@@ -332,7 +373,7 @@ export const VoiceHub: React.FC<VoiceHubProps> = ({
                 </>
               ) : (
                 <>
-                  <Volume2 className="w-3.5 h-3.5" /> Listen to Narration
+                  <Volume2 className="w-3.5 h-3.5" /> {activeSourceOnly ? 'Listen to Original' : 'Listen to Narration'}
                 </>
               )}
             </button>
@@ -340,52 +381,17 @@ export const VoiceHub: React.FC<VoiceHubProps> = ({
             {/* Export Audio File (WAV) */}
             <button
               onClick={handleExportWav}
-              disabled={isExportingWav}
-              className="h-10 px-4 rounded-xl bg-slate-950 hover:bg-slate-800 text-slate-200 border border-slate-800 font-semibold text-xs flex items-center gap-1.5 transition-colors cursor-pointer shadow-sm"
-              title="Render and export as audio file to use as your own copy"
+              disabled={isExportingWav || activeSourceOnly}
+              className="h-10 px-4 rounded-xl bg-slate-950 hover:bg-slate-800 text-slate-200 border border-slate-800 font-semibold text-xs flex items-center gap-1.5 transition-colors cursor-pointer shadow-sm disabled:cursor-not-allowed disabled:opacity-50"
+              title={activeSourceOnly ? 'This source has no matching arbitrary-text voice bank.' : 'Render and export as audio file to use as your own copy'}
             >
               <Download className="w-3.5 h-3.5 text-emerald-400" />
               <span>{isExportingWav ? 'Rendering Audio...' : 'Export Audio File (WAV)'}</span>
             </button>
           </div>
 
-          {/* Quick Pitch & Pace Knobs */}
-          <div className="flex items-center gap-4 text-xs text-slate-400">
-            <div className="flex items-center gap-2">
-              <span className="text-[11px]">Pitch:</span>
-              <input
-                type="range"
-                min="0.5"
-                max="1.7"
-                step="0.05"
-                value={activeVoice.pitch}
-                onChange={(e) =>
-                  onUpdateActiveVoice({ ...activeVoice, pitch: parseFloat(e.target.value) })
-                }
-                className="w-20 accent-cyan-400 h-1 bg-slate-950 rounded cursor-pointer"
-              />
-              <span className="font-mono text-cyan-300 text-[11px] w-9">
-                {activeVoice.pitch.toFixed(2)}x
-              </span>
-            </div>
-
-            <div className="flex items-center gap-2">
-              <span className="text-[11px]">Pace:</span>
-              <input
-                type="range"
-                min="0.6"
-                max="1.5"
-                step="0.05"
-                value={activeVoice.rate}
-                onChange={(e) =>
-                  onUpdateActiveVoice({ ...activeVoice, rate: parseFloat(e.target.value) })
-                }
-                className="w-20 accent-indigo-400 h-1 bg-slate-950 rounded cursor-pointer"
-              />
-              <span className="font-mono text-indigo-300 text-[11px] w-9">
-                {activeVoice.rate.toFixed(2)}x
-              </span>
-            </div>
+          <div className="max-w-xs rounded-xl border border-slate-800 bg-slate-950/60 px-3 py-2 text-[10px] leading-relaxed text-slate-400">
+            <span className="font-semibold text-slate-300">Pinned voice recipe</span> · Pitch and pace are not adjusted here. Create a separate derived candidate in Voice Creator; changing a recipe requires a new validation take.
           </div>
         </div>
 
@@ -401,7 +407,7 @@ export const VoiceHub: React.FC<VoiceHubProps> = ({
                   Exported WAV: {exportedInfo?.voiceName} ({Math.round(exportedDuration)}s)
                 </span>
                 <span className="text-[10px] text-slate-400">
-                  Ready to download and use as your own copy
+                  {exportedRenderRef.current?.manifest.environment.disclosure || 'Ready to download and use as your own copy'}
                 </span>
               </div>
             </div>
@@ -585,7 +591,7 @@ export const VoiceHub: React.FC<VoiceHubProps> = ({
                   {/* Vocalis Script preview */}
                   <div className="text-[10px] text-indigo-300/90 bg-indigo-950/20 p-2 rounded-xl border border-indigo-900/40 space-y-0.5">
                     <span className="text-[9px] uppercase font-bold text-indigo-400 block tracking-wider">
-                      Vocalis Script:
+                      {voice.renderMode === 'source-clip-only' ? 'Profile script — unavailable for this source:' : 'Vocalis Script:'}
                     </span>
                     <p className="font-sans italic line-clamp-2 leading-tight text-slate-300">
                       "{voice.samplePhrase}"
@@ -613,7 +619,7 @@ export const VoiceHub: React.FC<VoiceHubProps> = ({
                       </>
                     ) : (
                       <>
-                        <Volume2 className="w-3.5 h-3.5 text-indigo-400" /> Audition Script
+                        <Volume2 className="w-3.5 h-3.5 text-indigo-400" /> {voice.renderMode === 'source-clip-only' ? 'Original clip' : 'Audition script'}
                       </>
                     )}
                   </button>

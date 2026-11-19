@@ -3,8 +3,12 @@ import type { GeneratedTake } from '../types/voice';
 type StoredTake = Omit<GeneratedTake, 'audioUrl'> & { audio: Blob };
 function open(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
-    const request = indexedDB.open('vocalis-audio-vault', 1);
-    request.onupgradeneeded = () => request.result.createObjectStore('takes', { keyPath: 'id' });
+    const request = indexedDB.open('vocalis-audio-vault', 2);
+    // v2 keeps old takes untouched while allowing their optional renderManifest
+    // field to be persisted alongside new contract renders.
+    request.onupgradeneeded = () => {
+      if (!request.result.objectStoreNames.contains('takes')) request.result.createObjectStore('takes', { keyPath: 'id' });
+    };
     request.onsuccess = () => resolve(request.result);
     request.onerror = () => reject(request.error);
   });

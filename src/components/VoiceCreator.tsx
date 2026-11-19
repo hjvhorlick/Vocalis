@@ -3,10 +3,15 @@ import {
   VoiceModelConfig,
   NATURAL_HUMAN_SAMPLES,
   PRESET_VOICE_MODELS,
-  speakRealWords,
-  stopSpeaking,
-  generateSpokenAudioWav,
 } from '../utils/naturalVoiceEngine';
+import {
+  createVoiceRenderRequest,
+  playRenderedVoice,
+  renderResultToGeneratedTake,
+  renderVoiceRequest,
+  type VoiceRenderResult,
+} from '../utils/voiceRenderContract';
+import type { RoomEnvironmentId } from '../utils/roomEnvironment';
 import { GeneratedTake } from '../types/voice';
 import { VoiceVisualizer } from './VoiceVisualizer';
 import { SourceVoiceAttribution } from './SourceVoiceAttribution';
@@ -30,6 +35,16 @@ import {
 import { VoiceAvatar } from './VoiceAvatar';
 import { VoiceSourceNote } from './VoiceSourceNote';
 import { VoiceRating } from './VoiceRating';
+import { RoomEnvironmentStudio } from './RoomEnvironmentStudio';
+import { AcousticAnalysisPanel } from './AcousticAnalysisPanel';
+import { getSharedAudioContext } from '../utils/naturalHumanAudio';
+import { renderTransformedWav } from '../utils/audioDspEngine';
+import { sha256Hex } from '../utils/voiceRenderContract';
+import { originalSourceHash, originalSourceRecord, sha256Blob, verifiedOriginalSourceBlob } from '../utils/voiceProvenance';
+import { inspectAudioBufferQuality } from '../utils/voiceQuality';
+import { prepareAiVoiceCreationJob, type AiVoiceCreationJob, type AiConsentRecord } from '../utils/aiVoiceCreation';
+import type { VoiceAsset } from '../types/voiceAsset';
+import { saveDerivedAsset } from '../utils/voiceAssetStorage';
 
 interface VoiceCreatorProps {
   voices: VoiceModelConfig[];
@@ -38,6 +53,8 @@ interface VoiceCreatorProps {
   onSaveTake: (take: GeneratedTake) => Promise<void>;
   onGoToHub: (voice?: VoiceModelConfig) => void;
 }
+
+export const VOICE_VALIDATION_SCRIPT = 'The morning train arrives at quarter past eight. Clear speech, warm vowels, and careful consonants should remain steady from the first sentence to the last.';
 
 const COLOR_SWATCHES = [
   '#3b82f6', // Blue
@@ -70,14 +87,14 @@ export const VoiceCreator: React.FC<VoiceCreatorProps> = ({
   onSaveTake,
   onGoToHub,
 }) => {
-  // Base voice selection (from the 60 original voices)
+  // Base profile selection; originals remain protected source references.
   const [selectedBaseId, setSelectedBaseId] = useState<string>(activeVoice.id);
 
   // Editable voice parameters
   const [name, setName] = useState<string>(`${activeVoice.name} (Custom)`);
   const [archetype, setArchetype] = useState<string>(activeVoice.archetype || 'Custom Speaker');
   const [description, setDescription] = useState<string>(
-    `A distinct custom voice sculpted from ${activeVoice.name} with custom pitch transposition and formant EQ.`
+    `A distinct derived voice candidate sculpted from ${activeVoice.name} with bounded pitch, spectral-envelope and delivery controls.`
   );
   const [accent, setAccent] = useState<'US' | 'UK' | 'AU' | 'Global' | 'CA' | 'IN' | 'EU'>(
     activeVoice.accent || 'US'
@@ -94,6 +111,8 @@ export const VoiceCreator: React.FC<VoiceCreatorProps> = ({
   const [throatWarmth, setThroatWarmth] = useState<number>(activeVoice.throatWarmth ?? 0);
   const [oralClarity, setOralClarity] = useState<number>(activeVoice.oralClarity ?? 0);
   const [airPresence, setAirPresence] = useState<number>(activeVoice.airPresence ?? 0);
+  const [spectralTilt, setSpectralTilt] = useState<number>(activeVoice.spectralTilt ?? 0);
+  const [formantShift, setFormantShift] = useState<number>(activeVoice.formantShift ?? 1);
   const [toneStyle, setToneStyle] = useState<
     'natural' | 'deep' | 'energetic' | 'whisper' | 'radio' | 'robot'
   >(activeVoice.toneStyle || 'natural');
@@ -107,6 +126,25 @@ export const VoiceCreator: React.FC<VoiceCreatorProps> = ({
   const [savedTakeUrl, setSavedTakeUrl] = useState<string | null>(null);
   const [savedTakeDuration, setSavedTakeDuration] = useState<number>(0);
   const [saveSuccess, setSaveSuccess] = useState<boolean>(false);
+  const [aiIntent, setAiIntent] = useState<AiVoiceCreationJob | null>(null);
+  const [aiSourceMode, setAiSourceMode] = useState<'packaged' | 'own-file'>('packaged');
+  const [aiOwnReference, setAiOwnReference] = useState<File | null>(null);
+  const [aiOwnReferenceHash, setAiOwnReferenceHash] = useState<string | null>(null);
+  const [aiIntentError, setAiIntentError] = useState<string | null>(null);
+  const [aiConsentHolder, setAiConsentHolder] = useState('');
+  const [aiConsentEvidence, setAiConsentEvidence] = useState('');
+  const [aiScript, setAiScript] = useState('');
+  const [aiProvider, setAiProvider] = useState('');
+  const [aiModelVersion, setAiModelVersion] = useState('');
+  const [aiPermitsDerived, setAiPermitsDerived] = useState(false);
+  const [aiPermitsFreeLibrary, setAiPermitsFreeLibrary] = useState(false);
+  const [aiRetentionEndsAt, setAiRetentionEndsAt] = useState('');
+  const [environmentId, setEnvironmentId] = useState<RoomEnvironmentId>('dry-reference');
+  const [roomWet, setRoomWet] = useState(0);
+  const [validationResult, setValidationResult] = useState<VoiceRenderResult | null>(null);
+  const [roomValidationResult, setRoomValidationResult] = useState<VoiceRenderResult | null>(null);
+  const [isRenderingRoomValidation, setIsRenderingRoomValidation] = useState(false);
+  const auditionPlayerRef = React.useRef<HTMLAudioElement | null>(null);
 
   // Sync when activeVoice prop changes or base selection changes
   const handleSelectBaseVoice = (voiceId: string) => {
@@ -126,6 +164,8 @@ export const VoiceCreator: React.FC<VoiceCreatorProps> = ({
     setThroatWarmth(found.throatWarmth ?? 0);
     setOralClarity(found.oralClarity ?? 0);
     setAirPresence(found.airPresence ?? 0);
+    setSpectralTilt(found.spectralTilt ?? 0);
+    setFormantShift(found.formantShift ?? 1);
     setToneStyle(found.toneStyle || 'natural');
   };
 
@@ -139,7 +179,7 @@ export const VoiceCreator: React.FC<VoiceCreatorProps> = ({
     synthesisMethod: voices.find(v => v.id === selectedBaseId)?.synthesisMethod || 'cmu-arctic',
     unitVoiceId: voices.find(v => v.id === selectedBaseId)?.unitVoiceId,
     baseSampleId: voices.find((v) => v.id === selectedBaseId)?.baseSampleId || 'cmu-slt-1',
-    baseVoiceId: voices.find((v) => v.id === selectedBaseId)?.baseVoiceId || 'slt',
+    baseVoiceId: voices.find((v) => v.id === selectedBaseId)?.baseVoiceId,
     realSpeakerName: voices.find((v) => v.id === selectedBaseId)?.realSpeakerName || 'Original Speaker',
     accent,
     flag,
@@ -149,26 +189,61 @@ export const VoiceCreator: React.FC<VoiceCreatorProps> = ({
     throatWarmth,
     oralClarity,
     airPresence,
+    spectralTilt,
+    formantShift,
     toneStyle,
     samplePhrase: samplePhrase.trim() || 'Hello, I am a newly created voice in Vocalis.',
     avatarColor,
     isCustom: true,
+    sourceType: 'derived',
+    parentVoiceDefinitionId: selectedBaseId,
+    sourceId: voices.find(v => v.id === selectedBaseId)?.sourceId || voices.find(v => v.id === selectedBaseId)?.baseSampleId,
+    originalSourceHash: voices.find(v => v.id === selectedBaseId)?.originalSourceHash,
+    recipeId: `derived-local-v2:${selectedBaseId}:p${pitch.toFixed(2)}:r${rate.toFixed(2)}:fs${formantShift.toFixed(2)}:st${spectralTilt.toFixed(1)}:tw${throatWarmth.toFixed(1)}:oc${oralClarity.toFixed(1)}:ap${airPresence.toFixed(1)}:${toneStyle}`,
+    reviewState: 'candidate',
+    renderMode: voices.find(voice => voice.id === selectedBaseId)?.renderMode === 'script-renderable' || voices.find(voice => voice.id === selectedBaseId)?.synthesisMethod === 'recorded-units' ? 'script-renderable' : 'source-clip-only',
   };
 
-  // Audition the shaped voice
-  const handleAudition = () => {
-    if (isAuditioning) {
-      stopSpeaking();
-      setIsAuditioning(false);
-      return;
-    }
+  const stopAudition = () => {
+    auditionPlayerRef.current?.pause();
+    auditionPlayerRef.current = null;
+    setIsAuditioning(false);
+  };
 
+  // A creator audition is a contract render too; no source clip is substituted.
+  const handleAudition = async () => {
+    if (isAuditioning) { stopAudition(); return; }
     setIsAuditioning(true);
-    speakRealWords(currentDraftModel.samplePhrase, currentDraftModel, {
-      onStart: () => setIsAuditioning(true),
-      onEnd: () => setIsAuditioning(false),
-      onError: () => setIsAuditioning(false),
-    });
+    try {
+      if (currentDraftModel.renderMode === 'source-clip-only') {
+        const source = NATURAL_HUMAN_SAMPLES.find(sample => sample.id === (currentDraftModel.sourceId || currentDraftModel.baseSampleId));
+        if (!source) throw new Error('No protected source clip is available for this source-clip variant preview.');
+        const verified = await verifiedOriginalSourceBlob(currentDraftModel);
+        const originalBuffer = await getSharedAudioContext().decodeAudioData(await verified.blob.arrayBuffer());
+        const rendered = await renderTransformedWav(originalBuffer, currentDraftModel);
+        const player = new Audio(rendered.wavUrl);
+        player.onended = () => { URL.revokeObjectURL(rendered.wavUrl); if (auditionPlayerRef.current === player) stopAudition(); };
+        player.onerror = () => { URL.revokeObjectURL(rendered.wavUrl); if (auditionPlayerRef.current === player) stopAudition(); };
+        auditionPlayerRef.current = player;
+        await player.play();
+        return;
+      }
+      const request = createVoiceRenderRequest(currentDraftModel, currentDraftModel.samplePhrase, {
+        environmentId,
+        roomWet,
+        purpose: 'audition',
+      });
+      const result = await renderVoiceRequest(currentDraftModel, request);
+      let player: HTMLAudioElement;
+      player = playRenderedVoice(result, {
+        onEnd: () => { if (auditionPlayerRef.current === player) stopAudition(); },
+        onError: () => { if (auditionPlayerRef.current === player) stopAudition(); },
+      });
+      auditionPlayerRef.current = player;
+    } catch (error) {
+      console.error('Could not render candidate audition:', error);
+      setIsAuditioning(false);
+    }
   };
 
   // Reset to original settings of chosen base voice
@@ -181,48 +256,193 @@ export const VoiceCreator: React.FC<VoiceCreatorProps> = ({
     setThroatWarmth(0);
     setOralClarity(0);
     setAirPresence(0);
+    setSpectralTilt(0);
+    setFormantShift(1);
     setToneStyle('natural');
   };
 
-  // Save new voice model AND generate/save the new audio sample file (.wav)
+  const prepareAiIntent = async () => {
+    setAiIntent(null); setAiIntentError(null);
+    try {
+      const sourceProfile = voices.find(voice => voice.id === selectedBaseId);
+      const packagedHash = sourceProfile && originalSourceHash(sourceProfile);
+      const packagedId = sourceProfile?.sourceId || sourceProfile?.baseSampleId;
+      const packagedRecord = originalSourceRecord(packagedId);
+      if (!aiRetentionEndsAt) throw new Error('Set the consent retention end date.');
+      const source: VoiceAsset = aiSourceMode === 'own-file'
+        ? (() => {
+            if (!aiOwnReference || !aiOwnReferenceHash) throw new Error('Choose your own voice reference file so its SHA-256 can be bound to the consent record.');
+            return {
+              id: `user-ai-reference-${aiOwnReferenceHash.slice(0, 16)}`, role: 'original' as const, profileId: 'user-own-voice-reference', sourceId: 'user-own-voice-reference',
+              sourceHash: aiOwnReferenceHash, audioHash: aiOwnReferenceHash, createdAt: new Date().toISOString(), reviewState: 'locked' as const, immutableOriginal: true,
+              disclosure: 'User-supplied own-voice reference; hashed locally for an explicit AI creation intent only.',
+            };
+          })()
+        : (() => {
+            if (!sourceProfile || !packagedHash || !packagedId) throw new Error('Select a protected source with registered provenance before preparing an AI intent.');
+            if (packagedRecord?.aiCreationStatus !== 'eligible') throw new Error('This packaged source is not on the AI-creation rights allowlist. A performer/licence review must approve it before an intent can be prepared.');
+            return {
+              id: `original-source-${packagedId}`, role: 'original' as const, profileId: sourceProfile.id, sourceId: packagedId,
+              sourceHash: packagedHash, audioHash: packagedHash, createdAt: packagedRecord.importedAt, reviewState: 'locked' as const, immutableOriginal: true,
+              disclosure: 'Immutable original import; source-only audition and provenance reference.',
+            };
+          })();
+      const sourceHash = source.sourceHash!;
+      if (!aiPermitsDerived || !aiPermitsFreeLibrary) throw new Error('Explicitly confirm AI-derived audio and free-library distribution permissions on the consent record.');
+      const consent: AiConsentRecord = {
+        id: `consent-${source.sourceId}-${sourceHash.slice(0, 12)}`, sourceAssetId: source.id, sourceHash,
+        speakerOrRightsHolder: aiConsentHolder.trim(), releaseScope: aiSourceMode === 'own-file' ? 'own-voice' : 'reviewed-package-license',
+        permitsAiDerivedAudio: aiPermitsDerived, permitsFreeLibraryDistribution: aiPermitsFreeLibrary, evidenceNote: aiConsentEvidence.trim(),
+        retentionEndsAt: new Date(`${aiRetentionEndsAt}T23:59:59.999Z`).toISOString(), revocable: true,
+        confirmedAt: new Date().toISOString(),
+      };
+      if (!consent.speakerOrRightsHolder) throw new Error('Name the speaker or rights holder on the consent record.');
+      setAiIntent(await prepareAiVoiceCreationJob(source, consent, {
+        text: aiScript, provider: aiProvider, modelVersion: aiModelVersion, intendedUse: 'Free-library review candidate only',
+      }));
+    } catch (error) { setAiIntentError(error instanceof Error ? error.message : 'Could not prepare the AI creation intent.'); }
+  };
+
+  const createSourceClipCandidate = async (finalModel: VoiceModelConfig) => {
+    const sourceProfile = voices.find(voice => voice.id === selectedBaseId);
+    const source = NATURAL_HUMAN_SAMPLES.find(sample => sample.id === (sourceProfile?.sourceId || sourceProfile?.baseSampleId));
+    if (!sourceProfile || !source) throw new Error('This profile has no protected source recording available for a source-clip variant.');
+    // This branch works only from a decoded copy and emits a finite WAV. It does
+    // not pretend that a short source clip can speak new text.
+    const verifiedSource = await verifiedOriginalSourceBlob(sourceProfile);
+    const originalBuffer = await getSharedAudioContext().decodeAudioData(await verifiedSource.blob.arrayBuffer());
+    const transformed = await renderTransformedWav(originalBuffer, finalModel);
+    const renderedBuffer = await getSharedAudioContext().decodeAudioData(await transformed.wavBlob.arrayBuffer());
+    const quality = inspectAudioBufferQuality(renderedBuffer);
+    const parentHash = originalSourceHash(sourceProfile);
+    if (!parentHash) throw new Error('The selected source does not have a protected SHA-256 record.');
+    const outputHash = await sha256Hex(transformed.wavBlob);
+    const manifest = {
+      contractVersion: 'source-clip-variant/v1' as const,
+      createdAt: new Date().toISOString(),
+      parentSourceId: source.id,
+      parentSourceHash: parentHash,
+      engine: 'bounded-local-dsp' as const,
+      engineVersion: 'spectral-envelope-warp-v1' as const,
+      parameters: { pitch, rate, formantShift, spectralTilt, throatWarmth, oralClarity, airPresence, toneStyle, volume },
+      outputHash,
+      outputFormat: 'wav' as const,
+      quality,
+      disclosure: 'Derived source-clip WAV. It is based on one protected original recording and is not a reusable text voice.',
+    };
+    const candidate: VoiceModelConfig = { ...finalModel, renderMode: 'source-clip-only', reviewState: 'candidate', validatedRecipeId: undefined, approvedEnvironmentRecipeIds: [] };
+    const takeId = `take-source-variant-${Date.now()}`;
+    onSaveModel(candidate);
+    setCreatedModel(candidate);
+    await saveDerivedAsset({
+      id: `asset-${candidate.id}`, role: 'dsp-variant', profileId: candidate.id,
+      parentAssetId: `original-source-${source.id}`, sourceId: source.id, sourceHash: parentHash,
+      audioHash: outputHash, takeId, sampleRate: renderedBuffer.sampleRate, bitDepth: 16,
+      createdAt: manifest.createdAt, reviewState: 'candidate', review: { status: 'candidate' }, immutableOriginal: false,
+      disclosure: manifest.disclosure, attribution: source.attribution, license: source.license,
+      licenceNotices: [source.attribution, source.license, 'Modification: bounded local DSP source-clip variant.'],
+      supportedUse: 'Finite reviewed clip only; not a reusable arbitrary-text voice.', quality, sourceVariantManifest: manifest,
+    });
+    await onSaveTake({
+      id: takeId, title: `${candidate.name} - Source Clip Variant`, audioUrl: transformed.wavUrl, voiceName: candidate.name,
+      durationSeconds: Math.round(transformed.duration), createdAt: Date.now(), textSnippet: source.transcript,
+      sourceVariantManifest: manifest,
+    });
+    setValidationResult(null);
+    setSavedTakeUrl(transformed.wavUrl);
+    setSavedTakeDuration(transformed.duration);
+    setSaveSuccess(true);
+  };
+
+  // Create a separate reviewable candidate. The base/original definition is never
+  // overwritten. Full script candidates require a real recorded-unit bank; a
+  // packaged source clip instead creates only a finite source-clip variant.
   const handleSaveNewVoiceAndSample = async () => {
     setIsSavingAndExporting(true);
     try {
       const finalModel: VoiceModelConfig = {
         ...currentDraftModel,
         id: `custom-voice-${Date.now()}`,
+        reviewState: 'candidate',
       };
-
-      // 1. Save voice model to localStorage/state
-      onSaveModel(finalModel);
-      setCreatedModel(finalModel);
-
-      // 2. Render real WAV audio sample file
-      const { audioUrl, duration } = await generateSpokenAudioWav(
-        finalModel.samplePhrase,
-        finalModel
-      );
-
-      // 3. Save as a generated audio take in the vault
-      const newTake: GeneratedTake = {
-        id: `take-${Date.now()}`,
-        title: `${finalModel.name} - Sample Take`,
-        audioUrl,
-        voiceName: finalModel.name,
-        durationSeconds: Math.round(duration || 4),
-        createdAt: Date.now(),
-        textSnippet: finalModel.samplePhrase,
+      if (finalModel.renderMode === 'source-clip-only') {
+        await createSourceClipCandidate(finalModel);
+        return;
+      }
+      const dryValidationRequest = createVoiceRenderRequest(finalModel, VOICE_VALIDATION_SCRIPT, {
+        environmentId: 'dry-reference',
+        roomWet: 0,
+        purpose: 'validation',
+      });
+      const result = await renderVoiceRequest(finalModel, dryValidationRequest);
+      const candidateWithValidation: VoiceModelConfig = {
+        ...finalModel,
+        validatedRecipeId: result.manifest.request.voiceRecipeId,
+        approvedEnvironmentRecipeIds: [],
       };
-      await onSaveTake(newTake);
+      onSaveModel(candidateWithValidation);
+      setCreatedModel(candidateWithValidation);
+      setValidationResult(result);
+      const validationTakeId = `take-${Date.now()}`;
+      const sourceReference = NATURAL_HUMAN_SAMPLES.find(sample => sample.id === (finalModel.sourceId || finalModel.baseSampleId));
+      await saveDerivedAsset({
+        id: `asset-${finalModel.id}`,
+        role: 'dsp-variant',
+        profileId: finalModel.id,
+        parentAssetId: result.manifest.voice.sourceId ? `original-source-${result.manifest.voice.sourceId}` : undefined,
+        sourceId: result.manifest.voice.sourceId,
+        sourceHash: result.manifest.voice.sourceHash,
+        audioHash: result.manifest.outputHash || '',
+        takeId: validationTakeId,
+        sampleRate: 24_000,
+        bitDepth: 16,
+        createdAt: result.manifest.createdAt,
+        reviewState: 'candidate',
+        review: { status: 'candidate' },
+        quality: result.manifest.quality,
+        attribution: sourceReference?.attribution,
+        license: sourceReference?.license,
+        licenceNotices: [sourceReference?.attribution || 'Parent source attribution required.', sourceReference?.license || 'Parent source licence notice required.', 'Modification: local bounded DSP/render recipe; see manifest.'],
+        supportedUse: 'Approved script-renderable candidate only after matching voice/room review; see manifest.',
+        immutableOriginal: false,
+        disclosure: 'Derived local DSP candidate; separate from its protected original source.',
+        rendererManifest: result.manifest,
+      });
+      await onSaveTake(renderResultToGeneratedTake(result, validationTakeId));
 
-      setSavedTakeUrl(audioUrl);
-      setSavedTakeDuration(duration);
+      setSavedTakeUrl(result.audioUrl);
+      setSavedTakeDuration(result.duration);
       setSaveSuccess(true);
     } catch (err) {
-      console.error('Failed to create voice and sample:', err);
+      console.error('Failed to create voice candidate and validation take:', err);
     } finally {
       setIsSavingAndExporting(false);
     }
+  };
+
+  const handleRenderRoomValidation = async () => {
+    const candidate = createdModel || currentDraftModel;
+    setIsRenderingRoomValidation(true);
+    try {
+      const request = createVoiceRenderRequest(candidate, VOICE_VALIDATION_SCRIPT, { environmentId, roomWet, purpose: 'validation' });
+      const result = await renderVoiceRequest(candidate, request);
+      setRoomValidationResult(result);
+      await onSaveTake(renderResultToGeneratedTake(result, `take-room-validation-${Date.now()}`));
+    } catch (error) {
+      console.error('Could not render room validation take:', error);
+    } finally {
+      setIsRenderingRoomValidation(false);
+    }
+  };
+
+  const handleApproveRoom = () => {
+    if (!createdModel || !roomValidationResult || roomValidationResult.manifest.request.voiceRecipeId !== createdModel.recipeId) return;
+    const withApprovedRoom = {
+      ...createdModel,
+      approvedEnvironmentRecipeIds: [...new Set([...(createdModel.approvedEnvironmentRecipeIds || []), roomValidationResult.manifest.environment.recipeId])],
+    };
+    onSaveModel(withApprovedRoom);
+    setCreatedModel(withApprovedRoom);
   };
 
   const selectedBaseVoice = voices.find((v) => v.id === selectedBaseId) || voices[0];
@@ -245,7 +465,7 @@ export const VoiceCreator: React.FC<VoiceCreatorProps> = ({
                   Voice Creation Studio
                 </h2>
                 <p className="text-xs text-slate-400">
-                  Craft completely new vocal identities from any of the 60 original human voices
+                  Create separately labelled, reviewable DSP candidates from protected source profiles
                 </p>
               </div>
             </div>
@@ -260,6 +480,7 @@ export const VoiceCreator: React.FC<VoiceCreatorProps> = ({
         </div>
 
         <VoiceSourceNote model={currentDraftModel} />
+        <AcousticAnalysisPanel model={voices.find(voice => voice.id === selectedBaseId) || currentDraftModel} />
 
         {/* STEP 1: Select Original Base Voice (Out of 60) */}
         <div className="bg-slate-950/80 border border-slate-800 rounded-2xl p-5 space-y-3">
@@ -275,6 +496,11 @@ export const VoiceCreator: React.FC<VoiceCreatorProps> = ({
             </span>
           </div>
 
+          <p className={`rounded-xl border p-3 text-[11px] leading-relaxed ${selectedBaseVoice.renderMode === 'script-renderable' || selectedBaseVoice.synthesisMethod === 'recorded-units' ? 'border-emerald-500/25 bg-emerald-950/15 text-emerald-100' : 'border-amber-500/25 bg-amber-950/15 text-amber-100'}`}>
+            {selectedBaseVoice.renderMode === 'script-renderable' || selectedBaseVoice.synthesisMethod === 'recorded-units'
+              ? 'This source has a packaged recorded-unit bank, so its derived candidate can render a fixed Dry Reference script for validation.'
+              : 'This source is a protected short reference recording without a packaged voice bank. The workshop can create a finite derived version of that exact clip only; it cannot honestly render arbitrary new text.'}
+          </p>
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 max-h-56 overflow-y-auto p-1 border border-slate-800/80 rounded-xl bg-slate-900/40">
             {voices.map((v) => {
               const isChosen = v.id === selectedBaseId;
@@ -324,7 +550,7 @@ export const VoiceCreator: React.FC<VoiceCreatorProps> = ({
               <span className="w-5 h-5 rounded-full bg-cyan-600 text-white flex items-center justify-center text-[10px] font-bold">
                 2
               </span>
-              Adapt Acoustic Properties (Transform into a Completely Different Voice Type):
+              Create a Separate Derived Candidate (bounded DSP, never edits the original):
             </label>
             <button
               onClick={handleResetToSource}
@@ -333,6 +559,8 @@ export const VoiceCreator: React.FC<VoiceCreatorProps> = ({
               <RotateCcw className="w-3 h-3" /> Reset Knobs
             </button>
           </div>
+
+          <p className="rounded-xl border border-slate-800 bg-slate-900/50 p-3 text-[11px] leading-relaxed text-slate-400">Pitch is a bounded resample plus WSOLA duration correction; pace sets the independent target duration. The envelope control is a bounded STFT spectral-envelope warp; the remaining spectral controls are fixed-frequency EQ. Neither is a claim of a new human speaker or accent. Device effects are delivery colour.</p>
 
           {/* Core Controls: Pitch, Cadence, Volume */}
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -346,17 +574,17 @@ export const VoiceCreator: React.FC<VoiceCreatorProps> = ({
               </div>
               <input
                 type="range"
-                min="0.5"
-                max="1.8"
+                min="0.75"
+                max="1.30"
                 step="0.05"
                 value={pitch}
                 onChange={(e) => setPitch(parseFloat(e.target.value))}
                 className="w-full accent-cyan-400 h-1.5 bg-slate-950 rounded cursor-pointer"
               />
               <div className="flex justify-between text-[10px] text-slate-500 font-mono">
-                <span>0.5x (Deep Baritone)</span>
-                <span>1.0x</span>
-                <span>1.8x (Bright Soprano)</span>
+                <span>0.75× (lower)</span>
+                <span>1.0×</span>
+                <span>1.30× (higher)</span>
               </div>
             </div>
 
@@ -370,17 +598,17 @@ export const VoiceCreator: React.FC<VoiceCreatorProps> = ({
               </div>
               <input
                 type="range"
-                min="0.5"
-                max="1.6"
+                min="0.70"
+                max="1.30"
                 step="0.05"
                 value={rate}
                 onChange={(e) => setRate(parseFloat(e.target.value))}
                 className="w-full accent-indigo-400 h-1.5 bg-slate-950 rounded cursor-pointer"
               />
               <div className="flex justify-between text-[10px] text-slate-500 font-mono">
-                <span>0.5x (Slow/Thoughtful)</span>
-                <span>1.0x</span>
-                <span>1.6x (Rapid Delivery)</span>
+                <span>0.70× (slower)</span>
+                <span>1.0×</span>
+                <span>1.30× (faster)</span>
               </div>
             </div>
 
@@ -413,16 +641,26 @@ export const VoiceCreator: React.FC<VoiceCreatorProps> = ({
             <div className="flex items-center justify-between text-xs">
               <span className="font-bold text-slate-300 flex items-center gap-1.5 uppercase tracking-wider text-[11px]">
                 <Waves className="w-3.5 h-3.5 text-cyan-400" />
-                Vocal Tract Formant EQ Shaping (Resonance &amp; Timbre Shift)
+                Spectral EQ Shaping (delivery colour, not formant estimation)
               </span>
               <span className="text-[10px] text-slate-500 font-mono">Biquad Peaking DSP</span>
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-5 gap-4">
+              <div className="space-y-1">
+                <div className="flex justify-between text-[11px]"><span className="text-slate-400">Vocal-tract envelope shift</span><span className="font-mono text-emerald-300 font-bold">{formantShift.toFixed(2)}×</span></div>
+                <input type="range" min="0.85" max="1.15" step="0.01" value={formantShift} onChange={(event) => setFormantShift(parseFloat(event.target.value))} className="w-full accent-emerald-400 h-1 bg-slate-950 rounded cursor-pointer" />
+                <p className="text-[9px] leading-relaxed text-slate-500">Bounded STFT spectral-envelope warp. It moves broad resonance regions; it is not a new speaker or accent.</p>
+              </div>
+              <div className="space-y-1">
+                <div className="flex justify-between text-[11px]"><span className="text-slate-400">Broadband spectral tilt</span><span className="font-mono text-emerald-300 font-bold">{spectralTilt > 0 ? `+${spectralTilt}` : spectralTilt} dB</span></div>
+                <input type="range" min="-8" max="8" step="0.5" value={spectralTilt} onChange={(event) => setSpectralTilt(parseFloat(event.target.value))} className="w-full accent-emerald-400 h-1 bg-slate-950 rounded cursor-pointer" />
+                <p className="text-[9px] leading-relaxed text-slate-500">Complementary low/high shelves change low-to-high balance, not vocal identity.</p>
+              </div>
               {/* F1 */}
               <div className="space-y-1">
                 <div className="flex justify-between text-[11px]">
-                  <span className="text-slate-400">Throat Warmth (F1 ~450Hz)</span>
+                  <span className="text-slate-400">Low-mid warmth (450 Hz EQ)</span>
                   <span className="font-mono text-cyan-300 font-bold">
                     {throatWarmth > 0 ? `+${throatWarmth}` : throatWarmth} dB
                   </span>
@@ -441,7 +679,7 @@ export const VoiceCreator: React.FC<VoiceCreatorProps> = ({
               {/* F2 */}
               <div className="space-y-1">
                 <div className="flex justify-between text-[11px]">
-                  <span className="text-slate-400">Oral Cavity Clarity (F2 ~1.8kHz)</span>
+                  <span className="text-slate-400">Presence clarity (1.8 kHz EQ)</span>
                   <span className="font-mono text-indigo-300 font-bold">
                     {oralClarity > 0 ? `+${oralClarity}` : oralClarity} dB
                   </span>
@@ -460,7 +698,7 @@ export const VoiceCreator: React.FC<VoiceCreatorProps> = ({
               {/* F3 */}
               <div className="space-y-1">
                 <div className="flex justify-between text-[11px]">
-                  <span className="text-slate-400">Air &amp; Breath (F3 ~4.5kHz)</span>
+                  <span className="text-slate-400">High-frequency air (4.2 kHz EQ)</span>
                   <span className="font-mono text-purple-300 font-bold">
                     {airPresence > 0 ? `+${airPresence}` : airPresence} dB
                   </span>
@@ -508,6 +746,29 @@ export const VoiceCreator: React.FC<VoiceCreatorProps> = ({
             </div>
           </div>
         </div>
+
+        <section className="rounded-2xl border border-slate-700 bg-slate-950/55 p-4 text-xs text-slate-400 space-y-3" aria-label="AI-created file intent preparation">
+          <div className="flex items-center gap-2 font-bold text-slate-200"><ShieldCheck className="h-4 w-4 text-slate-400" /> AI-created-file intent — prepare locally, provider submission disabled</div>
+          <p className="leading-relaxed">This creates an auditable, source-hash-bound intent only. No cloud/neural service is called and no audio or consent data leaves this browser. A reviewed server adapter, revocation/deletion controls, and a further explicit confirmation are required before any provider submission.</p>
+          <p className="rounded-lg border border-slate-700 bg-slate-900/70 p-2 text-[11px] text-slate-200"><strong>Required output disclosure:</strong> AI-created candidate file — requires listening review; never replaces the source. Any future output is a separately labelled derived WAV, not an original recording or reusable voice model. Estimated cost: unavailable until a provider review; no provider is called here.</p>
+          <div className="flex flex-wrap gap-2" role="group" aria-label="AI intent source type">
+            <button type="button" onClick={() => setAiSourceMode('packaged')} className={`rounded-lg border px-2.5 py-1.5 text-[11px] font-bold ${aiSourceMode === 'packaged' ? 'border-amber-400 bg-amber-500/15 text-amber-100' : 'border-slate-700 bg-slate-900 text-slate-400'}`}>Packaged source</button>
+            <button type="button" onClick={() => setAiSourceMode('own-file')} className={`rounded-lg border px-2.5 py-1.5 text-[11px] font-bold ${aiSourceMode === 'own-file' ? 'border-emerald-400 bg-emerald-500/15 text-emerald-100' : 'border-slate-700 bg-slate-900 text-slate-400'}`}>My own voice reference</button>
+          </div>
+          {aiSourceMode === 'packaged' ? <p className="rounded-lg border border-amber-500/30 bg-amber-950/20 p-2 text-[11px] text-amber-100">Selected packaged-source AI status: <strong>{originalSourceRecord(selectedBaseVoice.sourceId || selectedBaseVoice.baseSampleId)?.aiCreationStatus || 'not eligible'}</strong>. All bundled sources are deny-by-default until a documented performer/licence review allowlists the exact source hash.</p> : <label className="block rounded-lg border border-emerald-500/30 bg-emerald-950/15 p-2 text-[11px] text-emerald-100">Choose an audio file of your own voice. It is hashed locally for the consent-bound intent and is not uploaded or stored by this screen.<input type="file" accept="audio/*" className="mt-2 block w-full text-[11px] text-slate-300" onChange={event => { const file = event.target.files?.[0] || null; setAiOwnReference(file); setAiOwnReferenceHash(null); if (file) void sha256Blob(file).then(setAiOwnReferenceHash).catch(() => setAiIntentError('Could not hash the selected own-voice reference.')); }} />{aiOwnReference && <span className="mt-1 block font-mono text-[10px]">{aiOwnReference.name} · {aiOwnReferenceHash ? `SHA-256 ${aiOwnReferenceHash}` : 'hashing…'}</span>}</label>}
+          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
+            <input aria-label="Speaker or rights holder" value={aiConsentHolder} onChange={event => setAiConsentHolder(event.target.value)} placeholder="Speaker or rights holder" className="rounded-lg border border-slate-700 bg-slate-900 px-2.5 py-2 text-xs text-white" />
+            <input aria-label="Consent evidence" value={aiConsentEvidence} onChange={event => setAiConsentEvidence(event.target.value)} placeholder="Consent/release evidence reference" className="rounded-lg border border-slate-700 bg-slate-900 px-2.5 py-2 text-xs text-white" />
+            <input aria-label="Retention end date" type="date" value={aiRetentionEndsAt} onChange={event => setAiRetentionEndsAt(event.target.value)} className="rounded-lg border border-slate-700 bg-slate-900 px-2.5 py-2 text-xs text-white" />
+            <input aria-label="Proposed provider" value={aiProvider} onChange={event => setAiProvider(event.target.value)} placeholder="Reviewed provider name" className="rounded-lg border border-slate-700 bg-slate-900 px-2.5 py-2 text-xs text-white" />
+            <input aria-label="Proposed model version" value={aiModelVersion} onChange={event => setAiModelVersion(event.target.value)} placeholder="Model version" className="rounded-lg border border-slate-700 bg-slate-900 px-2.5 py-2 text-xs text-white" />
+            <input aria-label="Proposed script" value={aiScript} onChange={event => setAiScript(event.target.value)} placeholder="Requested script" className="rounded-lg border border-slate-700 bg-slate-900 px-2.5 py-2 text-xs text-white" />
+          </div>
+          <div className="flex flex-col gap-1 text-[11px] text-slate-300"><label className="flex items-start gap-2"><input type="checkbox" checked={aiPermitsDerived} onChange={event => setAiPermitsDerived(event.target.checked)} className="mt-0.5 accent-emerald-400" />I have an explicit release permitting AI-derived audio from this exact SHA-256 source.</label><label className="flex items-start gap-2"><input type="checkbox" checked={aiPermitsFreeLibrary} onChange={event => setAiPermitsFreeLibrary(event.target.checked)} className="mt-0.5 accent-emerald-400" />I have an explicit release permitting the stated free-library distribution.</label></div>
+          <button type="button" onClick={() => void prepareAiIntent()} disabled={aiSourceMode === 'packaged' && originalSourceRecord(selectedBaseVoice.sourceId || selectedBaseVoice.baseSampleId)?.aiCreationStatus !== 'eligible'} className="rounded-lg border border-slate-500 bg-slate-800 px-3 py-2 text-xs font-bold text-slate-100 hover:bg-slate-700 disabled:cursor-not-allowed disabled:opacity-50">Create voice file with AI — prepare intent</button>
+          {aiIntentError && <p role="alert" className="text-rose-300">{aiIntentError}</p>}
+          {aiIntent && <div className="rounded-xl border border-amber-400/30 bg-amber-950/20 p-3 space-y-1 text-[11px] text-amber-100"><p className="font-bold">Prepared locally — state: {aiIntent.state}</p><p className="font-mono break-all">source SHA-256: {aiIntent.sourceHash}</p><p>{aiIntent.provider} · {aiIntent.modelVersion} · retention until {aiIntent.retentionEndsAt}</p><p>{aiIntent.disclosure}</p></div>}
+        </section>
 
         {/* STEP 3: Voice Identity & Profile Customization */}
         <div className="bg-slate-950/80 border border-slate-800 rounded-2xl p-5 space-y-4">
@@ -600,16 +861,25 @@ export const VoiceCreator: React.FC<VoiceCreatorProps> = ({
           {/* Audition Script */}
           <div className="space-y-1">
             <label className="text-[11px] font-semibold text-slate-400">
-              Vocalis Audition Script (Spoken Text Sample)
+              {selectedBaseVoice.renderMode === 'source-clip-only' ? 'Profile script (not used by this finite source-clip variant)' : 'Vocalis Audition Script (Spoken Text Sample)'}
             </label>
             <textarea
               value={samplePhrase}
               onChange={(e) => setSamplePhrase(e.target.value)}
+              disabled={selectedBaseVoice.renderMode === 'source-clip-only'}
               rows={2}
-              className="w-full bg-slate-900 border border-slate-800 rounded-xl p-2.5 text-xs text-white focus:outline-none focus:ring-1 focus:ring-indigo-500"
+              className="w-full bg-slate-900 border border-slate-800 rounded-xl p-2.5 text-xs text-white focus:outline-none focus:ring-1 focus:ring-indigo-500 disabled:cursor-not-allowed disabled:opacity-50"
             />
           </div>
         </div>
+
+        {(selectedBaseVoice.renderMode === 'script-renderable' || selectedBaseVoice.synthesisMethod === 'recorded-units') ? <RoomEnvironmentStudio
+          environmentId={environmentId}
+          wet={roomWet}
+          onEnvironmentChange={setEnvironmentId}
+          onWetChange={setRoomWet}
+          compact
+        /> : <div className="rounded-xl border border-cyan-800/60 bg-cyan-950/15 p-3 text-xs text-cyan-100">Room Environment Studio is intentionally deferred for this source-clip candidate. First review the dry finite DSP variant against its protected original; room delivery is a separate rendered-file step, not part of reusable voice identity.</div>}
 
         {/* Real-time Oscilloscope Waveform Visualizer */}
         <div className="space-y-1.5">
@@ -623,6 +893,10 @@ export const VoiceCreator: React.FC<VoiceCreatorProps> = ({
             </span>
           </div>
           <VoiceVisualizer isPlaying={isAuditioning} avatarColor={avatarColor} />
+        </div>
+
+        <div className="rounded-xl border border-amber-500/30 bg-amber-950/20 p-3 text-xs text-amber-100">
+          {selectedBaseVoice.renderMode === 'script-renderable' || selectedBaseVoice.synthesisMethod === 'recorded-units' ? <><span className="font-bold">Required validation route:</span> saving creates a separate <span className="font-mono">candidate</span> and renders this fixed script in <span className="font-semibold">Dry Reference</span> with the same locked voice definition/recipe used by exports. Room tests remain separate delivery treatments.<p className="mt-1.5 italic text-amber-200/80">“{VOICE_VALIDATION_SCRIPT}”</p></> : <><span className="font-bold">Finite source-clip route:</span> saving creates a separate dry WAV from the selected protected source recording. It cannot use this typed script or claim a reusable voice; review compares that finite variant directly against the original.</>}
         </div>
 
         {/* Action Controls: Audition & Save As New Voice & Sample */}
@@ -655,12 +929,12 @@ export const VoiceCreator: React.FC<VoiceCreatorProps> = ({
             {isSavingAndExporting ? (
               <>
                 <RefreshCw className="w-4 h-4 animate-spin" />
-                <span>Creating Voice &amp; Rendering WAV...</span>
+                <span>Creating Candidate &amp; Validation WAV...</span>
               </>
             ) : (
               <>
                 <BookmarkCheck className="w-4 h-4" />
-                <span>Save New Voice &amp; Create Audio Sample</span>
+                <span>{selectedBaseVoice.renderMode === 'script-renderable' || selectedBaseVoice.synthesisMethod === 'recorded-units' ? 'Create Script Candidate & Dry Validation' : 'Create Source-Clip Variant'}</span>
               </>
             )}
           </button>
@@ -676,11 +950,14 @@ export const VoiceCreator: React.FC<VoiceCreatorProps> = ({
                 </div>
                 <div>
                   <h4 className="text-sm font-bold text-white">
-                    New Voice "{name}" Created &amp; Saved Successfully!
+                    Candidate "{name}" Created — Review Required
                   </h4>
                   <p className="text-xs text-emerald-300">
-                    Saved to your application voice catalog &amp; new audio WAV sample generated in Takes Vault.
+                    {createdModel?.renderMode === 'source-clip-only'
+                      ? 'A finite derived source-clip WAV is in the vault. It is not eligible for arbitrary-text rendering.'
+                      : 'A pinned Dry Reference validation take is in the vault. Review it before relying on this derived candidate for final work.'}
                   </p>
+                  {validationResult && <div className="mt-1.5 space-y-1"><p className="font-mono text-[10px] text-emerald-400/80">{validationResult.manifest.request.voiceDefinitionId} · {validationResult.manifest.environment.recipeId}</p><audio controls src={validationResult.audioUrl} className="h-8 w-full max-w-sm" />{validationResult.manifest.quality.warnings.length > 0 && <p className="text-[10px] text-amber-200">Quality guard: {validationResult.manifest.quality.warnings.join(' ')}</p>}</div>}
                 </div>
               </div>
 
@@ -695,15 +972,35 @@ export const VoiceCreator: React.FC<VoiceCreatorProps> = ({
                   </a>
                 )}
 
+                {createdModel?.reviewState !== 'approved' && (
+                  <span className="max-w-44 text-[10px] leading-tight text-amber-100">Complete the seven listener ratings and notes in the Voice Library Review Queue before approval.</span>
+                )}
                 <button
                   onClick={() => onGoToHub(createdModel || currentDraftModel)}
                   className="h-9 px-4 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs flex items-center gap-1.5 shadow transition-colors cursor-pointer"
                 >
-                  <span>Test in Voice Hub</span>
+                  <span>{createdModel?.reviewState === 'approved' ? 'Use Approved Voice' : 'Test Candidate'}</span>
                   <ArrowRight className="w-3.5 h-3.5" />
                 </button>
               </div>
             </div>
+            {createdModel?.renderMode !== 'source-clip-only' && <div className="border-t border-emerald-500/20 pt-4">
+              <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                  <h5 className="text-xs font-bold text-slate-100">Room treatment validation</h5>
+                  <p className="mt-0.5 text-[11px] text-slate-400">Render the same fixed script using the Room Environment Studio selection, listen, then approve that exact room recipe independently.</p>
+                </div>
+                <div className="flex gap-2">
+                  <button type="button" onClick={() => void handleRenderRoomValidation()} disabled={isRenderingRoomValidation} className="h-8 rounded-lg border border-cyan-400/40 bg-cyan-500/10 px-3 text-[11px] font-bold text-cyan-100 disabled:opacity-50">
+                    {isRenderingRoomValidation ? 'Rendering…' : 'Render room validation'}
+                  </button>
+                  <button type="button" onClick={handleApproveRoom} disabled={!roomValidationResult || createdModel?.approvedEnvironmentRecipeIds?.includes(roomValidationResult.manifest.environment.recipeId)} className="h-8 rounded-lg border border-emerald-400/40 bg-emerald-500/10 px-3 text-[11px] font-bold text-emerald-100 disabled:opacity-40">
+                    Approve room after review
+                  </button>
+                </div>
+              </div>
+              {roomValidationResult && <div className="mt-2 space-y-2"><p className="font-mono text-[10px] text-cyan-300">Validated room: {roomValidationResult.manifest.environment.recipeId}</p><audio controls src={roomValidationResult.audioUrl} className="h-8 w-full" /></div>}
+            </div>}
           </div>
         )}
       </div>

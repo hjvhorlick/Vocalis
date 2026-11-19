@@ -2,6 +2,8 @@ import { synthesizeText, preparePronunciationDictionary } from './phonemeSynthes
 import { prepareCmuVoice } from './cmuDiphoneSynthesizer';
 import { renderVoiceBank } from './voiceBankEngine';
 import { loadVoiceBank } from './voiceBankStorage';
+import { ORIGINAL_SOURCE_SHA256 } from './originalSourceHashes';
+import { verifiedOriginalSourceBlob } from './voiceProvenance';
 import {
   NATURAL_HUMAN_SAMPLES,
   HumanVoiceSample,
@@ -18,6 +20,15 @@ import {
   isDspPlaying,
 } from './audioDspEngine';
 
+export type VoiceSourceType = 'original' | 'derived' | 'ai-created';
+export type VoiceReviewState = 'original-locked' | 'candidate' | 'approved' | 'rejected';
+
+/**
+ * A voice definition describes identity and its permitted render recipe. Original
+ * definitions are source-only and locked; new entries are always separate derived
+ * candidates until a user reviews them. `ai-created` is metadata only here: this
+ * local app has no AI voice-generation path.
+ */
 export interface VoiceModelConfig {
   id: string;
   name: string;
@@ -26,8 +37,8 @@ export interface VoiceModelConfig {
   gender: 'Female' | 'Male' | 'Neutral';
   accent: 'US' | 'UK' | 'AU' | 'Global' | 'CA' | 'IN' | 'EU';
   flag: string;
-  pitch: number; // 0.5 to 1.8 (1.0 = normal)
-  rate: number; // 0.6 to 1.6 (1.0 = normal)
+  pitch: number; // validated local range 0.75 to 1.30 (1.0 = normal)
+  rate: number; // validated local range 0.70 to 1.30 (1.0 = normal)
   volume: number; // 0.1 to 1.0
   toneStyle: 'natural' | 'deep' | 'energetic' | 'whisper' | 'radio' | 'robot';
   samplePhrase: string;
@@ -39,8 +50,26 @@ export interface VoiceModelConfig {
   unitVoiceId?: string; // Optional method tag
   throatWarmth?: number; // Formant F1 (-12 to +12 dB)
   oralClarity?: number; // Formant F2 (-12 to +12 dB)
-  airPresence?: number; // Formant F3 (-12 to +12 dB)
+  airPresence?: number; // High-frequency spectral EQ (-12 to +12 dB)
+  /** Broadband low-to-high balance in dB, applied as complementary shelf filters. */
+  spectralTilt?: number; // -8 (warm) to +8 (bright)
+  /** Bounded spectral-envelope frequency warp for a separate derived recipe. */
+  formantShift?: number; // 0.85 to 1.15 (1 = unchanged)
   realSpeakerName?: string;
+  /** Provenance fields are immutable for originals and copied into all render manifests. */
+  sourceType?: VoiceSourceType;
+  sourceId?: string;
+  originalSourceHash?: string;
+  parentVoiceDefinitionId?: string;
+  recipeId?: string;
+  reviewState?: VoiceReviewState;
+  /** Recipe proven by a stored Dry Reference validation render before approval. */
+  validatedRecipeId?: string;
+  /** Room recipe IDs separately listened to and approved for this voice version. */
+  approvedEnvironmentRecipeIds?: string[];
+  /** A source-clip variant is a finite derived file, never a reusable text voice. */
+  renderMode?: 'script-renderable' | 'source-clip-only';
+  isLockedOriginal?: boolean;
 }
 
 export { ATTRIBUTION_DETAILS, NATURAL_HUMAN_SAMPLES };
@@ -51,7 +80,7 @@ export type { HumanVoiceSample };
  * Each voice corresponds to a real human speaker recorded in an acoustic studio (CMU ARCTIC / OSR).
  * Pure human speech, 100% Non-AI, zero browser TTS files.
  */
-export const PRESET_VOICE_MODELS: VoiceModelConfig[] = [
+export const PRESET_VOICE_MODELS: VoiceModelConfig[] = ([
   {
     id: 'voice-slt-aria',
     name: 'Aria (California Studio Lead)',
@@ -1072,7 +1101,19 @@ export const PRESET_VOICE_MODELS: VoiceModelConfig[] = [
     samplePhrase: 'From breaking news to long-form investigative audio, Vocalis provides uncompromising vocal fidelity.',
     avatarColor: '#3730a3',
   },
-];
+] as VoiceModelConfig[]).map((model) => Object.freeze({
+  ...model,
+  sourceType: 'original' as const,
+  sourceId: model.baseSampleId,
+  originalSourceHash: ORIGINAL_SOURCE_SHA256[model.baseSampleId],
+  recipeId: `original-render-v1:${model.baseSampleId}`,
+  reviewState: 'original-locked' as const,
+  // Only these two packaged CMU ARCTIC speaker packs can truthfully render
+  // arbitrary local text. Every other imported clip remains source-reference
+  // only until its own legal, sufficiently covered unit bank exists.
+  renderMode: /^(cmu-slt|cmu-bdl)-/.test(model.baseSampleId) ? 'script-renderable' as const : 'source-clip-only' as const,
+  isLockedOriginal: true,
+} as VoiceModelConfig)) as VoiceModelConfig[];
 
 let userRecordedAudioBuffer: AudioBuffer | null = null;
 
@@ -1086,7 +1127,7 @@ export function getUserAudioBuffer(): AudioBuffer | null {
 
 /** Preload the actual synthesis resources, not an unrelated demo recording. */
 export async function initializeLocalSpeechEngine(voice?: VoiceModelConfig): Promise<void> {
-  if (voice?.synthesisMethod === 'recorded-units') return;
+  if (voice?.synthesisMethod === 'recorded-units' || voice?.renderMode === 'source-clip-only') return;
   try {
     await preparePronunciationDictionary();
     if (voice?.synthesisMethod !== 'formant') await prepareCmuVoice(voice || PRESET_VOICE_MODELS[0]);
@@ -1115,9 +1156,13 @@ type SpeechCallbacks = {
   onCancel?: () => void;
   onError?: (error: unknown) => void;
 };
-type RenderedSpeech = { audioUrl: string; duration: number; wordTimings: { charIndex: number; charLength: number; start: number; end: number }[] };
+export type WordTiming = { charIndex: number; charLength: number; start: number; end: number };
+export type RenderedSpeech = { audioUrl: string; duration: number; wordTimings: WordTiming[] };
 let speechGeneration = 0;
 let wordTimer: ReturnType<typeof setInterval> | null = null;
+/** Native source-only player. It intentionally bypasses every DSP/room graph. */
+let activeOriginalAudio: HTMLAudioElement | null = null;
+let activeOriginalUrl: string | null = null;
 let activeSpeechEnd: (() => void) | undefined;
 let activeSpeechCancel: (() => void) | undefined;
 
@@ -1139,14 +1184,16 @@ async function renderTextForModel(text: string, model: VoiceModelConfig): Promis
   // The base engine already applies pitch/rate/style. Only apply those here for
   // user banks; EQ can be applied to either path. Do not double-process speech.
   const extraDsp = isUserBank ? (model.pitch !== 1 || model.rate !== 1 || model.volume !== 1 || model.toneStyle !== 'natural') : false;
-  if (extraDsp || model.throatWarmth || model.oralClarity || model.airPresence) {
+  if (extraDsp || model.throatWarmth || model.oralClarity || model.airPresence || model.spectralTilt || (model.formantShift !== undefined && model.formantShift !== 1)) {
     const decoder = new OfflineAudioContext(1, 1, 24000);
     try {
       const buffer = await decoder.decodeAudioData(await (await fetch(rendered.audioUrl)).arrayBuffer());
       const config: VoiceDspConfig = { ...model, pitch: isUserBank ? model.pitch : 1, rate: isUserBank ? model.rate : 1, volume: isUserBank ? model.volume : 1, toneStyle: isUserBank ? model.toneStyle : 'natural' };
       const final = await renderTransformedWav(buffer, config);
-      const factor = Math.max(0.4, Math.min(2.5, config.pitch * config.rate));
-      rendered.wordTimings = rendered.wordTimings.map(timing => ({ ...timing, start: timing.start / factor, end: timing.end / factor }));
+      // renderTransformedWav corrects resampling with WSOLA, so pitch does not
+      // alter word duration; only the explicit rate target scales timings.
+      const durationFactor = Math.max(0.55, config.rate);
+      rendered.wordTimings = rendered.wordTimings.map(timing => ({ ...timing, start: timing.start / durationFactor, end: timing.end / durationFactor }));
       URL.revokeObjectURL(rendered.audioUrl);
       rendered = { ...rendered, audioUrl: final.wavUrl, duration: final.duration };
     } catch (error) { URL.revokeObjectURL(rendered.audioUrl); throw error; }
@@ -1159,6 +1206,8 @@ function cancelSpeech(notify: boolean) {
   if (wordTimer) clearInterval(wordTimer);
   wordTimer = null;
   const end = activeSpeechCancel || activeSpeechEnd; activeSpeechEnd = undefined; activeSpeechCancel = undefined;
+  if (activeOriginalAudio) { activeOriginalAudio.pause(); activeOriginalAudio = null; }
+  if (activeOriginalUrl) { URL.revokeObjectURL(activeOriginalUrl); activeOriginalUrl = null; }
   stopTransformedVoice();
   if (notify) end?.();
 }
@@ -1208,25 +1257,59 @@ export async function speakRealWords(text: string, model: VoiceModelConfig, call
 }
 
 /** Original imported recordings remain separately auditionable, clearly labelled. */
-export async function auditionSourceRecording(model: VoiceModelConfig): Promise<void> {
+export async function auditionSourceRecording(model: VoiceModelConfig, callbacks?: { onEnd?: () => void; onError?: (error: Error) => void }): Promise<void> {
   cancelSpeech(true);
   const token = speechGeneration;
   try {
-    getSharedAudioContext();
     if (model.synthesisMethod === 'recorded-units') throw new Error('Your sound bank has no imported source demo. Audition its generated speech instead.');
-    const buffer = await resolveBufferForModel(model);
+    // Verify the exact protected import before exposing it. Native HTML audio
+    // plays that verified blob directly; no AudioNode, DSP, room, rate or EQ is
+    // attached to the source-only audition path.
+    const { blob } = await verifiedOriginalSourceBlob(model);
     if (token !== speechGeneration) return;
-    playTransformedVoice(buffer, model, { onError: reportSpeechError });
-  } catch (error) { if (token === speechGeneration) reportSpeechError(error); }
+    const url = URL.createObjectURL(blob);
+    const player = new Audio(url);
+    activeOriginalAudio = player;
+    activeOriginalUrl = url;
+    const release = (ended = true) => {
+      if (activeOriginalAudio !== player) return;
+      activeOriginalAudio = null;
+      activeOriginalUrl = null;
+      URL.revokeObjectURL(url);
+      if (ended) callbacks?.onEnd?.();
+    };
+    player.onended = () => release();
+    player.onerror = () => {
+      const error = new Error('The verified original recording could not be played.');
+      release(false); callbacks?.onError?.(error); reportSpeechError(error);
+    };
+    await player.play();
+  } catch (error) {
+    if (token === speechGeneration) {
+      reportSpeechError(error);
+      callbacks?.onError?.(error instanceof Error ? error : new Error('Original source audition failed.'));
+    }
+  }
 }
 
 export function stopSpeaking(): void { cancelSpeech(true); }
 
 /** WAV export uses the same text renderer as playback. Caller owns the object URL. */
-export async function generateSpokenAudioWav(text: string, model: VoiceModelConfig): Promise<{ audioUrl: string; source: 'vocalis-local-synthesis'; duration: number }> {
+export async function generateSpokenAudioWav(text: string, model: VoiceModelConfig): Promise<{ audioUrl: string; source: 'vocalis-local-synthesis'; duration: number; wordTimings: WordTiming[]; audio: Blob }> {
   try {
     const rendered = await renderTextForModel(text, model);
-    return { audioUrl: rendered.audioUrl, source: 'vocalis-local-synthesis', duration: rendered.duration };
+    // Keep the dry render available to the render-contract route without
+    // reaching back to an original import. This blob is produced from supplied
+    // text only; callers still own and revoke the object URL.
+    const response = await fetch(rendered.audioUrl);
+    if (!response.ok) throw new Error('The local render could not be read back for export.');
+    return {
+      audioUrl: rendered.audioUrl,
+      source: 'vocalis-local-synthesis',
+      duration: rendered.duration,
+      wordTimings: rendered.wordTimings,
+      audio: await response.blob(),
+    };
   } catch (error) { reportSpeechError(error); throw error; }
 }
 

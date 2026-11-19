@@ -68,11 +68,11 @@ export const VoiceNavbar: React.FC<VoiceNavbarProps> = ({
   };
 
   const tabs: { id: AppNavTab; label: string; icon: React.ElementType }[] = [
+    { id: 'library', label: 'Voice Library', icon: BookmarkCheck },
     { id: 'hub', label: 'Voice Hub', icon: Sliders },
     { id: 'recording', label: 'Record a Voice', icon: Mic },
     { id: 'creator', label: 'Voice Creator', icon: Sparkles },
     { id: 'dialogue', label: 'Dialogue Screenplay', icon: Users },
-    { id: 'library', label: 'Takes Vault', icon: BookmarkCheck },
   ];
 
   return (

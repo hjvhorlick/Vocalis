@@ -1,5 +1,6 @@
-import React, { useState } from 'react';
-import { VoiceModelConfig, speakRealWords, stopSpeaking } from '../utils/naturalVoiceEngine';
+import React, { useRef, useState } from 'react';
+import { VoiceModelConfig, auditionSourceRecording, stopSpeaking } from '../utils/naturalVoiceEngine';
+import { createVoiceRenderRequest, playRenderedVoice, renderVoiceRequest } from '../utils/voiceRenderContract';
 import {
   Volume2,
   Square,
@@ -28,20 +29,32 @@ export const PredefinedVoiceList: React.FC<PredefinedVoiceListProps> = ({
   const [filterGender, setFilterGender] = useState<'ALL' | 'Female' | 'Male'>('ALL');
   const [searchQuery, setSearchQuery] = useState('');
   const [auditioningId, setAuditioningId] = useState<string | null>(null);
+  const playerRef = useRef<HTMLAudioElement | null>(null);
 
-  const handleAudition = (e: React.MouseEvent, voice: VoiceModelConfig) => {
+  const handleAudition = async (e: React.MouseEvent, voice: VoiceModelConfig) => {
     e.stopPropagation();
     if (auditioningId === voice.id) {
-      stopSpeaking();
-      setAuditioningId(null);
+      playerRef.current?.pause(); playerRef.current = null; stopSpeaking(); setAuditioningId(null);
       return;
     }
-
+    playerRef.current?.pause();
     setAuditioningId(voice.id);
-    speakRealWords(voice.samplePhrase, voice, {
-      onEnd: () => setAuditioningId(null),
-      onError: () => setAuditioningId(null),
-    });
+    try {
+      if (voice.renderMode === 'source-clip-only') {
+        await auditionSourceRecording(voice, {
+          onEnd: () => setAuditioningId(current => current === voice.id ? null : current),
+          onError: () => setAuditioningId(null),
+        });
+        return;
+      }
+      const result = await renderVoiceRequest(voice, createVoiceRenderRequest(voice, voice.samplePhrase, { environmentId: 'dry-reference', purpose: 'audition' }));
+      let player: HTMLAudioElement;
+      player = playRenderedVoice(result, {
+        onEnd: () => { if (playerRef.current === player) { playerRef.current = null; setAuditioningId(null); } },
+        onError: () => { if (playerRef.current === player) { playerRef.current = null; setAuditioningId(null); } },
+      });
+      playerRef.current = player;
+    } catch (error) { console.error('Catalog audition failed:', error); setAuditioningId(null); }
   };
 
   const filteredVoices = voices.filter((v) => {
@@ -67,21 +80,21 @@ export const PredefinedVoiceList: React.FC<PredefinedVoiceListProps> = ({
         <div>
           <div className="flex items-center gap-2">
             <h3 className="font-extrabold text-white text-lg tracking-tight">
-              Real Human Audio Voice Catalog
+              Voice Profile Catalog
             </h3>
             <span className="text-xs bg-indigo-500/20 text-indigo-300 font-mono px-2 py-0.5 rounded-full border border-indigo-500/30">
-              {voices.length} Real Human Speakers
+              {voices.length} Voice Profiles
             </span>
           </div>
           <p className="text-xs text-slate-400 mt-0.5">
-            100% Genuine Human Studio Recordings &bull; No Synthetic Warping &bull; Tested & Attributed
+            Source clips are separately attributed references; typed scripts use local synthesis and a pinned render recipe.
           </p>
         </div>
 
         {/* 100% Non-AI Human Voice Badge */}
         <div className="flex items-center gap-2 bg-emerald-950/40 border border-emerald-500/30 px-3 py-1.5 rounded-xl text-emerald-300 text-xs">
           <ShieldCheck className="w-4 h-4 text-emerald-400 shrink-0" />
-          <span className="font-medium">100% Real Human Voice Actors &bull; Zero AI</span>
+          <span className="font-medium">Local synthesis &bull; No hidden AI</span>
         </div>
       </div>
 
@@ -210,7 +223,7 @@ export const PredefinedVoiceList: React.FC<PredefinedVoiceListProps> = ({
                 {/* Vocalis Sample Script preview */}
                 <div className="text-[10px] text-indigo-300/90 bg-indigo-950/20 p-2 rounded-xl border border-indigo-900/40 space-y-0.5">
                   <span className="text-[9px] uppercase font-bold text-indigo-400 block tracking-wider">
-                    Vocalis Script:
+                    {voice.renderMode === 'source-clip-only' ? 'Profile script — unavailable for this source:' : 'Vocalis Script:'}
                   </span>
                   <p className="font-sans italic line-clamp-2 leading-tight text-slate-300">
                     "{voice.samplePhrase}"
@@ -230,7 +243,7 @@ export const PredefinedVoiceList: React.FC<PredefinedVoiceListProps> = ({
                       ? 'bg-rose-600 hover:bg-rose-500 text-white shadow-rose-600/40 animate-pulse'
                       : 'bg-slate-900 hover:bg-slate-800 text-slate-200 border border-slate-700/80 hover:border-slate-600'
                   }`}
-                  title="Audition real human recording"
+                  title={voice.renderMode === 'source-clip-only' ? 'Audition verified original recording — unprocessed' : 'Audition this profile’s pinned local script render'}
                 >
                   {isAuditioning ? (
                     <>
@@ -238,7 +251,7 @@ export const PredefinedVoiceList: React.FC<PredefinedVoiceListProps> = ({
                     </>
                   ) : (
                     <>
-                      <Volume2 className="w-3.5 h-3.5 text-indigo-400" /> Audition Script
+                      <Volume2 className="w-3.5 h-3.5 text-indigo-400" /> {voice.renderMode === 'source-clip-only' ? 'Original clip' : 'Audition script'}
                     </>
                   )}
                 </button>

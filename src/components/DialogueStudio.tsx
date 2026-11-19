@@ -1,5 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { VoiceModelConfig, speakRealWords, stopSpeaking } from '../utils/naturalVoiceEngine';
+import { VoiceModelConfig } from '../utils/naturalVoiceEngine';
+import { createVoiceRenderRequest, playRenderedVoice, renderVoiceRequest } from '../utils/voiceRenderContract';
 import { Users, Plus, Trash2, Play, Square, Volume2 } from 'lucide-react';
 import { VoiceAvatar } from './VoiceAvatar';
 import { VoiceSourceNote } from './VoiceSourceNote';
@@ -15,11 +16,14 @@ interface DialogueStudioProps {
 }
 
 export const DialogueStudio: React.FC<DialogueStudioProps> = ({ models }) => {
-  const [modelAId, setModelAId] = useState<string>(models[0]?.id || 'voice-slt-aria');
-  const [modelBId, setModelBId] = useState<string>(models[1]?.id || 'voice-rms-marcus');
+  // Dialogue renders new text, so source-reference-only clips are intentionally
+  // excluded until their own recorded-unit bank exists.
+  const scriptModels = models.filter(model => model.renderMode !== 'source-clip-only');
+  const [modelAId, setModelAId] = useState<string>(scriptModels[0]?.id || 'voice-slt-aria');
+  const [modelBId, setModelBId] = useState<string>(scriptModels.find(model => model.gender === 'Male')?.id || scriptModels[1]?.id || scriptModels[0]?.id || 'voice-bdl-david');
 
-  const modelA = models.find((m) => m.id === modelAId) || models[0];
-  const modelB = models.find((m) => m.id === modelBId) || models[1] || models[0];
+  const modelA = scriptModels.find((m) => m.id === modelAId) || scriptModels[0];
+  const modelB = scriptModels.find((m) => m.id === modelBId) || scriptModels[1] || scriptModels[0];
 
   const [lines, setLines] = useState<DialogueLine[]>([
     {
@@ -48,7 +52,15 @@ export const DialogueStudio: React.FC<DialogueStudioProps> = ({ models }) => {
   const [activeLineIdx, setActiveLineIdx] = useState<number>(-1);
   const cancelRequestedRef = useRef(false);
   const playbackGeneration = useRef(0);
-  useEffect(() => () => { cancelRequestedRef.current = true; playbackGeneration.current++; stopSpeaking(); }, []);
+  const playerRef = useRef<HTMLAudioElement | null>(null);
+  const resolvePlaybackRef = useRef<(() => void) | null>(null);
+  const stopDialoguePlayback = () => {
+    playerRef.current?.pause();
+    playerRef.current = null;
+    resolvePlaybackRef.current?.();
+    resolvePlaybackRef.current = null;
+  };
+  useEffect(() => () => { cancelRequestedRef.current = true; playbackGeneration.current++; stopDialoguePlayback(); }, []);
 
   const addLine = () => {
     const lastLine = lines[lines.length - 1];
@@ -79,7 +91,7 @@ export const DialogueStudio: React.FC<DialogueStudioProps> = ({ models }) => {
   const playDialogue = async () => {
     if (isPlayingDialogue) {
       cancelRequestedRef.current = true; playbackGeneration.current++;
-      stopSpeaking();
+      stopDialoguePlayback();
       setIsPlayingDialogue(false);
       setActiveLineIdx(-1);
       return;
@@ -98,13 +110,27 @@ export const DialogueStudio: React.FC<DialogueStudioProps> = ({ models }) => {
 
       const voice = line.speakerId === 'A' ? modelA : modelB;
 
-      await new Promise<void>((resolve) => {
-        speakRealWords(line.text, voice, {
-          onEnd: () => resolve(),
-          onCancel: () => { cancelRequestedRef.current = true; resolve(); },
-          onError: () => { cancelRequestedRef.current = true; resolve(); },
+      try {
+        const request = createVoiceRenderRequest(voice, line.text, {
+          environmentId: 'dry-reference',
+          roomWet: 0,
+          purpose: 'dialogue',
         });
-      });
+        const result = await renderVoiceRequest(voice, request);
+        if (cancelRequestedRef.current || token !== playbackGeneration.current) break;
+        await new Promise<void>((resolve) => {
+          resolvePlaybackRef.current = resolve;
+          let player: HTMLAudioElement;
+          player = playRenderedVoice(result, {
+            onEnd: () => { if (playerRef.current === player) playerRef.current = null; resolvePlaybackRef.current = null; resolve(); },
+            onError: () => { if (playerRef.current === player) playerRef.current = null; cancelRequestedRef.current = true; resolvePlaybackRef.current = null; resolve(); },
+          });
+          playerRef.current = player;
+        });
+      } catch (error) {
+        console.error('Dialogue contract render failed:', error);
+        cancelRequestedRef.current = true;
+      }
 
       // Natural pause between speakers
       await new Promise((r) => setTimeout(r, 350));
@@ -125,7 +151,7 @@ export const DialogueStudio: React.FC<DialogueStudioProps> = ({ models }) => {
             Dual-Voice Dialogue & Screenplay
           </h3>
           <p className="text-xs text-slate-400">
-            Compare two locally synthesized voice profiles in a back-and-forth conversation
+            Compare two locally synthesized voice profiles in a back-and-forth conversation. Source-reference-only clips are excluded because they cannot truthfully render new dialogue.
           </p>
         </div>
 
@@ -160,7 +186,7 @@ export const DialogueStudio: React.FC<DialogueStudioProps> = ({ models }) => {
                   onChange={(e) => setModelAId(e.target.value)}
                   className="w-full bg-slate-900 border border-slate-800 rounded-xl px-2.5 py-1.5 text-xs text-white truncate font-medium cursor-pointer"
                 >
-                  {models.map((m) => (
+                  {scriptModels.map((m) => (
                     <option key={m.id} value={m.id}>
                       {m.flag} {m.name} ({m.archetype})
                     </option>
@@ -199,7 +225,7 @@ export const DialogueStudio: React.FC<DialogueStudioProps> = ({ models }) => {
                   onChange={(e) => setModelBId(e.target.value)}
                   className="w-full bg-slate-900 border border-slate-800 rounded-xl px-2.5 py-1.5 text-xs text-white truncate font-medium cursor-pointer"
                 >
-                  {models.map((m) => (
+                  {scriptModels.map((m) => (
                     <option key={m.id} value={m.id}>
                       {m.flag} {m.name} ({m.archetype})
                     </option>
