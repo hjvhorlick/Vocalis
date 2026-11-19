@@ -47,10 +47,12 @@ export async function ensureOriginalAssetRecords(profiles: readonly VoiceModelCo
     if (existing) continue;
     await registerOriginalAsset({
       id, role: 'original', profileId: profile.id, sourceId: source.sourceId,
-      audioHash: sourceHash, sourceHash, createdAt: new Date().toISOString(),
+      audioHash: sourceHash, sourceHash, createdAt: source.importedAt,
       reviewState: 'locked', immutableOriginal: true,
       disclosure: 'Immutable original import; source-only audition and provenance reference.',
       attribution: source.attribution, license: source.license,
+      licenceNotices: [source.attribution, source.license],
+      supportedUse: 'Protected source-only audition and verified download; not a mutable variant or public derived export.',
     });
   }
 }
@@ -65,9 +67,28 @@ export function readVoiceAssets(): Promise<VoiceAsset[]> {
   return transact('readonly', store => store.getAll());
 }
 
-export async function updateVoiceAssetReview(id: string, reviewState: Exclude<VoiceAsset['reviewState'], 'locked'>): Promise<void> {
+export async function updateVoiceAssetReview(
+  id: string,
+  reviewState: Exclude<VoiceAsset['reviewState'], 'locked'>,
+  details: Omit<NonNullable<VoiceAsset['review']>, 'status' | 'reviewedAt'> = {},
+): Promise<VoiceAsset> {
   const asset = await transact<VoiceAsset | undefined>('readonly', store => store.get(id));
   if (!asset) throw new Error('The voice asset is no longer in local storage.');
   if (asset.immutableOriginal || asset.reviewState === 'locked') throw new Error('Original source records cannot be reviewed into a mutable state.');
-  await saveDerivedAsset({ ...asset, reviewState });
+  const updated: VoiceAsset = {
+    ...asset,
+    reviewState,
+    review: { status: reviewState, reviewedAt: new Date().toISOString(), ...details },
+  };
+  await saveDerivedAsset(updated);
+  return updated;
+}
+
+/** Rejecting/deleting a candidate touches only its own metadata record. */
+export async function deleteVoiceAsset(id: string): Promise<VoiceAsset> {
+  const asset = await transact<VoiceAsset | undefined>('readonly', store => store.get(id));
+  if (!asset) throw new Error('The voice asset is no longer in local storage.');
+  if (asset.immutableOriginal || asset.role === 'original') throw new Error('Original source records cannot be deleted from the variant workflow.');
+  await transact('readwrite', store => store.delete(id));
+  return asset;
 }

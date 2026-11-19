@@ -9,9 +9,14 @@ export type AiConsentRecord = Readonly<{
   releaseScope: 'own-voice' | 'contributor-release' | 'reviewed-package-license';
   permitsAiDerivedAudio: true;
   permitsFreeLibraryDistribution: true;
+  /** A required human-readable record of rights/consent, not a checkbox alone. */
+  evidenceNote: string;
   retentionEndsAt: string;
   revocable: boolean;
   confirmedAt: string;
+  /** Set by the retained consent record when rights are withdrawn. */
+  revokedAt?: string;
+  revocationReason?: string;
 }>;
 
 export type AiVoiceCreationJob = Readonly<{
@@ -36,7 +41,18 @@ export function validateAiCreationEligibility(source: VoiceAsset, consent: AiCon
   if (!consent.permitsAiDerivedAudio || !consent.permitsFreeLibraryDistribution) {
     throw new Error('The recorded consent/release does not permit this AI-derived free-library use.');
   }
+  if (!consent.revocable || !consent.evidenceNote.trim()) {
+    throw new Error('AI creation requires a revocable consent record and a rights-evidence note.');
+  }
+  if (consent.revokedAt) throw new Error('This source consent has been revoked. No future AI creation job may be prepared.');
   if (Date.parse(consent.retentionEndsAt) <= Date.now()) throw new Error('The consent retention period has ended; renew consent before continuing.');
+}
+
+/** Returns a new immutable record suitable for a revocation/audit store. */
+export function revokeAiConsent(consent: AiConsentRecord, reason: string, revokedAt = new Date().toISOString()): AiConsentRecord {
+  if (!consent.revocable) throw new Error('This consent record was not marked revocable and needs rights review.');
+  if (!reason.trim()) throw new Error('Record a revocation reason before blocking future AI jobs.');
+  return Object.freeze({ ...consent, revokedAt, revocationReason: reason.trim() });
 }
 
 /** Creates a reviewable intent only; this local build performs no provider/network AI call. */

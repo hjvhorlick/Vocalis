@@ -1,6 +1,8 @@
 import type { GeneratedTake } from '../types/voice';
+import type { VoiceQualityReport } from '../types/voiceAsset';
 import { type VoiceModelConfig, generateSpokenAudioWav, type WordTiming } from './naturalVoiceEngine';
 import { originalSourceHash } from './voiceProvenance';
+import { inspectAudioBufferQuality } from './voiceQuality';
 import {
   type RoomEnvironmentId,
   roomEnvironmentForId,
@@ -36,22 +38,28 @@ export type VoiceRenderManifest = {
     sourceHash?: string;
     parentVoiceDefinitionId?: string;
     recipeId: string;
+    /** Explicit local transformation parameters for reproducible derived renders. */
+    parameters: Record<string, number | string | boolean>;
   };
   environment: {
     id: RoomEnvironmentId;
     name: string;
     kind: 'dry' | 'modelled';
     recipeId: string;
+    /** SHA-256 fingerprint of the declared room model/preset parameters. */
+    modelHash: string;
+    outputCeilingDbfs: number;
     disclosure: string;
   };
   renderer: {
     engine: 'naturalVoiceEngine';
-    engineVersion: 'local-unit-selection-v1';
+    engineVersion: 'local-unit-selection-dsp-v2';
     roomRenderer: 'Web Audio OfflineAudioContext ConvolverNode';
     roomRendererVersion: 'modelled-ir-v1';
   };
   inputTextHash: string;
   outputHash?: string;
+  quality: VoiceQualityReport;
 };
 
 export type VoiceRenderResult = {
@@ -107,6 +115,9 @@ function configForLockedRequest(profile: VoiceModelConfig, request: VoiceRenderR
 export function assertVoiceRenderEligibility(profile: VoiceModelConfig, request: VoiceRenderRequest): VoiceModelConfig {
   if (!request.text) throw new Error('Enter text before rendering.');
   const lockedProfile = configForLockedRequest(profile, request);
+  if (lockedProfile.renderMode === 'source-clip-only') {
+    throw new Error('This candidate is a derived version of one protected source clip. It is not a reusable text voice and cannot be used to render a different script.');
+  }
   if (request.purpose === 'final' && lockedProfile.sourceType !== 'original') {
     if (lockedProfile.reviewState !== 'approved' || lockedProfile.validatedRecipeId !== request.voiceRecipeId) {
       throw new Error('This derived voice is still a review candidate. Listen to and approve its matching Dry Reference validation take before creating a final render.');
@@ -133,7 +144,13 @@ export async function renderVoiceRequest(
   const processed = await renderRoomEnvironment(dryBuffer, room);
   if (dry.audioUrl) URL.revokeObjectURL(dry.audioUrl);
   const textHash = await sha256Hex(request.text);
+  const roomModelHash = await sha256Hex(JSON.stringify({
+    id: room.id, kind: room.kind, rt60: room.rt60, preDelayMs: room.preDelayMs, sourceDistanceM: room.sourceDistanceM,
+    highFrequencyDampingHz: room.highFrequencyDampingHz, earlyReflectionLevel: room.earlyReflectionLevel,
+    outputCeilingDbfs: room.outputCeilingDbfs ?? -1,
+  }));
   const outputHash = await sha256Hex(processed.wavBlob);
+  const quality = inspectAudioBufferQuality(processed.audioBuffer);
   const sourceType = lockedProfile.sourceType || (lockedProfile.isCustom ? 'derived' : 'original');
   const isOriginal = sourceType === 'original';
   const verifiedSourceHash = await originalSourceHash(lockedProfile);
@@ -150,24 +167,39 @@ export async function renderVoiceRequest(
       sourceHash: verifiedSourceHash,
       parentVoiceDefinitionId: lockedProfile.parentVoiceDefinitionId,
       recipeId: request.voiceRecipeId,
+      parameters: {
+        pitch: lockedProfile.pitch,
+        rate: lockedProfile.rate,
+        volume: lockedProfile.volume,
+        toneStyle: lockedProfile.toneStyle,
+        formantShift: lockedProfile.formantShift ?? 1,
+        spectralTilt: lockedProfile.spectralTilt ?? 0,
+        throatWarmth: lockedProfile.throatWarmth ?? 0,
+        oralClarity: lockedProfile.oralClarity ?? 0,
+        airPresence: lockedProfile.airPresence ?? 0,
+        renderMode: lockedProfile.renderMode || 'script-renderable',
+      },
     },
     environment: {
       id: room.id,
       name: room.name,
       kind: room.kind,
       recipeId: roomRecipeId(room),
+      modelHash: roomModelHash,
+      outputCeilingDbfs: room.outputCeilingDbfs ?? -1,
       disclosure: room.kind === 'dry'
         ? 'Dry reference output; no room processing applied.'
         : 'Modelled room treatment applied after dry voice rendering; not a recording of a named physical venue.',
     },
     renderer: {
       engine: 'naturalVoiceEngine',
-      engineVersion: 'local-unit-selection-v1',
+      engineVersion: 'local-unit-selection-dsp-v2',
       roomRenderer: 'Web Audio OfflineAudioContext ConvolverNode',
       roomRendererVersion: 'modelled-ir-v1',
     },
     inputTextHash: textHash,
     outputHash,
+    quality,
   };
   return { audio: processed.wavBlob, audioUrl: processed.wavUrl, duration: processed.duration, wordTimings: dry.wordTimings, manifest };
 }

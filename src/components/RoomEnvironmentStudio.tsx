@@ -80,7 +80,7 @@ export const RoomEnvironmentStudio: React.FC<RoomEnvironmentStudioProps> = ({
         <div className="mt-2 flex gap-2 text-[10px] leading-relaxed text-slate-500"><Info className="mt-0.5 h-3 w-3 shrink-0" />
           {selected.kind === 'dry'
             ? 'Dry Reference bypasses room processing. Choose it for voice identity review.'
-            : `Modelled response: ${selected.preDelayMs} ms pre-delay, approximately ${selected.rt60.toFixed(2)} s RT60, late-field damping near ${(selected.highFrequencyDampingHz / 1000).toFixed(1)} kHz. This is not a measured named room.`}
+            : `Modelled response: ${selected.preDelayMs} ms pre-delay, approximately ${selected.rt60.toFixed(2)} s RT60, late-field damping near ${(selected.highFrequencyDampingHz / 1000).toFixed(1)} kHz, with a ${(selected.outputCeilingDbfs ?? -1).toFixed(1)} dBFS delivery ceiling. This is not a measured named room.`}
         </div>
       </div>
       {!compact && <p className="flex items-center gap-2 text-[10px] text-slate-500"><Volume2 className="h-3 w-3" /> The selected environment and exact recipe are written to every contract render manifest.</p>}

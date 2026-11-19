@@ -1,4 +1,6 @@
 import type { VoiceModelConfig } from './naturalVoiceEngine';
+import { analysePcm } from './voiceAnalysis';
+import { ORIGINAL_VOICE_PACK_SHA256 } from './originalVoicePackHashes';
 
 type DiphoneManifest = {
   format: string;
@@ -12,6 +14,11 @@ type FallbackPhone = (phone: string, absoluteOffset: number) => Float32Array;
 
 const SAMPLE_RATE = 16000;
 const packs = new Map<string, Promise<VoicePack>>();
+
+async function sha256ArrayBuffer(buffer: ArrayBuffer): Promise<string> {
+  const digest = await crypto.subtle.digest('SHA-256', buffer);
+  return [...new Uint8Array(digest)].map(byte => byte.toString(16).padStart(2, '0')).join('');
+}
 
 export function speakerForModel(model: VoiceModelConfig): 'slt' | 'bdl' {
   if (model.baseVoiceId) return model.baseVoiceId;
@@ -30,8 +37,14 @@ async function loadVoicePack(speaker: 'slt' | 'bdl'): Promise<VoicePack> {
       fetch(`${root}/diphones.bin`),
     ]);
     if (!manifestResponse.ok || !audioResponse.ok) throw new Error(`Could not load the CMU ARCTIC ${speaker.toUpperCase()} voice pack.`);
-    const manifest = await manifestResponse.json() as DiphoneManifest;
+    const manifestBytes = await manifestResponse.arrayBuffer();
     const buffer = await audioResponse.arrayBuffer();
+    const manifestPath = `cmu-arctic/${speaker}/manifest.json`;
+    const audioPath = `cmu-arctic/${speaker}/diphones.bin`;
+    if (await sha256ArrayBuffer(manifestBytes) !== ORIGINAL_VOICE_PACK_SHA256[manifestPath] || await sha256ArrayBuffer(buffer) !== ORIGINAL_VOICE_PACK_SHA256[audioPath]) {
+      throw new Error('CMU voice-pack verification failed. Rendering is blocked because protected pack bytes changed.');
+    }
+    const manifest = JSON.parse(new TextDecoder().decode(manifestBytes)) as DiphoneManifest;
     if (manifest.format !== 'vocalis-cmu-diphones-v1' || manifest.speakerId !== speaker || manifest.sampleRate !== SAMPLE_RATE || buffer.byteLength % 2 || !manifest.units || typeof manifest.units !== 'object') throw new Error('Invalid packaged CMU voice manifest.');
     for (const entry of Object.values(manifest.units)) {
       if (!entry || !Number.isSafeInteger(entry.offset) || entry.offset < 0 || entry.offset % 2 || !Number.isSafeInteger(entry.length) || entry.length < 1 || entry.offset + entry.length * 2 > buffer.byteLength) throw new Error('CMU voice unit points outside the packaged audio.');
@@ -223,19 +236,58 @@ function applyStyle(input: Float32Array, style: VoiceModelConfig['toneStyle']): 
 }
 
 /**
+ * Pitch-shift only the voiced regions identified by the local autocorrelation
+ * analysis. Fricatives, stops and silence are copied through as-is; boundaries
+ * are crossfaded to avoid abrupt joins. Duration stays unchanged here.
+ */
+export function transformVoicedPitch(samples: Float32Array, sampleRate: number, pitchFactor: number): Float32Array {
+  const bounded = Math.max(0.75, Math.min(1.3, pitchFactor));
+  if (Math.abs(bounded - 1) < 0.002 || samples.length < 512) return samples.slice();
+  const analysis = analysePcm(samples, sampleRate, { frameMs: 25, hopMs: 5 });
+  const voicedMask = new Uint8Array(samples.length);
+  const frameLength = Math.round(sampleRate * analysis.frameMs / 1000);
+  const hopLength = Math.round(sampleRate * analysis.hopMs / 1000);
+  analysis.frames.forEach((frame, index) => {
+    if (!frame.voiced) return;
+    const start = index * hopLength;
+    voicedMask.fill(1, start, Math.min(samples.length, start + frameLength));
+  });
+  const output = samples.slice();
+  const fade = Math.max(8, Math.round(sampleRate * 0.008));
+  let regionStart = 0;
+  while (regionStart < voicedMask.length) {
+    while (regionStart < voicedMask.length && !voicedMask[regionStart]) regionStart++;
+    let regionEnd = regionStart;
+    while (regionEnd < voicedMask.length && voicedMask[regionEnd]) regionEnd++;
+    if (regionEnd - regionStart >= 512) {
+      const transformed = transformPitchAndRate(samples.slice(regionStart, regionEnd), bounded, 1);
+      for (let index = 0; index < transformed.length; index++) {
+        const atBoundary = Math.min(index / fade, (transformed.length - 1 - index) / fade, 1);
+        const mix = Math.max(0, atBoundary);
+        output[regionStart + index] = samples[regionStart + index] * (1 - mix) + transformed[index] * mix;
+      }
+    }
+    regionStart = regionEnd + 1;
+  }
+  return output;
+}
+
+/**
  * Bounded pitch shift followed by WSOLA duration correction. This is deliberately
  * separate from playbackRate so pitch and rate are not advertised as independent
  * when they are actually coupled by resampling.
  */
 export function transformPitchAndRate(samples: Float32Array, pitchFactor: number, rateFactor: number): Float32Array {
   const pitched = resample(samples, pitchFactor);
-  return wsolaStretch(pitched, Math.floor(samples.length / Math.max(0.55, rateFactor)));
+  const safeRate = Math.max(0.7, Math.min(1.3, rateFactor));
+  return wsolaStretch(pitched, Math.floor(samples.length / safeRate));
 }
 
 export function processCmuVoice(samples: Float32Array, model: VoiceModelConfig): Float32Array {
   const stylePitch = model.toneStyle === 'deep' ? 0.92 : model.toneStyle === 'energetic' ? 1.06 : 1;
   const rateStyle = model.toneStyle === 'deep' ? 0.92 : model.toneStyle === 'energetic' ? 1.1 : 1;
-  return applyStyle(transformPitchAndRate(samples, model.pitch * stylePitch, model.rate * rateStyle), model.toneStyle);
+  const voicedPitch = transformVoicedPitch(samples, SAMPLE_RATE, model.pitch * stylePitch);
+  return applyStyle(transformPitchAndRate(voicedPitch, 1, model.rate * rateStyle), model.toneStyle);
 }
 
 export const CMU_SAMPLE_RATE = SAMPLE_RATE;

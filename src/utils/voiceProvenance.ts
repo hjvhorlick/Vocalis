@@ -10,6 +10,10 @@ export type OriginalSourceRecord = Readonly<{
   license: string;
   transcript: string;
   importKind: 'original-recording';
+  /** Checked-in import timestamp from the original source-library commit. */
+  importedAt: string;
+  /** AI use is deny-by-default until a rights/performance review creates an allowlist record. */
+  aiCreationStatus: 'not-reviewed' | 'eligible';
   immutable: true;
 }>;
 
@@ -30,6 +34,8 @@ export function originalSourceRecord(sourceId: string | undefined): OriginalSour
     license: sample.license,
     transcript: sample.transcript,
     importKind: 'original-recording' as const,
+    importedAt: '2026-11-09T05:57:49.000Z',
+    aiCreationStatus: 'not-reviewed' as const,
     immutable: true as const,
   });
 }
@@ -44,6 +50,34 @@ export function originalSourceHash(profile: VoiceModelConfig): string | undefine
   if (profile.originalSourceHash) return profile.originalSourceHash;
   const record = originalSourceRecord(profile.sourceId || profile.baseSampleId);
   return record ? ORIGINAL_SOURCE_SHA256[record.sourceId] : undefined;
+}
+
+/**
+ * Fetches an original only to verify and deliver its exact bytes. The returned
+ * blob is never decoded or passed through any DSP graph.
+ */
+export async function verifiedOriginalSourceBlob(profile: VoiceModelConfig): Promise<{ blob: Blob; filename: string; hash: string }> {
+  const record = originalSourceRecord(profile.sourceId || profile.baseSampleId);
+  const expectedHash = originalSourceHash(profile);
+  if (!record || !expectedHash) throw new Error('This profile has no verified original-source record.');
+  const response = await fetch(record.sourceUrl, { cache: 'no-cache' });
+  if (!response.ok) throw new Error(`Could not read original source ${record.sourceId} for verification.`);
+  const blob = await response.blob();
+  const actualHash = await sha256Blob(blob);
+  if (actualHash !== expectedHash) throw new Error('Original source verification failed. Download is blocked because its SHA-256 digest does not match the protected import record.');
+  return { blob, filename: record.sourceUrl.split('/').at(-1) || `${record.sourceId}.wav`, hash: actualHash };
+}
+
+export async function downloadVerifiedOriginalSource(profile: VoiceModelConfig): Promise<void> {
+  const { blob, filename } = await verifiedOriginalSourceBlob(profile);
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement('a');
+  anchor.href = url;
+  anchor.download = filename;
+  document.body.appendChild(anchor);
+  anchor.click();
+  anchor.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 0);
 }
 
 export function immutableOriginalProfile(profile: VoiceModelConfig): boolean {

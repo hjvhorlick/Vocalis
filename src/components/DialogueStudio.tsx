@@ -16,11 +16,14 @@ interface DialogueStudioProps {
 }
 
 export const DialogueStudio: React.FC<DialogueStudioProps> = ({ models }) => {
-  const [modelAId, setModelAId] = useState<string>(models[0]?.id || 'voice-slt-aria');
-  const [modelBId, setModelBId] = useState<string>(models[1]?.id || 'voice-rms-marcus');
+  // Dialogue renders new text, so source-reference-only clips are intentionally
+  // excluded until their own recorded-unit bank exists.
+  const scriptModels = models.filter(model => model.renderMode !== 'source-clip-only');
+  const [modelAId, setModelAId] = useState<string>(scriptModels[0]?.id || 'voice-slt-aria');
+  const [modelBId, setModelBId] = useState<string>(scriptModels.find(model => model.gender === 'Male')?.id || scriptModels[1]?.id || scriptModels[0]?.id || 'voice-bdl-david');
 
-  const modelA = models.find((m) => m.id === modelAId) || models[0];
-  const modelB = models.find((m) => m.id === modelBId) || models[1] || models[0];
+  const modelA = scriptModels.find((m) => m.id === modelAId) || scriptModels[0];
+  const modelB = scriptModels.find((m) => m.id === modelBId) || scriptModels[1] || scriptModels[0];
 
   const [lines, setLines] = useState<DialogueLine[]>([
     {
@@ -148,7 +151,7 @@ export const DialogueStudio: React.FC<DialogueStudioProps> = ({ models }) => {
             Dual-Voice Dialogue & Screenplay
           </h3>
           <p className="text-xs text-slate-400">
-            Compare two locally synthesized voice profiles in a back-and-forth conversation
+            Compare two locally synthesized voice profiles in a back-and-forth conversation. Source-reference-only clips are excluded because they cannot truthfully render new dialogue.
           </p>
         </div>
 
@@ -183,7 +186,7 @@ export const DialogueStudio: React.FC<DialogueStudioProps> = ({ models }) => {
                   onChange={(e) => setModelAId(e.target.value)}
                   className="w-full bg-slate-900 border border-slate-800 rounded-xl px-2.5 py-1.5 text-xs text-white truncate font-medium cursor-pointer"
                 >
-                  {models.map((m) => (
+                  {scriptModels.map((m) => (
                     <option key={m.id} value={m.id}>
                       {m.flag} {m.name} ({m.archetype})
                     </option>
@@ -222,7 +225,7 @@ export const DialogueStudio: React.FC<DialogueStudioProps> = ({ models }) => {
                   onChange={(e) => setModelBId(e.target.value)}
                   className="w-full bg-slate-900 border border-slate-800 rounded-xl px-2.5 py-1.5 text-xs text-white truncate font-medium cursor-pointer"
                 >
-                  {models.map((m) => (
+                  {scriptModels.map((m) => (
                     <option key={m.id} value={m.id}>
                       {m.flag} {m.name} ({m.archetype})
                     </option>

@@ -28,6 +28,8 @@ export type RoomEnvironment = {
   highFrequencyDampingHz: number;
   /** Relative amount of the modelled early reflection field. */
   earlyReflectionLevel: number;
+  /** Delivery limiter ceiling, separate from voice identity. Defaults to -1 dBFS. */
+  outputCeilingDbfs?: number;
 };
 
 /**
@@ -59,7 +61,7 @@ export function roomEnvironmentWithWet(id: RoomEnvironmentId | string | undefine
 
 /** A stable, visible recipe identifier; it is not a cryptographic checksum. */
 export function roomRecipeId(room: RoomEnvironment): string {
-  return `${room.id}@modelled-v1:rt${room.rt60.toFixed(2)}:pd${room.preDelayMs}:wet${room.wet.toFixed(2)}:d${room.sourceDistanceM.toFixed(1)}`;
+  return `${room.id}@modelled-v1:rt${room.rt60.toFixed(2)}:pd${room.preDelayMs}:wet${room.wet.toFixed(2)}:d${room.sourceDistanceM.toFixed(1)}:hf${room.highFrequencyDampingHz}:er${room.earlyReflectionLevel.toFixed(2)}:ceil${(room.outputCeilingDbfs ?? -1).toFixed(1)}`;
 }
 
 function seededRandom(seed: number) {
@@ -126,10 +128,10 @@ export function buildModelledRoomImpulse(context: BaseAudioContext, room: RoomEn
 export async function renderRoomEnvironment(
   sourceBuffer: AudioBuffer,
   room: RoomEnvironment,
-): Promise<{ wavBlob: Blob; wavUrl: string; duration: number; recipeId: string }> {
+): Promise<{ wavBlob: Blob; wavUrl: string; duration: number; recipeId: string; audioBuffer: AudioBuffer }> {
   if (room.kind === 'dry' || room.wet <= 0) {
     const wavBlob = audioBufferToWavBlob(sourceBuffer);
-    return { wavBlob, wavUrl: URL.createObjectURL(wavBlob), duration: sourceBuffer.duration, recipeId: roomRecipeId(room) };
+    return { wavBlob, wavUrl: URL.createObjectURL(wavBlob), duration: sourceBuffer.duration, recipeId: roomRecipeId(room), audioBuffer: sourceBuffer };
   }
   const sampleRate = sourceBuffer.sampleRate;
   const tail = Math.min(4.5, room.rt60 * 1.35 + room.preDelayMs / 1000);
@@ -148,6 +150,12 @@ export async function renderRoomEnvironment(
   wet.gain.value = 1;
   const master = context.createGain();
   master.gain.value = 0.92;
+  const limiter = context.createDynamicsCompressor();
+  limiter.threshold.value = room.outputCeilingDbfs ?? -1;
+  limiter.knee.value = 0;
+  limiter.ratio.value = 20;
+  limiter.attack.value = 0.003;
+  limiter.release.value = 0.12;
 
   source.connect(dry);
   dry.connect(master);
@@ -155,9 +163,10 @@ export async function renderRoomEnvironment(
   send.connect(convolver);
   convolver.connect(wet);
   wet.connect(master);
-  master.connect(context.destination);
+  master.connect(limiter);
+  limiter.connect(context.destination);
   source.start(0);
   const rendered = await context.startRendering();
   const wavBlob = audioBufferToWavBlob(rendered);
-  return { wavBlob, wavUrl: URL.createObjectURL(wavBlob), duration: rendered.duration, recipeId: roomRecipeId(room) };
+  return { wavBlob, wavUrl: URL.createObjectURL(wavBlob), duration: rendered.duration, recipeId: roomRecipeId(room), audioBuffer: rendered };
 }

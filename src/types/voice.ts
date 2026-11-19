@@ -1,4 +1,5 @@
 import type { VoiceRenderManifest } from '../utils/voiceRenderContract';
+import type { SourceVariantManifest } from './voiceAsset';
 
 export interface FormantProfile {
   f1: number; // Hz (first formant - jaw opening)
@@ -67,6 +68,7 @@ export interface GeneratedTake {
   textSnippet: string;
   /** Present for every render created through the pinned v1 contract. */
   renderManifest?: VoiceRenderManifest;
+  sourceVariantManifest?: SourceVariantManifest;
 }
 
 export interface DialogueBeat {

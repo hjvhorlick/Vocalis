@@ -17,8 +17,9 @@ import { assertCanPersistVoiceDefinition } from './utils/voiceProvenance';
 import { ensureOriginalAssetRecords } from './utils/voiceAssetStorage';
 
 export function App() {
-  // Voice Hub is the main page default
-  const [activeTab, setActiveTab] = useState<AppNavTab>('hub');
+  // The protected Original Library is the application entry point; its own
+  // default tab is read-only source browsing before any creation tools.
+  const [activeTab, setActiveTab] = useState<AppNavTab>('library');
   const [isGitHubModalOpen, setIsGitHubModalOpen] = useState(false);
   const [recordingOpened, setRecordingOpened] = useState(false);
   const [recordingPending, setRecordingPending] = useState(false);
@@ -70,7 +71,7 @@ export function App() {
 
   useEffect(() => {
     initializeLocalSpeechEngine(activeModel);
-  }, [activeModel.gender, activeModel.baseVoiceId, activeModel.synthesisMethod]);
+  }, [activeModel.gender, activeModel.baseVoiceId, activeModel.synthesisMethod, activeModel.renderMode]);
 
   // Saved audio takes vault
   const [savedTakes, setSavedTakes] = useState<GeneratedTake[]>([]);
@@ -233,6 +234,7 @@ export function App() {
             }}
             onDeleteCustomModel={handleDeleteCustomModel}
             onDeleteTake={handleDeleteTake}
+            onSaveModel={handleSaveModel}
             onGoToNewModel={() => setActiveTab('creator')}
           />
         )}
