@@ -283,11 +283,28 @@ export function transformPitchAndRate(samples: Float32Array, pitchFactor: number
   return wsolaStretch(pitched, Math.floor(samples.length / safeRate));
 }
 
+function stabilizeRenderedSpeech(input: Float32Array): Float32Array {
+  let peak = 0;
+  for (const sample of input) if (Number.isFinite(sample)) peak = Math.max(peak, Math.abs(sample));
+  const gain = peak > 0.92 ? 0.92 / peak : 1;
+  const output = new Float32Array(input.length);
+  const fade = Math.min(Math.floor(input.length / 2), Math.max(8, Math.round(SAMPLE_RATE * 0.003)));
+  for (let index = 0; index < input.length; index++) {
+    const scaled = (Number.isFinite(input[index]) ? input[index] : 0) * gain;
+    const protectedSample = Math.abs(scaled) > 0.97 ? Math.tanh(scaled * 1.2) / Math.tanh(1.2) : scaled;
+    let edge = 1;
+    if (index < fade) edge = 0.5 - 0.5 * Math.cos(Math.PI * index / Math.max(1, fade));
+    else if (index >= input.length - fade) edge = 0.5 - 0.5 * Math.cos(Math.PI * Math.max(0, input.length - 1 - index) / Math.max(1, fade));
+    output[index] = protectedSample * edge;
+  }
+  return output;
+}
+
 export function processCmuVoice(samples: Float32Array, model: VoiceModelConfig): Float32Array {
   const stylePitch = model.toneStyle === 'deep' ? 0.92 : model.toneStyle === 'energetic' ? 1.06 : 1;
   const rateStyle = model.toneStyle === 'deep' ? 0.92 : model.toneStyle === 'energetic' ? 1.1 : 1;
   const voicedPitch = transformVoicedPitch(samples, SAMPLE_RATE, model.pitch * stylePitch);
-  return applyStyle(transformPitchAndRate(voicedPitch, 1, model.rate * rateStyle), model.toneStyle);
+  return stabilizeRenderedSpeech(applyStyle(transformPitchAndRate(voicedPitch, 1, model.rate * rateStyle), model.toneStyle));
 }
 
 export const CMU_SAMPLE_RATE = SAMPLE_RATE;

@@ -22,6 +22,8 @@ try {
   await page.getByRole('button', { name: '2. Voice Creator', exact: true }).click();
   await page.getByRole('heading', { name: 'Voice Creation Studio', exact: true }).waitFor();
   assert.ok(await page.getByLabel('Base source', { exact: true }).count());
+  assert.ok(await page.getByRole('button', { name: 'Listen to original', exact: true }).count());
+  assert.ok(await page.getByLabel('Room Environment Studio', { exact: true }).count());
 
   await page.getByRole('button', { name: '3. New Voice Library', exact: true }).click();
   await page.getByRole('heading', { name: 'New Voice Library', exact: true }).waitFor();

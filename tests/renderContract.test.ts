@@ -19,6 +19,7 @@ import { ORIGINAL_PERSONALITY_SHA256 } from '../src/utils/originalPersonalityFin
 import { analysePcm } from '../src/utils/voiceAnalysis';
 import { inspectPcmQuality } from '../src/utils/voiceQuality';
 import { warpSpectralEnvelope } from '../src/utils/spectralEnvelopeWarp';
+import { stabilizeDspPcm } from '../src/utils/audioDspEngine';
 import { ORIGINAL_VOICE_PACK_SHA256 } from '../src/utils/originalVoicePackHashes';
 import { createFreeLibraryManifest } from '../src/utils/freeLibraryPublication';
 import { createBlindListeningTrial, validateBlindListeningResponse } from '../src/utils/blindListeningTest';
@@ -145,6 +146,15 @@ test('bounded spectral-envelope warp creates a separate resonance transform with
   assert.equal(shifted.length, source.length);
   assert.deepEqual([...unchanged], [...source]);
   assert.notDeepEqual([...shifted.slice(700, 1500)], [...source.slice(700, 1500)]);
+});
+
+test('variant DSP applies finite headroom protection and click-safe clip edges', () => {
+  const stressed = Float32Array.from({ length: 4_800 }, (_, index) => index % 17 === 0 ? 1.8 : Math.sin(index / 7) * 1.25);
+  const protectedPcm = stabilizeDspPcm(stressed, 16_000);
+  assert.ok(protectedPcm.every(Number.isFinite));
+  assert.ok(Math.max(...protectedPcm.map(Math.abs)) <= 0.93);
+  assert.ok(Math.abs(protectedPcm[0]) < 1e-6);
+  assert.ok(Math.abs(protectedPcm[protectedPcm.length - 1]) < 1e-6);
 });
 
 test('analysis exposes real voiced-frame F0, envelope and objective quality guardrails', () => {

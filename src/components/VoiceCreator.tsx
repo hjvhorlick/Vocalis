@@ -3,6 +3,8 @@ import {
   VoiceModelConfig,
   NATURAL_HUMAN_SAMPLES,
   PRESET_VOICE_MODELS,
+  auditionSourceRecording,
+  stopSpeaking,
 } from '../utils/naturalVoiceEngine';
 import {
   createVoiceRenderRequest,
@@ -11,7 +13,7 @@ import {
   renderVoiceRequest,
   type VoiceRenderResult,
 } from '../utils/voiceRenderContract';
-import type { RoomEnvironmentId } from '../utils/roomEnvironment';
+import { roomEnvironmentWithWet, renderRoomEnvironment, type RoomEnvironmentId } from '../utils/roomEnvironment';
 import { GeneratedTake } from '../types/voice';
 import { VoiceVisualizer } from './VoiceVisualizer';
 import { SourceVoiceAttribution } from './SourceVoiceAttribution';
@@ -117,6 +119,7 @@ export const VoiceCreator: React.FC<VoiceCreatorProps> = ({
 
   // Audition state
   const [isAuditioning, setIsAuditioning] = useState<boolean>(false);
+  const [isListeningToOriginal, setIsListeningToOriginal] = useState<boolean>(false);
 
   // Save & Export state
   const [isSavingAndExporting, setIsSavingAndExporting] = useState<boolean>(false);
@@ -146,6 +149,8 @@ export const VoiceCreator: React.FC<VoiceCreatorProps> = ({
 
   // Sync when activeVoice prop changes or base selection changes
   const handleSelectBaseVoice = (voiceId: string) => {
+    stopSpeaking();
+    setIsListeningToOriginal(false);
     setSelectedBaseId(voiceId);
     const found = voices.find((v) => v.id === voiceId) || PRESET_VOICE_MODELS[0];
     setName(`${found.name} Crafted`);
@@ -217,11 +222,17 @@ export const VoiceCreator: React.FC<VoiceCreatorProps> = ({
         const source = NATURAL_HUMAN_SAMPLES.find(sample => sample.id === (currentDraftModel.sourceId || currentDraftModel.baseSampleId));
         if (!source) throw new Error('No protected source clip is available for this source-clip variant preview.');
         const verified = await verifiedOriginalSourceBlob(currentDraftModel);
-        const originalBuffer = await getSharedAudioContext().decodeAudioData(await verified.blob.arrayBuffer());
+        const context = getSharedAudioContext();
+        const originalBuffer = await context.decodeAudioData(await verified.blob.arrayBuffer());
         const rendered = await renderTransformedWav(originalBuffer, currentDraftModel);
-        const player = new Audio(rendered.wavUrl);
-        player.onended = () => { URL.revokeObjectURL(rendered.wavUrl); if (auditionPlayerRef.current === player) stopAudition(); };
-        player.onerror = () => { URL.revokeObjectURL(rendered.wavUrl); if (auditionPlayerRef.current === player) stopAudition(); };
+        const dryVariant = await context.decodeAudioData(await rendered.wavBlob.arrayBuffer());
+        URL.revokeObjectURL(rendered.wavUrl);
+        // Room treatment is an audition/delivery layer after the dry variant;
+        // it never becomes part of the protected original or the saved identity.
+        const roomRender = await renderRoomEnvironment(dryVariant, roomEnvironmentWithWet(environmentId, roomWet));
+        const player = new Audio(roomRender.wavUrl);
+        player.onended = () => { URL.revokeObjectURL(roomRender.wavUrl); if (auditionPlayerRef.current === player) stopAudition(); };
+        player.onerror = () => { URL.revokeObjectURL(roomRender.wavUrl); if (auditionPlayerRef.current === player) stopAudition(); };
         auditionPlayerRef.current = player;
         await player.play();
         return;
@@ -443,11 +454,29 @@ export const VoiceCreator: React.FC<VoiceCreatorProps> = ({
     setCreatedModel(withApprovedRoom);
   };
 
-  const selectedBaseVoice = voices.find((v) => v.id === selectedBaseId) || voices[0];
-  const scriptBaseVoices = voices.filter((voice) => voice.renderMode !== 'source-clip-only');
-  const referenceBaseVoices = voices.filter((voice) => voice.renderMode === 'source-clip-only');
+  // Voice Creator always starts from one of the protected originals. Created
+  // variants live in their own library and are not silently re-used as sources.
+  const originalBaseVoices = voices.filter((voice) => voice.sourceType === 'original');
+  const selectedBaseVoice = originalBaseVoices.find((voice) => voice.id === selectedBaseId) || originalBaseVoices[0];
+  const scriptBaseVoices = originalBaseVoices.filter((voice) => voice.renderMode !== 'source-clip-only');
+  const referenceBaseVoices = originalBaseVoices.filter((voice) => voice.renderMode === 'source-clip-only');
   const normalizedBaseVoiceSearch = baseVoiceSearch.trim().toLowerCase();
-  const matchingBaseVoices = voices.filter((voice) => !normalizedBaseVoiceSearch || [voice.name, voice.archetype, voice.description, voice.accent, voice.realSpeakerName].filter(Boolean).some((value) => value!.toLowerCase().includes(normalizedBaseVoiceSearch)));
+  const matchingBaseVoices = originalBaseVoices.filter((voice) => !normalizedBaseVoiceSearch || [voice.name, voice.archetype, voice.description, voice.accent, voice.realSpeakerName].filter(Boolean).some((value) => value!.toLowerCase().includes(normalizedBaseVoiceSearch)));
+
+  const handleListenToOriginal = () => {
+    if (!selectedBaseVoice) return;
+    if (isListeningToOriginal) {
+      stopSpeaking();
+      setIsListeningToOriginal(false);
+      return;
+    }
+    stopAudition();
+    setIsListeningToOriginal(true);
+    void auditionSourceRecording(selectedBaseVoice, {
+      onEnd: () => setIsListeningToOriginal(false),
+      onError: () => setIsListeningToOriginal(false),
+    });
+  };
 
   return (
     <div className="space-y-6 max-w-7xl mx-auto">
@@ -471,7 +500,10 @@ export const VoiceCreator: React.FC<VoiceCreatorProps> = ({
             </div>
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
+            <button type="button" onClick={handleListenToOriginal} className={`inline-flex h-9 items-center gap-1.5 rounded-xl px-3 text-xs font-bold transition-colors ${isListeningToOriginal ? 'bg-rose-600 text-white' : 'border border-indigo-500/40 bg-indigo-950/40 text-indigo-200 hover:bg-indigo-900/50'}`}>
+              {isListeningToOriginal ? <><Square className="h-3.5 w-3.5 fill-current" /> Stop original</> : <><Play className="h-3.5 w-3.5 fill-current" /> Listen to original</>}
+            </button>
             <span className="text-xs bg-emerald-950/50 text-emerald-300 border border-emerald-500/30 px-3 py-1.5 rounded-xl font-medium flex items-center gap-1.5">
               <ShieldCheck className="w-4 h-4 text-emerald-400" />
               Local non-neural synthesis
@@ -733,6 +765,14 @@ export const VoiceCreator: React.FC<VoiceCreatorProps> = ({
             <label className="block"><span className="mb-1 block text-[11px] font-semibold text-slate-400">Audition phrase</span><input type="text" value={samplePhrase} onChange={(event) => setSamplePhrase(event.target.value)} disabled={selectedBaseVoice.renderMode === 'source-clip-only'} className="w-full rounded-xl border border-slate-800 bg-slate-900 px-3 py-2 text-xs text-white outline-none focus:ring-1 focus:ring-indigo-500 disabled:cursor-not-allowed disabled:opacity-50" /></label>
           </div>
         </section>
+
+        <RoomEnvironmentStudio
+          environmentId={environmentId}
+          wet={roomWet}
+          onEnvironmentChange={setEnvironmentId}
+          onWetChange={setRoomWet}
+          compact
+        />
 
         <div className="rounded-xl border border-amber-500/30 bg-amber-950/20 p-3 text-xs text-amber-100">
           {selectedBaseVoice.renderMode === 'script-renderable' || selectedBaseVoice.synthesisMethod === 'recorded-units' ? <><span className="font-bold">Required validation route:</span> saving creates a separate <span className="font-mono">candidate</span> and renders this fixed script in <span className="font-semibold">Dry Reference</span> with the same locked voice definition/recipe used by exports. Room tests remain separate delivery treatments.<p className="mt-1.5 italic text-amber-200/80">“{VOICE_VALIDATION_SCRIPT}”</p></> : <><span className="font-bold">Finite source-clip route:</span> saving creates a separate dry WAV from the selected protected source recording. It cannot use this typed script or claim a reusable voice; review compares that finite variant directly against the original.</>}
