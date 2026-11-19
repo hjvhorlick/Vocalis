@@ -19,17 +19,14 @@ import {
   Sliders,
   Volume2,
   Square,
-  Play,
   Download,
   BookmarkCheck,
   Check,
-  RotateCcw,
   Search,
-  ShieldCheck,
-  Sparkles,
   FileText,
   AudioWaveform,
-  ExternalLink,
+  ChevronDown,
+  ListFilter,
 } from 'lucide-react';
 import { VoiceAvatar } from './VoiceAvatar';
 import { VoiceSourceNote } from './VoiceSourceNote';
@@ -53,10 +50,10 @@ export const VoiceHub: React.FC<VoiceHubProps> = ({
   onSaveTake,
   onOpenVoiceCreator,
 }) => {
-  // Filter states
-  const [filterRegion, setFilterRegion] = useState<'ALL' | 'US' | 'UK' | 'CA' | 'IN' | 'EU' | 'Custom'>('ALL');
-  const [filterGender, setFilterGender] = useState<'ALL' | 'Female' | 'Male'>('ALL');
-  const [searchQuery, setSearchQuery] = useState('');
+  // The Hub is a production screen, not a second full catalogue. The picker keeps
+  // all profiles reachable without putting sixty expanded cards ahead of the script.
+  const [voiceSearch, setVoiceSearch] = useState('');
+  const [isVoicePickerOpen, setIsVoicePickerOpen] = useState(false);
 
   // Script text state (defaults to active voice's sample phrase)
   const [customScript, setCustomScript] = useState(activeVoice.samplePhrase);
@@ -86,21 +83,14 @@ export const VoiceHub: React.FC<VoiceHubProps> = ({
   const [renderError, setRenderError] = useState<string | null>(null);
   const activeSourceOnly = activeVoice.renderMode === 'source-clip-only';
 
-  // Filter voices
-  const filteredVoices = voices.filter((v) => {
-    if (filterRegion === 'Custom' && !v.isCustom) return false;
-    if (filterRegion !== 'ALL' && filterRegion !== 'Custom' && v.accent !== filterRegion) return false;
-    if (filterGender !== 'ALL' && v.gender !== filterGender) return false;
-    if (searchQuery.trim()) {
-      const q = searchQuery.toLowerCase();
-      return (
-        v.name.toLowerCase().includes(q) ||
-        v.archetype.toLowerCase().includes(q) ||
-        v.description.toLowerCase().includes(q) ||
-        (v.realSpeakerName && v.realSpeakerName.toLowerCase().includes(q))
-      );
-    }
-    return true;
+  const scriptRenderableVoices = voices.filter((voice) => voice.renderMode !== 'source-clip-only');
+  const sourceReferenceVoices = voices.filter((voice) => voice.renderMode === 'source-clip-only');
+  const normalizedVoiceSearch = voiceSearch.trim().toLowerCase();
+  const filteredVoices = voices.filter((voice) => {
+    if (!normalizedVoiceSearch) return true;
+    return [voice.name, voice.archetype, voice.description, voice.realSpeakerName, voice.accent]
+      .filter(Boolean)
+      .some((value) => value!.toLowerCase().includes(normalizedVoiceSearch));
   });
 
   const stopContractPlayback = () => {
@@ -156,12 +146,21 @@ export const VoiceHub: React.FC<VoiceHubProps> = ({
     });
   };
 
-  const handleAuditionCard = (e: React.MouseEvent, voice: VoiceModelConfig) => {
-    e.stopPropagation();
-    if (auditioningCardId === voice.id) { stopContractPlayback(); stopSpeaking(); return; }
+  const handleAuditionVoice = (voice: VoiceModelConfig) => {
+    if (auditioningCardId === voice.id) {
+      stopContractPlayback();
+      stopSpeaking();
+      return;
+    }
     onSelectVoice(voice);
     if (voice.renderMode === 'source-clip-only') playOriginalReference(voice);
     else void renderAndPlay(voice, voice.samplePhrase);
+  };
+
+  const selectVoiceForScript = (voice: VoiceModelConfig) => {
+    onSelectVoice(voice);
+    setVoiceSearch('');
+    setIsVoicePickerOpen(false);
   };
 
   const handlePlayNarration = () => {
@@ -241,9 +240,83 @@ export const VoiceHub: React.FC<VoiceHubProps> = ({
       <SourceVoiceAttribution />
 
       {/* =========================================================================
-          SECTION 1: INTERACTIVE NARRATION STUDIO & WAVE VISUALIZER
+          SECTION 1: SCRIPT-FIRST NARRATION STUDIO
          ========================================================================= */}
       <div className="bg-slate-900/90 border border-slate-800 rounded-3xl p-6 sm:p-7 shadow-2xl space-y-5">
+        <section aria-label="Voice picker" className="rounded-2xl border border-indigo-500/25 bg-indigo-950/20 p-4 space-y-3">
+          <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
+            <div className="min-w-0">
+              <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-indigo-300">Narration workflow</p>
+              <h2 className="mt-0.5 text-base font-extrabold text-white">Choose a voice, paste a script, then test it</h2>
+              <p className="mt-1 text-xs leading-relaxed text-slate-400">The full catalogue stays in Voice Library. This compact picker keeps the script and playback controls at the top of Voice Hub.</p>
+            </div>
+            <div className="flex flex-wrap items-center gap-2 text-[10px] font-medium">
+              <span className="rounded-full border border-emerald-500/30 bg-emerald-500/10 px-2.5 py-1 text-emerald-200">{scriptRenderableVoices.length} script-ready</span>
+              <span className="rounded-full border border-amber-500/30 bg-amber-500/10 px-2.5 py-1 text-amber-100">{sourceReferenceVoices.length} reference clips</span>
+            </div>
+          </div>
+
+          <div className="grid gap-2 md:grid-cols-[minmax(0,1fr)_auto]">
+            <label className="min-w-0">
+              <span className="mb-1.5 block text-[11px] font-bold text-slate-300">Selected voice</span>
+              <select
+                aria-label="Selected voice"
+                value={activeVoice.id}
+                onChange={(event) => {
+                  const voice = voices.find((item) => item.id === event.target.value);
+                  if (voice) selectVoiceForScript(voice);
+                }}
+                className="h-10 w-full rounded-xl border border-slate-700 bg-slate-950 px-3 text-sm font-semibold text-white outline-none focus:border-indigo-400 focus:ring-1 focus:ring-indigo-400"
+              >
+                <optgroup label={`Script narration ready (${scriptRenderableVoices.length})`}>
+                  {scriptRenderableVoices.map((voice) => <option key={voice.id} value={voice.id}>{voice.flag} {voice.name} — {voice.archetype}</option>)}
+                </optgroup>
+                <optgroup label={`Original reference clips (${sourceReferenceVoices.length})`}>
+                  {sourceReferenceVoices.map((voice) => <option key={voice.id} value={voice.id}>{voice.flag} {voice.name} — reference clip only</option>)}
+                </optgroup>
+              </select>
+            </label>
+            <button
+              type="button"
+              onClick={() => setIsVoicePickerOpen((open) => !open)}
+              aria-expanded={isVoicePickerOpen}
+              className="h-10 rounded-xl border border-slate-700 bg-slate-950 px-3 text-xs font-bold text-slate-200 transition-colors hover:border-slate-600 hover:bg-slate-800"
+            >
+              <span className="inline-flex items-center gap-1.5"><ListFilter className="h-3.5 w-3.5 text-indigo-300" /> Find a voice <ChevronDown className={`h-3.5 w-3.5 transition-transform ${isVoicePickerOpen ? 'rotate-180' : ''}`} /></span>
+            </button>
+          </div>
+
+          {isVoicePickerOpen && <div className="rounded-xl border border-slate-800 bg-slate-950/70 p-3">
+            <label className="relative block">
+              <Search className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-500" />
+              <input
+                autoFocus
+                type="search"
+                value={voiceSearch}
+                onChange={(event) => setVoiceSearch(event.target.value)}
+                placeholder={`Search ${voices.length} voices by name, role, accent, or speaker`}
+                className="h-10 w-full rounded-xl border border-slate-700 bg-slate-900 pl-9 pr-3 text-xs text-white placeholder:text-slate-500 outline-none focus:border-indigo-400 focus:ring-1 focus:ring-indigo-400"
+              />
+            </label>
+            <div className="mt-2 grid max-h-64 grid-cols-1 gap-1 overflow-y-auto pr-1 sm:grid-cols-2">
+              {filteredVoices.map((voice) => {
+                const selected = voice.id === activeVoice.id;
+                const testLabel = voice.renderMode === 'source-clip-only' ? 'Original' : 'Test';
+                return <div key={voice.id} className={`flex min-w-0 items-center gap-2 rounded-lg border px-2 py-1.5 ${selected ? 'border-indigo-500/50 bg-indigo-500/10' : 'border-transparent hover:bg-slate-900'}`}>
+                  <button type="button" onClick={() => selectVoiceForScript(voice)} className="min-w-0 flex-1 text-left">
+                    <span className="block truncate text-xs font-semibold text-slate-100">{voice.flag} {voice.name}{selected ? ' · selected' : ''}</span>
+                    <span className="block truncate text-[10px] text-slate-400">{voice.renderMode === 'source-clip-only' ? 'Original recording — reference only' : voice.archetype}</span>
+                  </button>
+                  <button type="button" onClick={() => handleAuditionVoice(voice)} className={`shrink-0 rounded-md border px-2 py-1 text-[10px] font-bold ${auditioningCardId === voice.id ? 'border-rose-400 bg-rose-500 text-white' : 'border-slate-700 bg-slate-800 text-indigo-200 hover:bg-slate-700'}`}>
+                    {auditioningCardId === voice.id ? 'Stop' : testLabel}
+                  </button>
+                </div>;
+              })}
+              {filteredVoices.length === 0 && <p className="col-span-full px-2 py-4 text-center text-xs text-slate-400">No voice matches that search.</p>}
+            </div>
+          </div>}
+        </section>
+
         {/* Active Voice Header */}
         <div className="flex flex-wrap items-center justify-between gap-4 border-b border-slate-800/80 pb-4">
           <div className="flex items-center gap-3">
@@ -295,12 +368,17 @@ export const VoiceHub: React.FC<VoiceHubProps> = ({
 
         <VoiceSourceNote model={activeVoice} />
 
+        {activeSourceOnly && <div className="flex flex-col gap-2 rounded-xl border border-amber-500/35 bg-amber-950/20 p-3 text-xs text-amber-100 sm:flex-row sm:items-center sm:justify-between">
+          <span><strong>Script narration needs a voice bank.</strong> This selected item is an original reference recording, so it can only play its unprocessed source clip.</span>
+          {scriptRenderableVoices[0] && <button type="button" onClick={() => selectVoiceForScript(scriptRenderableVoices[0])} className="shrink-0 rounded-lg border border-amber-300/40 bg-amber-400/10 px-3 py-1.5 text-[11px] font-bold text-amber-50 hover:bg-amber-400/20">Use {scriptRenderableVoices[0].name} for a script</button>}
+        </div>}
+
         {/* Script Input & Template Bar */}
         <div className="space-y-2">
           <div className="flex items-center justify-between">
             <label className="text-xs font-bold uppercase tracking-wider text-slate-300 flex items-center gap-1.5">
               <FileText className="w-3.5 h-3.5 text-indigo-400" />
-              {activeSourceOnly ? 'Protected Source Reference — no arbitrary-text renderer:' : 'Add or Edit Script to Listen to Narration:'}
+              {activeSourceOnly ? 'Original reference recording — script narration is unavailable:' : 'Paste or type a script:'}
             </label>
             <div className="flex items-center gap-1 text-[11px] text-slate-400 font-mono">
               <span>{customScript.length} chars</span>
@@ -373,7 +451,7 @@ export const VoiceHub: React.FC<VoiceHubProps> = ({
                 </>
               ) : (
                 <>
-                  <Volume2 className="w-3.5 h-3.5" /> {activeSourceOnly ? 'Listen to Original' : 'Listen to Narration'}
+                  <Volume2 className="w-3.5 h-3.5" /> {activeSourceOnly ? 'Listen to Original' : 'Test This Script'}
                 </>
               )}
             </button>
@@ -441,203 +519,9 @@ export const VoiceHub: React.FC<VoiceHubProps> = ({
         )}
       </div>
 
-      {/* =========================================================================
-          SECTION 2: ALL 60 VOICES CATALOG & TEST AUDITIONS
-         ========================================================================= */}
-      <div className="bg-slate-900/90 border border-slate-800 rounded-3xl p-5 sm:p-6 shadow-2xl space-y-4">
-        {/* Header & Verification Badge */}
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-800/80 pb-4">
-          <div>
-            <div className="flex items-center gap-2">
-              <h3 className="font-extrabold text-white text-lg tracking-tight">
-                Voice Profile Catalog
-              </h3>
-              <span className="text-xs bg-indigo-500/20 text-indigo-300 font-mono px-2 py-0.5 rounded-full border border-indigo-500/30">
-                {voices.length} Voice Profiles
-              </span>
-            </div>
-            <p className="text-xs text-slate-400 mt-0.5">
-              Browse and test profiles with typed text. Source clips and synthesis bases are different.
-            </p>
-          </div>
-
-          <div className="flex items-center gap-2 bg-emerald-950/40 border border-emerald-500/30 px-3 py-1.5 rounded-xl text-emerald-300 text-xs">
-            <ShieldCheck className="w-4 h-4 text-emerald-400 shrink-0" />
-            <span className="font-medium">Local synthesis &bull; No neural models</span>
-          </div>
-        </div>
-
-        <p className="text-xs text-slate-400">Grade each voice from 1 to 5 stars. Your personal ratings are saved in this browser, not shared publicly.</p>
-
-        {/* Filter and Search Bar */}
-        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3 pt-1">
-          {/* Accent / Region Filter */}
-          <div className="flex flex-wrap items-center gap-1.5">
-            <span className="text-[11px] text-slate-400 font-medium mr-1">Speaker Accent:</span>
-            {[
-              { id: 'ALL', label: 'All Speakers' },
-              { id: 'US', label: '🇺🇸 US American' },
-              { id: 'UK', label: '🇬🇧 UK & Scottish' },
-              { id: 'CA', label: '🇨🇦 Canadian' },
-              { id: 'IN', label: '🇮🇳 Indian English' },
-              { id: 'EU', label: '🇪🇺 European' },
-              { id: 'Custom', label: '✨ Custom' },
-            ].map((f) => (
-              <button
-                key={f.id}
-                onClick={() => setFilterRegion(f.id as any)}
-                className={`text-xs px-2.5 py-1 rounded-xl font-medium border transition-all cursor-pointer ${
-                  filterRegion === f.id
-                    ? 'bg-indigo-600 text-white border-indigo-400 shadow-sm'
-                    : 'bg-slate-950 text-slate-400 border-slate-800 hover:text-slate-200 hover:bg-slate-800/60'
-                }`}
-              >
-                {f.label}
-              </button>
-            ))}
-          </div>
-
-          {/* Gender Filter & Search */}
-          <div className="flex items-center gap-2">
-            <div className="flex items-center bg-slate-950 p-0.5 rounded-xl border border-slate-800">
-              {(['ALL', 'Female', 'Male'] as const).map((g) => (
-                <button
-                  key={g}
-                  onClick={() => setFilterGender(g)}
-                  className={`text-[11px] px-2.5 py-1 rounded-lg font-medium transition-colors cursor-pointer ${
-                    filterGender === g
-                      ? 'bg-indigo-600 text-white'
-                      : 'text-slate-400 hover:text-slate-200'
-                  }`}
-                >
-                  {g === 'ALL' ? 'Any Voice' : g}
-                </button>
-              ))}
-            </div>
-
-            <div className="relative flex-1 sm:w-44">
-              <Search className="w-3.5 h-3.5 text-slate-500 absolute left-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
-              <input
-                type="text"
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="Search 60 voices..."
-                className="w-full bg-slate-950 border border-slate-800 rounded-xl pl-8 pr-2.5 py-1 text-xs text-white placeholder-slate-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
-              />
-            </div>
-          </div>
-        </div>
-
-        {/* Voices Grid */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3.5 pt-2">
-          {filteredVoices.map((voice) => {
-            const isSelected = activeVoice.id === voice.id;
-            const isAuditioning = auditioningCardId === voice.id;
-
-            return (
-              <div
-                key={voice.id}
-                onClick={() => onSelectVoice(voice)}
-                className={`p-4 rounded-2xl border cursor-pointer transition-all flex flex-col justify-between gap-3 ${
-                  isSelected
-                    ? 'bg-indigo-950/40 border-indigo-500/80 ring-2 ring-indigo-500/30 shadow-lg'
-                    : 'bg-slate-950/80 border-slate-800 hover:border-slate-700 hover:bg-slate-950'
-                }`}
-              >
-                <div>
-                  <div className="flex items-start justify-between gap-2 mb-2">
-                    <div className="flex items-center gap-2.5">
-                      {/* Avatar with Side Flag Block */}
-                      <div className="relative shrink-0">
-                        <VoiceAvatar
-                          id={voice.id}
-                          name={voice.name}
-                          color={voice.avatarColor}
-                          size="lg"
-                        />
-                        {voice.flag && (
-                          <div
-                            className="absolute -bottom-1 -right-1.5 bg-slate-900 border border-slate-700/80 rounded-md px-1 py-0.2 text-[10px] leading-tight shadow-md flex items-center justify-center pointer-events-none"
-                            title={`Country / Accent: ${voice.accent}`}
-                          >
-                            {voice.flag}
-                          </div>
-                        )}
-                      </div>
-                      <div>
-                        <h4 className="font-bold text-white text-xs leading-tight flex items-center gap-1">
-                          {voice.name}
-                          {isSelected && <Check className="w-3.5 h-3.5 text-indigo-400" />}
-                        </h4>
-                        <span className="text-[10px] text-indigo-400 font-medium block line-clamp-1">
-                          {voice.archetype}
-                        </span>
-                      </div>
-                    </div>
-
-                    <span className="text-[9px] font-mono px-1.5 py-0.5 rounded bg-slate-900 border border-slate-800 text-slate-400 shrink-0">
-                      {voice.gender}
-                    </span>
-                  </div>
-
-                  {/* Personality and Mood Description */}
-                  <p
-                    className="text-[11px] text-slate-300/90 line-clamp-3 leading-relaxed mb-2 font-normal"
-                    title={voice.description}
-                  >
-                    {voice.description}
-                  </p>
-
-                  {/* Vocalis Script preview */}
-                  <div className="text-[10px] text-indigo-300/90 bg-indigo-950/20 p-2 rounded-xl border border-indigo-900/40 space-y-0.5">
-                    <span className="text-[9px] uppercase font-bold text-indigo-400 block tracking-wider">
-                      {voice.renderMode === 'source-clip-only' ? 'Profile script — unavailable for this source:' : 'Vocalis Script:'}
-                    </span>
-                    <p className="font-sans italic line-clamp-2 leading-tight text-slate-300">
-                      "{voice.samplePhrase}"
-                    </p>
-                  </div>
-                </div>
-
-                <VoiceRating voiceId={voice.id} voiceName={voice.name} />
-
-                {/* Bottom Card Actions */}
-                <div className="pt-2 border-t border-slate-900 flex items-center justify-between gap-2">
-                  <button
-                    type="button"
-                    onClick={(e) => handleAuditionCard(e, voice)}
-                    className={`px-3 py-1.5 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition-all shadow-sm active:scale-95 cursor-pointer ${
-                      isAuditioning
-                        ? 'bg-rose-600 hover:bg-rose-500 text-white shadow-rose-600/40 animate-pulse'
-                        : 'bg-slate-900 hover:bg-slate-800 text-slate-200 border border-slate-700/80 hover:border-slate-600'
-                    }`}
-                    title="Generate the displayed script with this profile"
-                  >
-                    {isAuditioning ? (
-                      <>
-                        <Square className="w-3 h-3 fill-current" /> Stop
-                      </>
-                    ) : (
-                      <>
-                        <Volume2 className="w-3.5 h-3.5 text-indigo-400" /> {voice.renderMode === 'source-clip-only' ? 'Original clip' : 'Audition script'}
-                      </>
-                    )}
-                  </button>
-
-                  <span
-                    className={`text-[11px] font-semibold flex items-center gap-1 ${
-                      isSelected ? 'text-indigo-400 font-bold' : 'text-slate-500 hover:text-slate-300'
-                    }`}
-                  >
-                    <Sliders className="w-3 h-3" />
-                    {isSelected ? 'Active Speaker' : 'Select'}
-                  </span>
-                </div>
-              </div>
-            );
-          })}
-        </div>
-      </div>
+      <aside className="rounded-2xl border border-slate-800 bg-slate-900/60 px-4 py-3 text-xs text-slate-400">
+        <span className="font-semibold text-slate-200">Looking for source files, provenance, candidate review, or free-library exports?</span> Use <span className="font-semibold text-indigo-300">Voice Library</span>. Voice Hub is deliberately kept script-first so selecting from {voices.length} profiles never buries the narration controls.
+      </aside>
     </div>
   );
 };

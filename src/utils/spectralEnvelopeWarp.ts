@@ -65,7 +65,11 @@ export function warpSpectralEnvelope(input: Float32Array, factor: number): Float
     }
     for (let bin = 0; bin <= half; bin++) {
       const shifted = interpolate(envelope, bin / bounded);
-      const gain = Math.max(0.25, Math.min(4, Math.exp(shifted - envelope[bin])));
+      // Large frame-to-frame envelope gains are a common source of zipper-like
+      // ticks. This deliberately conservative range, plus the dry blend below,
+      // preserves the audible direction of the control without allowing a
+      // narrow spectral spike to create a clipped transient.
+      const gain = Math.max(0.5, Math.min(2, Math.exp(shifted - envelope[bin])));
       real[bin] *= gain; imaginary[bin] *= gain;
       if (bin && bin < half) { real[size - bin] *= gain; imaginary[size - bin] *= gain; }
     }
@@ -76,6 +80,10 @@ export function warpSpectralEnvelope(input: Float32Array, factor: number): Float
     }
   }
   const result = new Float32Array(input.length);
-  for (let index = 0; index < result.length; index++) result[index] = output[index] / Math.max(1e-8, weights[index]);
+  const wet = Math.min(0.78, Math.abs(bounded - 1) / 0.15 * 0.78);
+  for (let index = 0; index < result.length; index++) {
+    const warped = output[index] / Math.max(1e-8, weights[index]);
+    result[index] = Number.isFinite(warped) ? input[index] * (1 - wet) + warped * wet : input[index];
+  }
   return result;
 }

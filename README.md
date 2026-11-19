@@ -1,9 +1,10 @@
 # Vocalis
 
-Vocalis is an **experimental, local, non-neural voice application**. It can record
-sentences, let a person mark their sounds, build a reusable sound bank, synthesize
-new text from covered sounds, and export WAV audio. It uses no cloud TTS,
-browser/system TTS, speech-recognition model, or neural voice generator.
+Vocalis is an **experimental, local, non-neural voice application**. It lets a
+listener assess protected original recordings, create separately labelled local
+voice variants, narrate eligible scripts, and export genuine MP3 delivery files.
+It uses no cloud TTS, browser/system TTS, speech-recognition model, or neural
+voice generator.
 
 ## Start
 
@@ -21,30 +22,14 @@ npm start
 
 Serve over HTTPS for microphone access. See [deployment and handoff](docs/DEPLOYMENT.md).
 
-## Create your own voice
+## Four-section workflow
 
-Open **Record a Voice**:
+1. **Original Voices:** listen to the 60 protected original recordings and give each a personal five-star naturalness rating.
+2. **Voice Creator:** select one original in a compact dropdown, adjust its bounded local voice controls, test it, and create a separate variant.
+3. **New Voice Library:** holds only created variants. It starts empty in a new browser and never contains or changes an original import.
+4. **Script to MP3:** select an original or created voice, paste a script, test the narration, then create and download a genuine MP3 delivery file.
 
-1. **Read & record:** create a project and confirm permission. Test the microphone,
-   read a sentence, stop, listen, and choose **Keep & next**. You can also upload
-   a short audio take. Add your own sentences when needed.
-2. **Mark sounds:** select a recording and suggest its English phoneme sequence.
-   The starting boundaries are **evenly spaced placeholders**, not automatic
-   alignment. Listen to each sound, move the start/end boundaries, correct the
-   labels, check the review box, and save.
-3. **Build & test:** build a bank from reviewed recordings. Test new sentences;
-   missing sounds or unknown pronunciations block output instead of borrowing
-   another speaker. Tap a missing sound to add a recording prompt. Correct
-   pronunciations here and rebuild after project changes.
-4. **Add to voice library:** install the bank for Voice Hub, Voice Creator and
-   Dialogue playback. Export a sound-bank `.vvoice` for another browser/site.
-5. **Back up project:** `.vproject` keeps recordings, prompts, sound labels and
-   pronunciation entries so the voice can be rebuilt later.
-
-**Use my recordings** remains a separate whole-phrase arranger: sequence saved
-sentences and export a WAV without sound annotation. Its phrase `.vvoice` is not
-an arbitrary-text bank. [Format details](docs/RECORDING_FORMAT.md) distinguish the
-formats despite their shared extension.
+Original-reference clips remain available in the script selector but cannot honestly narrate new words without a matching voice bank. They are clearly labelled instead of being silently substituted with another voice.
 
 ### Current limitations—not quality guarantees
 
@@ -76,10 +61,10 @@ sounds; missing/corrupt bank assets raise an error. A separate mathematical
 formant method is also available to profiles that select it. Regional rules and
 profile character labels are approximations, not new recorded identities.
 
-User-built sound banks have a strict coverage gate and do **not** use CMU or
-mathematical fallback sounds. Playback cancellation invalidates pending renders;
-word timing callbacks are supplied for generated speech. Voice Creator tuning and
-Dialogue use the same renderer. Errors are visible in the application.
+Existing installed sound banks have a strict coverage gate and do **not** use
+CMU or mathematical fallback sounds. Playback cancellation invalidates pending
+renders; word timing callbacks are supplied for generated speech. Voice Creator
+and Script to MP3 use the same renderer. Errors are visible in the application.
 
 ## Storage and personal ratings
 

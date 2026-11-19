@@ -29,6 +29,35 @@ export function isDspPlaying(): boolean {
 }
 
 /**
+ * Gives offline transforms predictable headroom before the final limiter. It
+ * avoids hard integer clipping while leaving ordinary, low-level speech samples
+ * bit-for-bit untouched. A tiny cosine edge fade also prevents a processed clip
+ * from beginning or ending on a discontinuity.
+ */
+export function stabilizeDspPcm(input: Float32Array, sampleRate: number): Float32Array {
+  if (!input.length) return input.slice();
+  let peak = 0;
+  for (const sample of input) if (Number.isFinite(sample)) peak = Math.max(peak, Math.abs(sample));
+  const gain = peak > 0.92 ? 0.92 / peak : 1;
+  const output = new Float32Array(input.length);
+  const fadeSamples = Math.min(Math.floor(input.length / 2), Math.max(8, Math.round(sampleRate * 0.003)));
+  for (let index = 0; index < input.length; index++) {
+    const sample = Number.isFinite(input[index]) ? input[index] * gain : 0;
+    // This is a safety knee, not a character distortion: it acts only near
+    // full scale, where a later PCM conversion would otherwise clip abruptly.
+    const protectedSample = Math.abs(sample) > 0.97 ? Math.tanh(sample * 1.2) / Math.tanh(1.2) : sample;
+    let edge = 1;
+    if (index < fadeSamples) edge = 0.5 - 0.5 * Math.cos(Math.PI * index / Math.max(1, fadeSamples));
+    else if (index >= input.length - fadeSamples) {
+      const remaining = input.length - 1 - index;
+      edge = 0.5 - 0.5 * Math.cos(Math.PI * Math.max(0, remaining) / Math.max(1, fadeSamples));
+    }
+    output[index] = protectedSample * edge;
+  }
+  return output;
+}
+
+/**
  * Configure acoustic DSP nodes (EQ, formants, distortion, ring mod)
  */
 function buildDspGraph(
@@ -140,20 +169,30 @@ function buildDspGraph(
     }
   }
 
-  // 4. Master Volume Gain
+  // 4. Master gain and a gentle delivery limiter. Stacked spectral controls can
+  // otherwise push a perfectly valid source above full scale and turn peaks into
+  // the crackles users hear. The limiter sits after every colour control in both
+  // live preview and offline variant rendering; it never touches the original.
   const masterGain = ctx.createGain();
-  masterGain.gain.value = Math.max(0, Math.min(1.5, config.volume));
+  masterGain.gain.value = Math.max(0, Math.min(1, config.volume));
+  const safetyLimiter = ctx.createDynamicsCompressor();
+  safetyLimiter.threshold.value = -3;
+  safetyLimiter.knee.value = 6;
+  safetyLimiter.ratio.value = 12;
+  safetyLimiter.attack.value = 0.003;
+  safetyLimiter.release.value = 0.12;
   currentLastNode.connect(masterGain);
+  masterGain.connect(safetyLimiter);
 
   let analyser: AnalyserNode | undefined;
   if (ctx instanceof AudioContext) {
     analyser = ctx.createAnalyser();
     analyser.fftSize = 512;
-    masterGain.connect(analyser);
+    safetyLimiter.connect(analyser);
     analyser.connect(ctx.destination);
   }
 
-  return { finalNode: masterGain, analyser };
+  return { finalNode: safetyLimiter, analyser };
 }
 
 function makeVintageSaturationCurve(samples: number): Float32Array {
@@ -240,7 +279,7 @@ export async function renderTransformedWav(
     const envelopeWarped = warpSpectralEnvelope(source, config.formantShift ?? 1);
     const voicedPitchShifted = transformVoicedPitch(envelopeWarped, sampleRate, config.pitch);
     // Rate may scale the full phrase; pitch has already bypassed unvoiced frames.
-    return transformPitchAndRate(voicedPitchShifted, 1, config.rate);
+    return stabilizeDspPcm(transformPitchAndRate(voicedPitchShifted, 1, config.rate), sampleRate);
   });
   const transformedLength = Math.max(1, ...transformedChannels.map(channel => channel.length));
   const totalFrames = transformedLength + Math.ceil(sampleRate * 0.3);

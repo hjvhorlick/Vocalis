@@ -13,6 +13,7 @@
     "test:browser": "node tests/browserWorkflow.mjs"
   },
   "dependencies": {
+    "@breezystack/lamejs": "^1.2.7",
     "@types/express": "^5.0.6",
     "canvas-confetti": "^1.9.4",
     "clsx": "^2.1.1",
