@@ -17,7 +17,7 @@ try {
 const context=await browser.newContext({acceptDownloads:true,viewport:{width:1280,height:900}});
 const page=await context.newPage();const errors=[];page.on('pageerror',e=>errors.push(e.message));
 await page.goto(process.env.TEST_URL || 'http://127.0.0.1:3000');
-await page.getByRole('button',{name:'Record a Voice',exact:true}).click();
+await page.getByRole('button',{name:'2. Record',exact:true}).click();
 await page.getByLabel('Voice name',{exact:true}).fill('Pipeline test');
 await page.getByRole('checkbox',{name:/I am recording my own voice/}).check();
 await page.getByRole('button',{name:'Save details & start',exact:true}).click();
@@ -52,7 +52,7 @@ const exportPromise=page.waitForEvent('download');await page.getByRole('button',
 const bankFile=await (await exportPromise).path();
 await page.getByRole('button',{name:'Add to voice library',exact:true}).click();
 await page.getByText(/Voice added to the library/).waitFor();
-await page.getByRole('button',{name:'Voice Hub',exact:true}).click();
+await page.getByRole('button',{name:'4. Narrate',exact:true}).click();
 await page.getByText(/Speech source: your recorded sound bank/).waitFor();
 await page.getByPlaceholder('Type or paste any text for this voice to narrate...').fill('Bee bee.');
 await page.getByRole('button',{name:'Export Audio File (WAV)',exact:true}).click();
@@ -60,7 +60,7 @@ await page.getByText(/Exported WAV: Pipeline test/).waitFor();
 await page.getByRole('button',{name:'Save to Vault',exact:true}).click();
 await page.getByText('Saved!',{exact:true}).waitFor();
 await page.reload();
-await page.getByRole('button',{name:/Takes Vault/}).click();
+await page.getByRole('button',{name:'1. Voices',exact:true}).click();
 await page.getByRole('button',{name:'Saved Audio Takes (1)',exact:true}).click();
 const audioUrl=await page.locator('audio').first().getAttribute('src');
 // The vault has controls with a URL-backed download even before play.
@@ -69,7 +69,7 @@ assert.ok(await downloadLinks.count()>0);
 const href=await downloadLinks.first().getAttribute('href');
 assert.ok(await page.evaluate(async url=>(await fetch(url)).ok,href));
 console.log('PASS catalog integration and actual vault audio survives reload');
-await page.getByRole('button',{name:'Record a Voice',exact:true}).click();
+await page.getByRole('button',{name:'2. Record',exact:true}).click();
 await page.getByRole('button',{name:'Mark sounds',exact:true}).click();
 assert.equal(await page.getByRole('checkbox',{name:/I listened to every sound range/}).isChecked(),true);
 await page.getByRole('button',{name:'Build & test',exact:true}).click();

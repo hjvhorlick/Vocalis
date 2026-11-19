@@ -3,52 +3,47 @@ import { VoiceModelConfig, auditionSourceRecording, stopSpeaking } from '../util
 import { createVoiceRenderRequest, playRenderedVoice, renderVoiceRequest } from '../utils/voiceRenderContract';
 import { GeneratedTake } from '../types/voice';
 import {
-  BookmarkCheck,
-  Play,
   Square,
-  Sliders,
-  Mic2,
   Trash2,
   Download,
   AudioWaveform,
-  Plus,
   Volume2,
+  Search,
 } from 'lucide-react';
 import { VoiceAvatar } from './VoiceAvatar';
 import { VoiceSourceNote } from './VoiceSourceNote';
 import { CandidateABPlayback } from './CandidateABPlayback';
 import { createFreeLibraryManifest } from '../utils/freeLibraryPublication';
-import { VoiceRating } from './VoiceRating';
 import type { VoiceAsset, VoiceQualityRating } from '../types/voiceAsset';
 import { deleteVoiceAsset, readVoiceAssets, updateVoiceAssetReview } from '../utils/voiceAssetStorage';
 
 interface VoiceLibraryProps {
   models: VoiceModelConfig[];
   savedTakes: GeneratedTake[];
-  onSelectModelForShaper: (m: VoiceModelConfig) => void;
-  onSelectModelForStudio: (m: VoiceModelConfig) => void;
-  onDeleteCustomModel: (id: string) => void;
   onDeleteTake: (id: string) => void;
+  onDeleteCustomModel: (id: string) => void;
   onSaveModel: (model: VoiceModelConfig) => void;
-  onGoToNewModel: () => void;
 }
 
 export const VoiceLibrary: React.FC<VoiceLibraryProps> = ({
   models,
   savedTakes,
-  onSelectModelForShaper,
-  onSelectModelForStudio,
-  onDeleteCustomModel,
   onDeleteTake,
+  onDeleteCustomModel,
   onSaveModel,
-  onGoToNewModel,
 }) => {
-  const [activeTab, setActiveTab] = useState<'models' | 'takes' | 'originals' | 'review' | 'approved'>('originals');
+  const [activeTab, setActiveTab] = useState<'takes' | 'originals' | 'review' | 'approved'>('originals');
+  const [originalSearch, setOriginalSearch] = useState('');
+  const [selectedOriginalId, setSelectedOriginalId] = useState('');
   const [auditioningId, setAuditioningId] = useState<string | null>(null);
   const [assets, setAssets] = useState<VoiceAsset[]>([]);
   const [reviewNotes, setReviewNotes] = useState<Record<string, string>>({});
   const [reviewRatings, setReviewRatings] = useState<Record<string, VoiceQualityRating>>({});
   const [assetError, setAssetError] = useState<string | null>(null);
+  const originalModels = models.filter((model) => model.sourceType === 'original');
+  const normalizedOriginalSearch = originalSearch.trim().toLowerCase();
+  const matchingOriginalModels = originalModels.filter((model) => !normalizedOriginalSearch || [model.name, model.archetype, model.description, model.accent, model.realSpeakerName].filter(Boolean).some((value) => value!.toLowerCase().includes(normalizedOriginalSearch)));
+  const selectedOriginal = originalModels.find((model) => model.id === selectedOriginalId) || originalModels[0];
   const playerRef = useRef<HTMLAudioElement | null>(null);
   const reloadAssets = async () => {
     try { setAssets(await readVoiceAssets()); }
@@ -113,8 +108,8 @@ export const VoiceLibrary: React.FC<VoiceLibraryProps> = ({
     try {
       const removed = await deleteVoiceAsset(asset.id);
       if (removed.takeId) onDeleteTake(removed.takeId);
-      const model = models.find(item => item.id === removed.profileId);
-      if (model?.isCustom) onDeleteCustomModel(model.id);
+      const profile = models.find((model) => model.id === removed.profileId);
+      if (profile?.isCustom) onDeleteCustomModel(profile.id);
       setAssets(previous => previous.filter(item => item.id !== removed.id));
     } catch (error) { setAssetError(error instanceof Error ? error.message : 'Could not delete the derived asset.'); }
   };
@@ -154,167 +149,47 @@ export const VoiceLibrary: React.FC<VoiceLibraryProps> = ({
 
   return (
     <div className="space-y-6 max-w-6xl mx-auto">
-      {/* Vault Tabs Header */}
-      <div className="flex flex-wrap items-center justify-between gap-4 border-b border-slate-800 pb-4">
-        <div className="flex flex-wrap items-center gap-1 bg-slate-900 p-1 rounded-2xl border border-slate-800">
+      {/* The Library has one job: source/provenance, review, approved files, and saved takes. Voice selection and script work belong in later workflow steps. */}
+      <div className="space-y-3 border-b border-slate-800 pb-4">
+        <div>
+          <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-indigo-300">Step 1 of 5</p>
+          <h2 className="mt-0.5 text-lg font-extrabold text-white">Voice Library</h2>
+          <p className="mt-1 text-xs text-slate-400">Listen to protected originals, then review or export only separately created candidates. Script narration happens in Step 4.</p>
+        </div>
+        <div className="flex flex-wrap items-center gap-1 rounded-2xl border border-slate-800 bg-slate-900 p-1">
           {[
-            ['originals', `Original Library (${models.filter(model => model.sourceType === 'original').length})`],
-            ['models', `Voice Profiles (${models.length})`],
+            ['originals', `Original Library (${originalModels.length})`],
             ['review', `Review Queue (${assets.filter(asset => asset.reviewState === 'candidate').length})`],
             ['approved', `Free Library (${assets.filter(asset => asset.reviewState === 'approved').length})`],
             ['takes', `Saved Takes (${savedTakes.length})`],
-          ].map(([id, label]) => <button key={id} onClick={() => setActiveTab(id as typeof activeTab)} className={`px-3 py-2 rounded-xl text-xs font-bold transition-all ${activeTab === id ? 'bg-indigo-600 text-white shadow-md' : 'text-slate-400 hover:text-slate-200'}`}>{label}</button>)}
+          ].map(([id, label]) => <button key={id} onClick={() => setActiveTab(id as typeof activeTab)} className={`rounded-xl px-3 py-2 text-xs font-bold transition-all ${activeTab === id ? 'bg-indigo-600 text-white shadow-md' : 'text-slate-400 hover:text-slate-200'}`}>{label}</button>)}
         </div>
-
-        {activeTab === 'models' && (
-          <button
-            onClick={onGoToNewModel}
-            className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-gradient-to-r from-indigo-500 to-cyan-500 text-white text-xs font-semibold shadow hover:brightness-110 transition-all"
-          >
-            <Plus className="w-3.5 h-3.5" /> Shape New Voice
-          </button>
-        )}
       </div>
-
-      {/* Models Grid */}
-      {activeTab === 'models' && (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {models.map((model) => {
-            const isAuditioning = auditioningId === model.id;
-            return (
-              <div
-                key={model.id}
-                className="bg-slate-900/90 border border-slate-800 rounded-3xl p-5 shadow-xl flex flex-col justify-between hover:border-slate-700 transition-all space-y-4"
-              >
-                <div>
-                  <div className="flex items-start justify-between gap-3 mb-3">
-                    <div className="flex items-center gap-3">
-                      <div className="relative shrink-0">
-                        <VoiceAvatar
-                          id={model.id}
-                          name={model.name}
-                          color={model.avatarColor}
-                          size="lg"
-                        />
-                        {model.flag && (
-                          <div
-                            className="absolute -bottom-1 -right-1.5 bg-slate-900 border border-slate-700/80 rounded-md px-1 py-0.2 text-[10px] leading-tight shadow-md flex items-center justify-center pointer-events-none"
-                            title={`Origin / Accent: ${model.accent}`}
-                          >
-                            {model.flag}
-                          </div>
-                        )}
-                      </div>
-                      <div>
-                        <h4 className="font-bold text-white text-sm">{model.name}</h4>
-                        <span className="text-xs text-indigo-400 font-medium block">
-                          {model.archetype}
-                        </span>
-                      </div>
-                    </div>
-
-                    {model.isCustom && (
-                      <span className="text-[10px] font-bold uppercase px-2 py-0.5 rounded-full bg-cyan-500/10 text-cyan-400 border border-cyan-500/20">
-                        Custom
-                      </span>
-                    )}
-                  </div>
-
-                  <p className="text-xs text-slate-400 line-clamp-2 mb-2">
-                    {model.description}
-                  </p>
-
-                  {/* Vocalis Script preview */}
-                  <div className="text-[10px] text-indigo-300/90 bg-indigo-950/20 p-2 rounded-xl border border-indigo-900/40 mb-3 space-y-0.5">
-                    <span className="text-[9px] uppercase font-bold text-indigo-400 block tracking-wider">
-                      {model.renderMode === 'source-clip-only' ? 'Profile script — unavailable for this source:' : 'Audition Script:'}
-                    </span>
-                    <p className="font-sans italic line-clamp-2 leading-tight text-slate-300">
-                      "{model.samplePhrase}"
-                    </p>
-                  </div>
-
-                  {/* Characteristic Badges */}
-                  <div className="flex flex-wrap gap-1.5 text-[10px] font-mono text-slate-400 mb-2">
-                    <span className="px-2 py-0.5 rounded bg-slate-950 border border-slate-800">
-                      Pitch: {model.pitch.toFixed(2)}x
-                    </span>
-                    <span className="px-2 py-0.5 rounded bg-slate-950 border border-slate-800">
-                      Speed: {model.rate.toFixed(2)}x
-                    </span>
-                    <span className="px-2 py-0.5 rounded bg-slate-950 border border-slate-800 capitalize">
-                      {model.toneStyle}
-                    </span>
-                  </div>
-                </div>
-
-                <VoiceSourceNote model={model} />
-                <VoiceRating voiceId={model.id} voiceName={model.name} />
-
-                {/* Actions */}
-                <div className="pt-3 border-t border-slate-800 flex items-center justify-between gap-2">
-                  <button
-                    onClick={() => handleAudition(model)}
-                    disabled={model.renderMode === 'source-clip-only' && model.sourceType !== 'original'}
-                    className={`px-3 py-1.5 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition-all cursor-pointer ${
-                      isAuditioning
-                        ? 'bg-rose-600 text-white animate-pulse'
-                        : 'bg-indigo-600 hover:bg-indigo-500 text-white shadow-sm'
-                    }`}
-                    title={model.renderMode === 'source-clip-only' && model.sourceType === 'original' ? 'Audition verified original recording — unprocessed' : 'Audition spoken script'}
-                  >
-                    {isAuditioning ? (
-                      <>
-                        <Square className="w-3.5 h-3.5 fill-current" /> Stop
-                      </>
-                    ) : (
-                      <>
-                        <Volume2 className="w-3.5 h-3.5" /> {model.renderMode === 'source-clip-only' ? (model.sourceType === 'original' ? 'Original clip' : 'Linked WAV') : 'Audition script'}
-                      </>
-                    )}
-                  </button>
-
-                  <div className="flex items-center gap-1.5">
-                    <button
-                      onClick={() => onSelectModelForShaper(model)}
-                      className="px-2.5 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-xs font-semibold text-slate-300 flex items-center gap-1 transition-colors"
-                      title="Tune in Voice Shaper"
-                    >
-                      <Sliders className="w-3.5 h-3.5" /> Tune
-                    </button>
-
-                    <button
-                      onClick={() => onSelectModelForStudio(model)}
-                      className="px-3 py-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-xs font-semibold text-white flex items-center gap-1 shadow transition-colors"
-                      title="Speak with this voice in Studio"
-                    >
-                      <Mic2 className="w-3.5 h-3.5" /> Speak
-                    </button>
-
-                    {model.isCustom && (
-                      <button
-                        onClick={() => { if (window.confirm('Delete this voice profile? Its sound bank will also be removed if no other profile uses it. Export a backup first if needed.')) onDeleteCustomModel(model.id); }}
-                        className="p-1.5 rounded-lg text-slate-500 hover:text-rose-400 transition-colors"
-                        title="Delete Custom Voice"
-                      >
-                        <Trash2 className="w-3.5 h-3.5" />
-                      </button>
-                    )}
-                  </div>
-                </div>
-              </div>
-            );
-          })}
-        </div>
-      )}
 
       {assetError && <div role="alert" className="rounded-xl border border-rose-700/60 bg-rose-950/30 p-3 text-xs text-rose-200 flex justify-between gap-3"><span>{assetError}</span><button type="button" onClick={() => setAssetError(null)} className="underline">Dismiss</button></div>}
 
       {activeTab === 'originals' && (
         <section className="space-y-3">
-          <div className="rounded-2xl border border-amber-500/25 bg-amber-950/15 p-4 text-xs text-amber-100"><strong>Original Voice Library — read only.</strong> These source profiles retain their existing personalities and source recordings. Audition/download routes verify the protected source hash and never run DSP, room treatment, or AI.</div>
-          <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-            {models.filter(model => model.sourceType === 'original').map(model => <div key={model.id} className="rounded-2xl border border-slate-800 bg-slate-900/90 p-4 space-y-3"><div className="flex items-center gap-3"><VoiceAvatar id={model.id} name={model.name} color={model.avatarColor} size="sm" /><div><h4 className="text-sm font-bold text-white">{model.name}</h4><p className="text-[11px] text-slate-400">{model.archetype}</p></div></div><VoiceSourceNote model={model} /><p className="font-mono text-[10px] text-slate-500">SHA-256: {model.originalSourceHash}</p></div>)}
+          <div className="rounded-2xl border border-amber-500/25 bg-amber-950/15 p-4 text-xs text-amber-100"><strong>Original Voice Library — read only.</strong> These recordings retain their existing personalities and source bytes. Playback/download verifies the protected hash and never applies DSP, room treatment, or AI.</div>
+          <div className="grid gap-4 lg:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]">
+            <div className="rounded-2xl border border-slate-800 bg-slate-900/90 p-3">
+              <label className="relative block">
+                <Search className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-500" />
+                <input type="search" value={originalSearch} onChange={(event) => setOriginalSearch(event.target.value)} placeholder={`Find one of ${originalModels.length} original voices`} className="h-10 w-full rounded-xl border border-slate-700 bg-slate-950 pl-9 pr-3 text-xs text-white placeholder:text-slate-500 outline-none focus:border-indigo-400 focus:ring-1 focus:ring-indigo-400" />
+              </label>
+              <div className="mt-2 max-h-[30rem] space-y-1 overflow-y-auto pr-1">
+                {matchingOriginalModels.map((model) => <button key={model.id} type="button" onClick={() => setSelectedOriginalId(model.id)} className={`flex w-full items-center gap-2 rounded-xl border px-2.5 py-2 text-left transition-colors ${selectedOriginal?.id === model.id ? 'border-indigo-500/60 bg-indigo-500/10' : 'border-transparent hover:bg-slate-800/80'}`}><VoiceAvatar id={model.id} name={model.name} color={model.avatarColor} size="sm" /><span className="min-w-0 flex-1"><span className="block truncate text-xs font-bold text-white">{model.flag} {model.name}</span><span className="block truncate text-[10px] text-slate-400">{model.archetype} · {model.renderMode === 'source-clip-only' ? 'original recording' : 'recorded-unit source'}</span></span></button>)}
+                {matchingOriginalModels.length === 0 && <p className="p-4 text-center text-xs text-slate-400">No original voice matches that search.</p>}
+              </div>
+            </div>
+
+            {selectedOriginal && <article className="rounded-2xl border border-slate-800 bg-slate-900/90 p-4 space-y-3">
+              <div className="flex flex-wrap items-center justify-between gap-3"><div className="flex items-center gap-3"><VoiceAvatar id={selectedOriginal.id} name={selectedOriginal.name} color={selectedOriginal.avatarColor} size="lg" /><div><h3 className="text-base font-bold text-white">{selectedOriginal.name}</h3><p className="text-[11px] text-indigo-300">{selectedOriginal.archetype}</p></div></div><span className="rounded-full border border-amber-500/30 bg-amber-500/10 px-2 py-1 text-[10px] font-bold uppercase text-amber-100">Protected original</span></div>
+              <p className="text-xs leading-relaxed text-slate-400">{selectedOriginal.description}</p>
+              <button type="button" onClick={() => void handleAudition(selectedOriginal)} className={`inline-flex items-center gap-1.5 rounded-xl px-3 py-2 text-xs font-bold ${auditioningId === selectedOriginal.id ? 'bg-rose-600 text-white' : 'bg-indigo-600 text-white hover:bg-indigo-500'}`}>{auditioningId === selectedOriginal.id ? <><Square className="h-3.5 w-3.5 fill-current" /> Stop</> : <><Volume2 className="h-3.5 w-3.5" /> Listen to original</>}</button>
+              <VoiceSourceNote model={selectedOriginal} />
+              <p className="break-all font-mono text-[10px] text-slate-500">SHA-256: {selectedOriginal.originalSourceHash}</p>
+            </article>}
           </div>
         </section>
       )}

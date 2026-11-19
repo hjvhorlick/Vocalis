@@ -16,8 +16,6 @@ import { GeneratedTake } from '../types/voice';
 import { VoiceVisualizer } from './VoiceVisualizer';
 import { SourceVoiceAttribution } from './SourceVoiceAttribution';
 import {
-  Sliders,
-  Volume2,
   Square,
   Play,
   RotateCcw,
@@ -31,10 +29,9 @@ import {
   ArrowRight,
   ShieldCheck,
   RefreshCw,
+  Search,
 } from 'lucide-react';
-import { VoiceAvatar } from './VoiceAvatar';
 import { VoiceSourceNote } from './VoiceSourceNote';
-import { VoiceRating } from './VoiceRating';
 import { RoomEnvironmentStudio } from './RoomEnvironmentStudio';
 import { AcousticAnalysisPanel } from './AcousticAnalysisPanel';
 import { getSharedAudioContext } from '../utils/naturalHumanAudio';
@@ -89,6 +86,7 @@ export const VoiceCreator: React.FC<VoiceCreatorProps> = ({
 }) => {
   // Base profile selection; originals remain protected source references.
   const [selectedBaseId, setSelectedBaseId] = useState<string>(activeVoice.id);
+  const [baseVoiceSearch, setBaseVoiceSearch] = useState('');
 
   // Editable voice parameters
   const [name, setName] = useState<string>(`${activeVoice.name} (Custom)`);
@@ -446,6 +444,10 @@ export const VoiceCreator: React.FC<VoiceCreatorProps> = ({
   };
 
   const selectedBaseVoice = voices.find((v) => v.id === selectedBaseId) || voices[0];
+  const scriptBaseVoices = voices.filter((voice) => voice.renderMode !== 'source-clip-only');
+  const referenceBaseVoices = voices.filter((voice) => voice.renderMode === 'source-clip-only');
+  const normalizedBaseVoiceSearch = baseVoiceSearch.trim().toLowerCase();
+  const matchingBaseVoices = voices.filter((voice) => !normalizedBaseVoiceSearch || [voice.name, voice.archetype, voice.description, voice.accent, voice.realSpeakerName].filter(Boolean).some((value) => value!.toLowerCase().includes(normalizedBaseVoiceSearch)));
 
   return (
     <div className="space-y-6 max-w-7xl mx-auto">
@@ -482,14 +484,14 @@ export const VoiceCreator: React.FC<VoiceCreatorProps> = ({
         <VoiceSourceNote model={currentDraftModel} />
         <AcousticAnalysisPanel model={voices.find(voice => voice.id === selectedBaseId) || currentDraftModel} />
 
-        {/* STEP 1: Select Original Base Voice (Out of 60) */}
+        {/* STEP 1: Choose one protected base source with the compact picker. */}
         <div className="bg-slate-950/80 border border-slate-800 rounded-2xl p-5 space-y-3">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
             <label className="text-xs font-bold uppercase tracking-wider text-slate-300 flex items-center gap-2">
               <span className="w-5 h-5 rounded-full bg-indigo-600 text-white flex items-center justify-center text-[10px] font-bold">
                 1
               </span>
-              Select Original Base Voice to Adapt (Voice Profiles Available):
+              Choose a Protected Base Source:
             </label>
             <span className="text-[11px] font-mono text-indigo-400">
               Selected: {selectedBaseVoice.name} &bull; {selectedBaseVoice.gender} &bull; {selectedBaseVoice.accent}
@@ -501,45 +503,26 @@ export const VoiceCreator: React.FC<VoiceCreatorProps> = ({
               ? 'This source has a packaged recorded-unit bank, so its derived candidate can render a fixed Dry Reference script for validation.'
               : 'This source is a protected short reference recording without a packaged voice bank. The workshop can create a finite derived version of that exact clip only; it cannot honestly render arbitrary new text.'}
           </p>
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 max-h-56 overflow-y-auto p-1 border border-slate-800/80 rounded-xl bg-slate-900/40">
-            {voices.map((v) => {
-              const isChosen = v.id === selectedBaseId;
-              return (
-                <div key={v.id} className="rounded-xl border border-slate-800 p-2 space-y-2">
-                  <button
-                    type="button"
-                    onClick={() => handleSelectBaseVoice(v.id)}
-                    className={`w-full p-2.5 rounded-xl border text-left flex items-center gap-3 transition-all cursor-pointer ${
-                      isChosen
-                        ? 'bg-indigo-950/70 border-indigo-500 text-white shadow-md ring-1 ring-indigo-500'
-                        : 'bg-slate-950/60 border-slate-800 text-slate-300 hover:border-slate-700 hover:bg-slate-900/60'
-                    }`}
-                  >
-                    <div className="relative shrink-0">
-                      <VoiceAvatar
-                        id={v.id}
-                        name={v.name}
-                        color={v.avatarColor}
-                        size="sm"
-                      />
-                      {v.flag && (
-                        <span className="absolute -bottom-1 -right-1 text-[9px] bg-slate-900 rounded border border-slate-700 px-0.5 leading-none">
-                          {v.flag}
-                        </span>
-                      )}
-                    </div>
-                    <div className="min-w-0 flex-1">
-                      <div className="font-semibold text-xs truncate text-white">{v.name}</div>
-                      <div className="text-[10px] text-slate-400 truncate">
-                        {v.archetype} &bull; {v.gender}
-                      </div>
-                    </div>
-                    {isChosen && <Check className="w-4 h-4 text-indigo-400 shrink-0" />}
-                  </button>
-                  <VoiceRating voiceId={v.id} voiceName={v.name} />
-                </div>
-              );
-            })}
+          <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
+            <label className="min-w-0">
+              <span className="mb-1.5 block text-[11px] font-bold text-slate-300">Base source</span>
+              <select value={selectedBaseId} onChange={(event) => handleSelectBaseVoice(event.target.value)} className="h-10 w-full rounded-xl border border-slate-700 bg-slate-950 px-3 text-sm font-semibold text-white outline-none focus:border-indigo-400 focus:ring-1 focus:ring-indigo-400">
+                <optgroup label={`Script-capable sources (${scriptBaseVoices.length})`}>{scriptBaseVoices.map((voice) => <option key={voice.id} value={voice.id}>{voice.flag} {voice.name} — {voice.archetype}</option>)}</optgroup>
+                <optgroup label={`Reference recordings (${referenceBaseVoices.length})`}>{referenceBaseVoices.map((voice) => <option key={voice.id} value={voice.id}>{voice.flag} {voice.name} — finite source-clip variant only</option>)}</optgroup>
+              </select>
+            </label>
+
+            <details className="rounded-xl border border-slate-800 bg-slate-900/60 px-3 py-2">
+              <summary className="cursor-pointer text-xs font-bold text-slate-300">Find a source by name, role, or accent</summary>
+              <label className="relative mt-2 block">
+                <Search className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-500" />
+                <input type="search" value={baseVoiceSearch} onChange={(event) => setBaseVoiceSearch(event.target.value)} placeholder={`Search ${voices.length} sources`} className="h-9 w-full rounded-lg border border-slate-700 bg-slate-950 pl-9 pr-3 text-xs text-white placeholder:text-slate-500 outline-none focus:border-indigo-400" />
+              </label>
+              <div className="mt-2 max-h-48 space-y-1 overflow-y-auto pr-1">
+                {matchingBaseVoices.map((voice) => <button key={voice.id} type="button" onClick={() => handleSelectBaseVoice(voice.id)} className={`flex w-full items-center gap-2 rounded-lg border px-2 py-1.5 text-left ${voice.id === selectedBaseId ? 'border-indigo-500/60 bg-indigo-500/10' : 'border-transparent hover:bg-slate-800'}`}><span className="text-sm">{voice.flag}</span><span className="min-w-0 flex-1"><span className="block truncate text-xs font-semibold text-white">{voice.name}{voice.id === selectedBaseId ? ' · selected' : ''}</span><span className="block truncate text-[10px] text-slate-400">{voice.renderMode === 'source-clip-only' ? 'Reference recording — finite variant only' : voice.archetype}</span></span></button>)}
+                {matchingBaseVoices.length === 0 && <p className="p-3 text-center text-xs text-slate-400">No source matches that search.</p>}
+              </div>
+            </details>
           </div>
         </div>
 
@@ -747,8 +730,9 @@ export const VoiceCreator: React.FC<VoiceCreatorProps> = ({
           </div>
         </div>
 
-        <section className="rounded-2xl border border-slate-700 bg-slate-950/55 p-4 text-xs text-slate-400 space-y-3" aria-label="AI-created file intent preparation">
-          <div className="flex items-center gap-2 font-bold text-slate-200"><ShieldCheck className="h-4 w-4 text-slate-400" /> AI-created-file intent — prepare locally, provider submission disabled</div>
+        <details className="rounded-2xl border border-slate-700 bg-slate-950/55 p-4 text-xs text-slate-400" aria-label="AI-created file intent preparation">
+          <summary className="cursor-pointer list-none font-bold text-slate-200"><span className="inline-flex items-center gap-2"><ShieldCheck className="h-4 w-4 text-slate-400" /> Advanced: AI-created-file intent <span className="rounded-full border border-slate-600 px-2 py-0.5 text-[10px] text-slate-400">provider disabled</span></span></summary>
+          <div className="mt-3 space-y-3">
           <p className="leading-relaxed">This creates an auditable, source-hash-bound intent only. No cloud/neural service is called and no audio or consent data leaves this browser. A reviewed server adapter, revocation/deletion controls, and a further explicit confirmation are required before any provider submission.</p>
           <p className="rounded-lg border border-slate-700 bg-slate-900/70 p-2 text-[11px] text-slate-200"><strong>Required output disclosure:</strong> AI-created candidate file — requires listening review; never replaces the source. Any future output is a separately labelled derived WAV, not an original recording or reusable voice model. Estimated cost: unavailable until a provider review; no provider is called here.</p>
           <div className="flex flex-wrap gap-2" role="group" aria-label="AI intent source type">
@@ -768,7 +752,8 @@ export const VoiceCreator: React.FC<VoiceCreatorProps> = ({
           <button type="button" onClick={() => void prepareAiIntent()} disabled={aiSourceMode === 'packaged' && originalSourceRecord(selectedBaseVoice.sourceId || selectedBaseVoice.baseSampleId)?.aiCreationStatus !== 'eligible'} className="rounded-lg border border-slate-500 bg-slate-800 px-3 py-2 text-xs font-bold text-slate-100 hover:bg-slate-700 disabled:cursor-not-allowed disabled:opacity-50">Create voice file with AI — prepare intent</button>
           {aiIntentError && <p role="alert" className="text-rose-300">{aiIntentError}</p>}
           {aiIntent && <div className="rounded-xl border border-amber-400/30 bg-amber-950/20 p-3 space-y-1 text-[11px] text-amber-100"><p className="font-bold">Prepared locally — state: {aiIntent.state}</p><p className="font-mono break-all">source SHA-256: {aiIntent.sourceHash}</p><p>{aiIntent.provider} · {aiIntent.modelVersion} · retention until {aiIntent.retentionEndsAt}</p><p>{aiIntent.disclosure}</p></div>}
-        </section>
+          </div>
+        </details>
 
         {/* STEP 3: Voice Identity & Profile Customization */}
         <div className="bg-slate-950/80 border border-slate-800 rounded-2xl p-5 space-y-4">

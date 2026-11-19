@@ -21,9 +21,17 @@ npm start
 
 Serve over HTTPS for microphone access. See [deployment and handoff](docs/DEPLOYMENT.md).
 
+## Simple five-step workflow
+
+1. **Voices:** find and listen to protected originals, review candidates, and retrieve approved files.
+2. **Record:** optionally make a rights-cleared sound bank from your own recordings.
+3. **Create Variant:** make a separate bounded-DSP candidate from a protected source.
+4. **Narrate:** choose a script-capable voice, paste a script, test it, and export WAV.
+5. **Dialogue:** render a multi-speaker script using the same protected render rules.
+
 ## Create your own voice
 
-Open **Record a Voice**:
+Open **2. Record**:
 
 1. **Read & record:** create a project and confirm permission. Test the microphone,
    read a sentence, stop, listen, and choose **Keep & next**. You can also upload
@@ -36,8 +44,8 @@ Open **Record a Voice**:
    missing sounds or unknown pronunciations block output instead of borrowing
    another speaker. Tap a missing sound to add a recording prompt. Correct
    pronunciations here and rebuild after project changes.
-4. **Add to voice library:** install the bank for Voice Hub, Voice Creator and
-   Dialogue playback. Export a sound-bank `.vvoice` for another browser/site.
+4. **Add to voice library:** install the bank for **3. Create Variant**, **4. Narrate**, and
+   **5. Dialogue**. Export a sound-bank `.vvoice` for another browser/site.
 5. **Back up project:** `.vproject` keeps recordings, prompts, sound labels and
    pronunciation entries so the voice can be rebuilt later.
 

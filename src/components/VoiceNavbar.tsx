@@ -1,13 +1,10 @@
-import React, { useState } from 'react';
+import React from 'react';
 import {
   Sliders,
   Mic,
   Sparkles,
   Users,
   BookmarkCheck,
-  Volume2,
-  Download,
-  Check,
 } from 'lucide-react';
 
 const GitHubIcon = ({ className = 'w-3.5 h-3.5' }: { className?: string }) => (
@@ -35,44 +32,13 @@ export const VoiceNavbar: React.FC<VoiceNavbarProps> = ({
   savedVoicesCount,
   onOpenGitHubModal,
 }) => {
-  const [isDownloading, setIsDownloading] = useState(false);
-
-  const handleQuickDownload = async () => {
-    setIsDownloading(true);
-    try {
-      const res = await fetch('/api/project/download-base64');
-      const data = await res.json();
-      if (!data.base64) throw new Error('No archive data');
-
-      const byteCharacters = atob(data.base64);
-      const byteNumbers = new Array(byteCharacters.length);
-      for (let i = 0; i < byteCharacters.length; i++) {
-        byteNumbers[i] = byteCharacters.charCodeAt(i);
-      }
-      const byteArray = new Uint8Array(byteNumbers);
-      const blob = new Blob([byteArray], { type: 'application/zip' });
-      const blobUrl = URL.createObjectURL(blob);
-
-      const link = document.createElement('a');
-      link.href = blobUrl;
-      link.download = 'vocalis-project.zip';
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      setTimeout(() => URL.revokeObjectURL(blobUrl), 2000);
-    } catch (err) {
-      window.alert('Source download failed. This is available only on the development server with Python 3 installed. You can transfer the repository directly instead.');
-    } finally {
-      setIsDownloading(false);
-    }
-  };
-
+  // Five steps, ordered by the normal workflow. Each screen has one job.
   const tabs: { id: AppNavTab; label: string; icon: React.ElementType }[] = [
-    { id: 'library', label: 'Voice Library', icon: BookmarkCheck },
-    { id: 'hub', label: 'Voice Hub', icon: Sliders },
-    { id: 'recording', label: 'Record a Voice', icon: Mic },
-    { id: 'creator', label: 'Voice Creator', icon: Sparkles },
-    { id: 'dialogue', label: 'Dialogue Screenplay', icon: Users },
+    { id: 'library', label: '1. Voices', icon: BookmarkCheck },
+    { id: 'recording', label: '2. Record', icon: Mic },
+    { id: 'creator', label: '3. Create Variant', icon: Sparkles },
+    { id: 'hub', label: '4. Narrate', icon: Sliders },
+    { id: 'dialogue', label: '5. Dialogue', icon: Users },
   ];
 
   return (
@@ -102,27 +68,14 @@ export const VoiceNavbar: React.FC<VoiceNavbarProps> = ({
                 </span>
               </div>
               <p className="text-xs text-slate-400 hidden lg:block">
-                Local recordings &bull; Non-neural voice tools
+                Browse &rarr; Record &rarr; Create &rarr; Narrate &rarr; Dialogue
               </p>
             </div>
           </div>
 
           {/* Right Action Buttons (Styled identically with exact same h-9 px-3.5 rounded-xl border) */}
           <div className="flex items-center gap-2 shrink-0">
-            {/* 1-Click Codebase ZIP Download */}
-            <button
-              onClick={handleQuickDownload}
-              disabled={!import.meta.env.DEV || isDownloading}
-              className="h-9 px-3.5 rounded-xl border border-slate-800 bg-slate-900/90 hover:bg-slate-800/90 hover:border-slate-700 text-slate-300 hover:text-white text-xs font-semibold inline-flex items-center gap-2 transition-all duration-150 cursor-pointer shadow-sm"
-              title={import.meta.env.DEV ? "Download application source (recording data is exported separately)" : "Source export is disabled in production"}
-            >
-              <Download className="w-3.5 h-3.5 text-emerald-400" />
-              <span className="hidden sm:inline">
-                {isDownloading ? 'Downloading...' : 'Download Code (.zip)'}
-              </span>
-            </button>
-
-            {/* GitHub Sync Button */}
+            {/* Optional transfer action; the five workflow sections stay focused on voice work. */}
             <button
               onClick={onOpenGitHubModal}
               className="h-9 px-3.5 rounded-xl border border-indigo-500/40 bg-slate-900/90 hover:bg-slate-800/90 hover:border-indigo-400 text-indigo-300 hover:text-indigo-100 text-xs font-semibold inline-flex items-center gap-2 transition-all duration-150 cursor-pointer shadow-sm"

@@ -187,7 +187,7 @@ export function App() {
           </div>
         )}
 
-        {/* 1. Voice Hub (Main Page) */}
+        {/* Step 4: script narration and WAV export. */}
         {activeTab === 'hub' && (
           <VoiceHub
             voices={models}
@@ -202,7 +202,7 @@ export function App() {
           />
         )}
 
-        {/* 2. Merged Voice Creator Studio */}
+        {/* Step 3: bounded, separately reviewed variant creation. */}
         {activeTab === 'creator' && (
           <VoiceCreator
             voices={models}
@@ -216,26 +216,17 @@ export function App() {
           />
         )}
 
-        {/* 3. Dialogue Screenplay Studio */}
+        {/* Step 5: multi-speaker dialogue rendering. */}
         {activeTab === 'dialogue' && <DialogueStudio models={models} />}
 
-        {/* 4. Takes Vault (Audio Archive) */}
+        {/* Step 1: protected originals, review, approved files, and saved takes. */}
         {activeTab === 'library' && (
           <VoiceLibrary
             models={models}
             savedTakes={savedTakes}
-            onSelectModelForShaper={(m) => {
-              setActiveModel(m);
-              setActiveTab('creator');
-            }}
-            onSelectModelForStudio={(m) => {
-              setActiveModel(m);
-              setActiveTab('hub');
-            }}
-            onDeleteCustomModel={handleDeleteCustomModel}
             onDeleteTake={handleDeleteTake}
+            onDeleteCustomModel={handleDeleteCustomModel}
             onSaveModel={handleSaveModel}
-            onGoToNewModel={() => setActiveTab('creator')}
           />
         )}
       </main>

@@ -45,19 +45,20 @@ or update Vite base and asset fetching deliberately for a subdirectory deploymen
 
 ## Moving to another coding environment or URL
 
-1. Transfer the repository or use **Download Code (.zip)** in development.
-   The safe source exporter includes `src`, `public`, `scripts`, `tests`, `docs`
-   and explicitly allowed configuration files. It excludes local environment
-   files, private voice packages, caches, common key-file patterns and generated builds.
-   Review the archive before sharing: this is not a general secret scanner. Never
-   put private audio or secrets under `public/`, which is intentionally deployed.
+1. Transfer the repository with git/GitHub (the in-app **Transfer app** control
+   provides handoff guidance). If you use a development source export, it includes
+   `src`, `public`, `scripts`, `tests`, `docs` and explicitly allowed configuration
+   files. It excludes local environment files, private voice packages, caches,
+   common key-file patterns and generated builds. Review any archive before
+   sharing: this is not a general secret scanner. Never put private audio or
+   secrets under `public/`, which is intentionally deployed.
 2. Export `.vproject` files to retain recordings and reviewed boundaries.
 3. Export sound-bank `.vvoice` files to retain installable runtime voices.
 4. Download important generated WAV takes individually. Ratings are local to the
    original browser origin and are not part of these voice files.
-5. On the new site, open projects through **Record a Voice → Open file**. Open
-   sound banks through **Build & test → Open sound bank**, confirm permission,
-   and add them to the library.
+5. On the new site, open projects through **2. Record → Open file**. Open sound
+   banks through **Build & test → Open sound bank**, confirm permission, and add
+   them to the library.
 
 The browser's old IndexedDB/localStorage does not follow the source code or URL.
 All audio remains local unless the user explicitly transfers its exported files.
