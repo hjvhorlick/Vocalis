@@ -56,10 +56,6 @@ or update Vite base and asset fetching deliberately for a subdirectory deploymen
 3. Export sound-bank `.vvoice` files to retain installable runtime voices.
 4. Download important generated WAV takes individually. Ratings are local to the
    original browser origin and are not part of these voice files.
-5. On the new site, open projects through **2. Record → Open file**. Open sound
-   banks through **Build & test → Open sound bank**, confirm permission, and add
-   them to the library.
-
 The browser's old IndexedDB/localStorage does not follow the source code or URL.
 All audio remains local unless the user explicitly transfers its exported files.
 
